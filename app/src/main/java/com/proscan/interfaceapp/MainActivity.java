@@ -41,6 +41,7 @@ public class MainActivity extends Activity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private String embeddedUiBase64 = null;
+    private boolean userWakeLockEnabled = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,7 +57,13 @@ public class MainActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
-        webView = new WebView(this);
+        /* Custom WebView that BLOCKS Chromium from keeping the screen awake unless userWakeLockEnabled is true! */
+        webView = new WebView(this) {
+            @Override
+            public void setKeepScreenOn(boolean keepScreenOn) {
+                super.setKeepScreenOn(userWakeLockEnabled);
+            }
+        };
         webView.setKeepScreenOn(false);
         setupWebView();
         root.addView(webView, new FrameLayout.LayoutParams(
@@ -112,6 +119,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void setKeepScreenOn(final boolean keepOn) {
             mainHandler.post(() -> {
+                userWakeLockEnabled = keepOn;
                 if (keepOn) {
                     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                     webView.setKeepScreenOn(true);
