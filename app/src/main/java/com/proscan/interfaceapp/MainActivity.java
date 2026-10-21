@@ -47,7 +47,6 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
 
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-        /* Ensure screen sleep is allowed by default */
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemUI();
 
@@ -65,7 +64,6 @@ public class MainActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT
         ));
 
-        /* Subtle tiny gear button in the very bottom-right corner of the screen to edit URLs anytime */
         Button settingsBtn = new Button(this);
         settingsBtn.setText("⚙");
         settingsBtn.setTextColor(Color.argb(90, 255, 255, 255));
@@ -162,7 +160,6 @@ public class MainActivity extends Activity {
         StringBuilder js = new StringBuilder();
         js.append("(function() {\n");
 
-        /* 1. If the server is a stock ProScan server without the custom UI, inject the embedded custom_ui.html! */
         if (embeddedUiBase64 != null && !embeddedUiBase64.isEmpty()) {
             js.append("  if (!document.getElementById('custom-scanner-ui-wrapper')) {\n");
             js.append("    try {\n");
@@ -194,8 +191,6 @@ public class MainActivity extends Activity {
             js.append("  }\n");
         }
 
-        /* 2. Remove the hidden <video> wake-lock fallback elements inside Android WebView
-              so Chromium's VideoWakeLock never blocks normal screen sleep when WAKE is OFF! */
         js.append("  try {\n");
         js.append("    if (typeof releaseScreenWake === 'function') releaseScreenWake();\n");
         js.append("    document.querySelectorAll('video').forEach(function(v) {\n");
@@ -343,4 +338,15 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    public
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            hideSystemUI();
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        showSetupDialog(false);
+    }
+}
