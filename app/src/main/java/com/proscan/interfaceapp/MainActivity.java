@@ -31,7 +31,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -48,7 +47,8 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
 
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-        /* Screen is NOT forced awake on launch anymore — controlled by your WAKE switch! */
+        /* Ensure screen sleep is allowed by default */
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemUI();
 
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
@@ -58,6 +58,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(Color.BLACK);
 
         webView = new WebView(this);
+        webView.setKeepScreenOn(false);
         setupWebView();
         root.addView(webView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -115,8 +116,12 @@ public class MainActivity extends Activity {
             mainHandler.post(() -> {
                 if (keepOn) {
                     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    webView.setKeepScreenOn(true);
+                    Toast.makeText(MainActivity.this, "Screen Wake: ON", Toast.LENGTH_SHORT).show();
                 } else {
                     getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    webView.setKeepScreenOn(false);
+                    Toast.makeText(MainActivity.this, "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
                 }
             });
         }
@@ -189,25 +194,32 @@ public class MainActivity extends Activity {
             js.append("  }\n");
         }
 
-        /* 2. Hook the WAKE switch directly into Android's hardware FLAG_KEEP_SCREEN_ON */
-        js.append("  if (!window.__androidWakeHooked) {\n");
-        js.append("    window.__androidWakeHooked = true;\n");
-        js.append("    if (window.AndroidApp && typeof window.AndroidApp.setKeepScreenOn === 'function') {\n");
-        js.append("      window.AndroidApp.setKeepScreenOn(false);\n");
-        js.append("    }\n");
-        js.append("    var origToggleWake = window.toggleWakeLock;\n");
-        js.append("    if (typeof origToggleWake === 'function') {\n");
-        js.append("      window.toggleWakeLock = function() {\n");
-        js.append("        origToggleWake();\n");
-        js.append("        var btn = document.getElementById('btn-wake-toggle');\n");
-        js.append("        var active = btn && btn.classList.contains('active');\n");
-        js.append("        if (!active && typeof releaseScreenWake === 'function') releaseScreenWake();\n");
-        js.append("        if (window.AndroidApp && typeof window.AndroidApp.setKeepScreenOn === 'function') {\n");
-        js.append("          window.AndroidApp.setKeepScreenOn(Boolean(active));\n");
-        js.append("        }\n");
-        js.append("      };\n");
-        js.append("    }\n");
-        js.append("  }\n");
+        /* 2. Remove the hidden <video> wake-lock fallback elements inside Android WebView
+              so Chromium's VideoWakeLock never blocks normal screen sleep when WAKE is OFF! */
+        js.append("  try {\n");
+        js.append("    if (typeof releaseScreenWake === 'function') releaseScreenWake();\n");
+        js.append("    document.querySelectorAll('video').forEach(function(v) {\n");
+        js.append("      try { v.pause(); v.srcObject = null; v.removeAttribute('src'); v.load(); v.remove(); } catch(e) {}\n");
+        js.append("    });\n");
+        js.append("    window.prepareWakeLockMedia = function() {};\n");
+        js.append("    window.requestScreenWake = function() {\n");
+        js.append("      if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(true);\n");
+        js.append("    };\n");
+        js.append("    window.releaseScreenWake = function() {\n");
+        js.append("      if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(false);\n");
+        js.append("    };\n");
+        js.append("    window.toggleWakeLock = function() {\n");
+        js.append("      var btn = document.getElementById('btn-wake-toggle');\n");
+        js.append("      isWakeLockActive = !isWakeLockActive;\n");
+        js.append("      if (isWakeLockActive) {\n");
+        js.append("        if (btn) { btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true'); }\n");
+        js.append("        if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(true);\n");
+        js.append("      } else {\n");
+        js.append("        if (btn) { btn.classList.remove('active'); btn.setAttribute('aria-pressed', 'false'); }\n");
+        js.append("        if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(false);\n");
+        js.append("      }\n");
+        js.append("    };\n");
+        js.append("  } catch (e) {}\n");
         js.append("})();");
 
         webView.evaluateJavascript(js.toString(), null);
@@ -331,15 +343,4 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) {
-            hideSystemUI();
-        }
-    }
-
-    @Override
-    public void onBackPressed() {
-        showSetupDialog(false);
-    }
-}
+    public
