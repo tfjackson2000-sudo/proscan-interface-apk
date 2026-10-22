@@ -3295,29 +3295,44 @@
                 <button id="app-menu-exit-btn" class="login-action logout-action" type="button" style="margin-top:7px;">EXIT / SHUT DOWN</button>
                 <button id="app-menu-cancel-btn" class="login-action" type="button" style="margin-top:7px;background:linear-gradient(180deg,#e2e8f0,#94a3b8);border-color:#64748b;color:#1e293b;">CANCEL</button>
             `;
+            /* Stop any pointer/touch events inside the popup from bleeding through to the keypad buttons behind it */
+            ['pointerdown', 'pointerup', 'click', 'touchstart', 'touchend'].forEach(function (evtName) {
+                menuDiv.addEventListener(evtName, function (ev) {
+                    ev.stopPropagation();
+                });
+            });
             scannerUi.appendChild(menuDiv);
 
-            document.getElementById('app-menu-ips-btn').addEventListener('click', function () {
-                menuDiv.hidden = true;
-                if (window.AndroidApp && typeof window.AndroidApp.openAppSettings === 'function') {
-                    window.AndroidApp.openAppSettings();
-                } else {
-                    const enteredUrl = prompt('Enter ProScan Server URL (e.g. http://192.168.1.50:5000):', window.location.origin);
-                    if (enteredUrl && enteredUrl.trim()) {
-                        let u = enteredUrl.trim();
-                        if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'http://' + u;
-                        window.location.href = u;
+            document.getElementById('app-menu-ips-btn').addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                setTimeout(function () {
+                    menuDiv.hidden = true;
+                    if (window.AndroidApp && typeof window.AndroidApp.openAppSettings === 'function') {
+                        window.AndroidApp.openAppSettings();
+                    } else {
+                        const enteredUrl = prompt('Enter ProScan Server URL (e.g. http://192.168.1.50:5000):', window.location.origin);
+                        if (enteredUrl && enteredUrl.trim()) {
+                            let u = enteredUrl.trim();
+                            if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'http://' + u;
+                            window.location.href = u;
+                        }
                     }
-                }
+                }, 120);
             });
 
-            document.getElementById('app-menu-reload-btn').addEventListener('click', function () {
-                menuDiv.hidden = true;
-                window.location.reload();
+            document.getElementById('app-menu-reload-btn').addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                setTimeout(function () {
+                    menuDiv.hidden = true;
+                    window.location.reload();
+                }, 120);
             });
 
-            document.getElementById('app-menu-exit-btn').addEventListener('click', function () {
-                menuDiv.hidden = true;
+            document.getElementById('app-menu-exit-btn').addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
                 if (isConnected) {
                     const player = document.getElementById('audio_player');
                     if (player && !player.paused) player.pause();
@@ -3331,18 +3346,24 @@
                 if (isDisplayOn) {
                     toggleDisplay();
                 }
+                setTimeout(function () {
+                    menuDiv.hidden = true;
+                }, 180);
                 if (window.AndroidApp && typeof window.AndroidApp.exitApp === 'function') {
-                    setTimeout(function () { window.AndroidApp.exitApp(); }, 450);
+                    setTimeout(function () { window.AndroidApp.exitApp(); }, 520);
                 } else {
                     setTimeout(function () {
-                        try { window.close(); } catch (e) {}
-                        window.location.href = 'about:blank';
-                    }, 520);
+                        try { window.close(); } catch (err) {}
+                    }, 550);
                 }
             });
 
-            document.getElementById('app-menu-cancel-btn').addEventListener('click', function () {
-                menuDiv.hidden = true;
+            document.getElementById('app-menu-cancel-btn').addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                setTimeout(function () {
+                    menuDiv.hidden = true;
+                }, 120);
             });
         }
     })();
