@@ -4,12 +4,12 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
 import android.util.Base64;
-import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -20,7 +20,6 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -57,7 +56,7 @@ public class MainActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
-        /* Custom WebView that BLOCKS Chromium from keeping the screen awake unless userWakeLockEnabled is true! */
+        /* Custom WebView that BLOCKS Chromium from keeping the screen awake unless userWakeLockEnabled is true */
         webView = new WebView(this) {
             @Override
             public void setKeepScreenOn(boolean keepScreenOn) {
@@ -70,21 +69,6 @@ public class MainActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
         ));
-
-        Button settingsBtn = new Button(this);
-        settingsBtn.setText("⚙");
-        settingsBtn.setTextColor(Color.argb(90, 255, 255, 255));
-        settingsBtn.setBackgroundColor(Color.TRANSPARENT);
-        settingsBtn.setTextSize(14f);
-        settingsBtn.setPadding(8, 8, 8, 8);
-        settingsBtn.setOnClickListener(v -> showSetupDialog(false));
-
-        FrameLayout.LayoutParams btnParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM | Gravity.END
-        );
-        root.addView(settingsBtn, btnParams);
 
         setContentView(root);
 
@@ -131,6 +115,33 @@ public class MainActivity extends Activity {
                 }
             });
         }
+
+        @JavascriptInterface
+        public void openAppSettings() {
+            mainHandler.post(() -> showSetupDialog(false));
+        }
+
+        @JavascriptInterface
+        public void exitApp() {
+            mainHandler.post(() -> closeAndExitApp());
+        }
+    }
+
+    private void closeAndExitApp() {
+        try {
+            if (webView != null) {
+                webView.loadUrl("about:blank");
+                webView.stopLoading();
+                webView.destroy();
+            }
+        } catch (Exception ignored) {}
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            finishAndRemoveTask();
+        } else {
+            finish();
+        }
+        System.exit(0);
     }
 
     private void setupWebView() {
@@ -154,6 +165,13 @@ public class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return false;
+            }
+
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                mainHandler.postDelayed(() -> injectCustomUiAndWakeBridge(), 800);
+                mainHandler.postDelayed(() -> injectCustomUiAndWakeBridge(), 2000);
             }
 
             @Override
@@ -222,6 +240,29 @@ public class MainActivity extends Activity {
         js.append("        if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(false);\n");
         js.append("      }\n");
         js.append("    };\n");
+
+        /* Hook Long-Press (0.5s) on the GUIDE button to open the Android Connection & Exit Menu! */
+        js.append("    var guideBtn = document.getElementById('btn-manual-open');\n");
+        js.append("    if (guideBtn && !guideBtn.__androidMenuHooked) {\n");
+        js.append("      guideBtn.__androidMenuHooked = true;\n");
+        js.append("      guideBtn.removeAttribute('onclick');\n");
+        js.append("      var gTimer = null, gLong = false;\n");
+        js.append("      guideBtn.addEventListener('pointerdown', function() {\n");
+        js.append("        clearTimeout(gTimer); gLong = false;\n");
+        js.append("        gTimer = setTimeout(function() {\n");
+        js.append("          gTimer = null; gLong = true;\n");
+        js.append("          if (navigator.vibrate) navigator.vibrate(35);\n");
+        js.append("          if (window.AndroidApp && window.AndroidApp.openAppSettings) window.AndroidApp.openAppSettings();\n");
+        js.append("        }, 500);\n");
+        js.append("      });\n");
+        js.append("      guideBtn.addEventListener('pointerup', function() {\n");
+        js.append("        var wasActive = gTimer !== null;\n");
+        js.append("        clearTimeout(gTimer); gTimer = null;\n");
+        js.append("        if (wasActive && !gLong && typeof toggleManual === 'function') toggleManual();\n");
+        js.append("      });\n");
+        js.append("      guideBtn.addEventListener('pointerleave', function() { clearTimeout(gTimer); gTimer = null; });\n");
+        js.append("      guideBtn.addEventListener('pointercancel', function() { clearTimeout(gTimer); gTimer = null; });\n");
+        js.append("    }\n");
         js.append("  } catch (e) {}\n");
         js.append("})();");
 
@@ -265,7 +306,7 @@ public class MainActivity extends Activity {
         layout.addView(tsInput);
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("ProScan Connection Setup");
+        builder.setTitle("ProScan App Menu");
         builder.setView(layout);
         builder.setCancelable(!isFirstRun);
 
@@ -286,6 +327,9 @@ public class MainActivity extends Activity {
 
             connectSmart(loc, ts);
         });
+
+        /* Dedicated EXIT APP button right inside the dialog */
+        builder.setNeutralButton("Exit App", (dialog, which) -> closeAndExitApp());
 
         if (!isFirstRun) {
             builder.setNegativeButton("Cancel", null);
