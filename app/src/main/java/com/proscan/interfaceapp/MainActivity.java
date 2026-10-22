@@ -240,29 +240,6 @@ public class MainActivity extends Activity {
         js.append("        if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(false);\n");
         js.append("      }\n");
         js.append("    };\n");
-
-        /* Hook Long-Press (0.5s) on the GUIDE button to open the Android Connection & Exit Menu! */
-        js.append("    var guideBtn = document.getElementById('btn-manual-open');\n");
-        js.append("    if (guideBtn && !guideBtn.__androidMenuHooked) {\n");
-        js.append("      guideBtn.__androidMenuHooked = true;\n");
-        js.append("      guideBtn.removeAttribute('onclick');\n");
-        js.append("      var gTimer = null, gLong = false;\n");
-        js.append("      guideBtn.addEventListener('pointerdown', function() {\n");
-        js.append("        clearTimeout(gTimer); gLong = false;\n");
-        js.append("        gTimer = setTimeout(function() {\n");
-        js.append("          gTimer = null; gLong = true;\n");
-        js.append("          if (navigator.vibrate) navigator.vibrate(35);\n");
-        js.append("          if (window.AndroidApp && window.AndroidApp.openAppSettings) window.AndroidApp.openAppSettings();\n");
-        js.append("        }, 500);\n");
-        js.append("      });\n");
-        js.append("      guideBtn.addEventListener('pointerup', function() {\n");
-        js.append("        var wasActive = gTimer !== null;\n");
-        js.append("        clearTimeout(gTimer); gTimer = null;\n");
-        js.append("        if (wasActive && !gLong && typeof toggleManual === 'function') toggleManual();\n");
-        js.append("      });\n");
-        js.append("      guideBtn.addEventListener('pointerleave', function() { clearTimeout(gTimer); gTimer = null; });\n");
-        js.append("      guideBtn.addEventListener('pointercancel', function() { clearTimeout(gTimer); gTimer = null; });\n");
-        js.append("    }\n");
         js.append("  } catch (e) {}\n");
         js.append("})();");
 
@@ -328,7 +305,7 @@ public class MainActivity extends Activity {
             connectSmart(loc, ts);
         });
 
-        /* Dedicated EXIT APP button right inside the dialog */
+        /* Dedicated EXIT APP button right inside the native Android dialog */
         builder.setNeutralButton("Exit App", (dialog, which) -> closeAndExitApp());
 
         if (!isFirstRun) {
