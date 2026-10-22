@@ -3190,10 +3190,62 @@
         } catch (e) {}
     }
 
-    /* Inject fixed-width alignment for .freq-hit-badge so all channel names start on a dead-straight vertical line */
-    (function injectHitBadgeAlignmentCss() {
+    /* 1. Seamless Header Blend (removes the squared-off box over the screen's inner vignette shadow)
+       2. Fixed-width alignment for .freq-hit-badge so all channel names start on a dead-straight vertical line */
+    (function injectSeamlessHeaderAndBadgeCss() {
         const st = document.createElement('style');
         st.textContent = `
+            .scanner-display .log-container {
+                display: flex !important;
+                flex-direction: column !important;
+                overflow: hidden !important;
+            }
+            #mini-log-table {
+                display: flex !important;
+                flex-direction: column !important;
+                height: 100% !important;
+                width: 100% !important;
+            }
+            #mini-log-table thead {
+                flex: 0 0 auto !important;
+                display: table !important;
+                width: 100% !important;
+                table-layout: fixed !important;
+                background: transparent !important;
+            }
+            #mini-log-table thead th {
+                background: transparent !important;
+                position: static !important;
+            }
+            #mini-log-table tbody {
+                flex: 1 1 auto !important;
+                display: block !important;
+                overflow-y: auto !important;
+                overflow-x: hidden !important;
+                width: 100% !important;
+                scrollbar-width: thin !important;
+                scrollbar-color: var(--log-header-text) transparent !important;
+            }
+            #mini-log-table tbody::-webkit-scrollbar {
+                width: 4px !important;
+            }
+            #mini-log-table tbody::-webkit-scrollbar-track {
+                background: transparent !important;
+            }
+            #mini-log-table tbody::-webkit-scrollbar-thumb {
+                background: var(--log-header-text) !important;
+                border-radius: 2px !important;
+            }
+            #mini-log-table tbody tr {
+                display: table !important;
+                width: 100% !important;
+                table-layout: fixed !important;
+            }
+            #mini-log-table th:nth-child(1), #mini-log-table td:nth-child(1) { width: 21% !important; }
+            #mini-log-table th:nth-child(2), #mini-log-table td:nth-child(2) { width: 21% !important; }
+            #mini-log-table th:nth-child(3), #mini-log-table td:nth-child(3) { width: 11% !important; }
+            #mini-log-table th:nth-child(4), #mini-log-table td:nth-child(4) { width: 13% !important; }
+            #mini-log-table th:nth-child(5), #mini-log-table td:nth-child(5) { width: 34% !important; }
             .freq-hit-badge {
                 display: inline-block !important;
                 width: 42px !important;
@@ -3209,9 +3261,98 @@
                 vertical-align: baseline !important;
                 box-sizing: border-box !important;
             }
+            #proscan-app-menu-panel {
+                position: absolute;
+                z-index: 120;
+                left: 50%;
+                top: 50%;
+                transform: translate(-50%, -50%);
+                width: min(88%, 310px);
+                padding: 16px;
+                border: 1px solid #8a969b;
+                border-radius: 16px;
+                background: linear-gradient(180deg, #f0f2f3, #c9ced0);
+                box-shadow: 0 10px 30px rgba(0,0,0,0.75);
+                text-align: center;
+                color: #30383b;
+            }
+            #proscan-app-menu-panel[hidden] {
+                display: none !important;
+            }
         `;
         document.head.appendChild(st);
+
+        const scannerUi = document.getElementById('custom-scanner-ui');
+        if (scannerUi && !document.getElementById('proscan-app-menu-panel')) {
+            const menuDiv = document.createElement('div');
+            menuDiv.id = 'proscan-app-menu-panel';
+            menuDiv.hidden = true;
+            menuDiv.innerHTML = `
+                <div class="login-title">APP &amp; POWER MENU</div>
+                <div class="login-status">Manage connection or exit the interface:</div>
+                <button id="app-menu-ips-btn" class="login-action" type="button">CONNECTION SETUP (IPs)</button>
+                <button id="app-menu-reload-btn" class="login-action" type="button" style="margin-top:7px;">RECONNECT / RELOAD</button>
+                <button id="app-menu-exit-btn" class="login-action logout-action" type="button" style="margin-top:7px;">EXIT / SHUT DOWN</button>
+                <button id="app-menu-cancel-btn" class="login-action" type="button" style="margin-top:7px;background:linear-gradient(180deg,#e2e8f0,#94a3b8);border-color:#64748b;color:#1e293b;">CANCEL</button>
+            `;
+            scannerUi.appendChild(menuDiv);
+
+            document.getElementById('app-menu-ips-btn').addEventListener('click', function () {
+                menuDiv.hidden = true;
+                if (window.AndroidApp && typeof window.AndroidApp.openAppSettings === 'function') {
+                    window.AndroidApp.openAppSettings();
+                } else {
+                    const enteredUrl = prompt('Enter ProScan Server URL (e.g. http://192.168.1.50:5000):', window.location.origin);
+                    if (enteredUrl && enteredUrl.trim()) {
+                        let u = enteredUrl.trim();
+                        if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'http://' + u;
+                        window.location.href = u;
+                    }
+                }
+            });
+
+            document.getElementById('app-menu-reload-btn').addEventListener('click', function () {
+                menuDiv.hidden = true;
+                window.location.reload();
+            });
+
+            document.getElementById('app-menu-exit-btn').addEventListener('click', function () {
+                menuDiv.hidden = true;
+                if (isConnected) {
+                    const player = document.getElementById('audio_player');
+                    if (player && !player.paused) player.pause();
+                    isConnected = false;
+                    const aBtn = document.getElementById('btn-audio-toggle');
+                    if (aBtn) aBtn.classList.remove('active');
+                }
+                if (isWakeLockActive) {
+                    toggleWakeLock();
+                }
+                if (isDisplayOn) {
+                    toggleDisplay();
+                }
+                if (window.AndroidApp && typeof window.AndroidApp.exitApp === 'function') {
+                    setTimeout(function () { window.AndroidApp.exitApp(); }, 450);
+                } else {
+                    setTimeout(function () {
+                        try { window.close(); } catch (e) {}
+                        window.location.href = 'about:blank';
+                    }, 520);
+                }
+            });
+
+            document.getElementById('app-menu-cancel-btn').addEventListener('click', function () {
+                menuDiv.hidden = true;
+            });
+        }
     })();
+
+    function toggleAppMenuPanel(forceState) {
+        const p = document.getElementById('proscan-app-menu-panel');
+        if (!p) return;
+        const shouldOpen = typeof forceState === 'boolean' ? forceState : p.hidden;
+        p.hidden = !shouldOpen;
+    }
 
     /* Live 24-Hour Digital Clock in Top-Right of Display */
     function updateDisplayClock() {
@@ -3592,6 +3733,7 @@
     function bindTapAndLongPress(buttonId, onTap, onLongPress) {
         const btn = document.getElementById(buttonId);
         if (!btn) return;
+        btn.removeAttribute('onclick');
         const HOLD_MS = 500;
         let holdTimer = null;
         let longFired = false;
@@ -3633,6 +3775,11 @@
 
     bindTapAndLongPress('btn-display-toggle', cycleDisplay, cycleDisplayFont);
     bindTapAndLongPress('btn-log-color-toggle', cycleDispTxtColor, cycleLogTxtColor);
+    bindTapAndLongPress('btn-manual-open', function () {
+        toggleManual();
+    }, function () {
+        toggleAppMenuPanel();
+    });
 
     function previewLogFxAnimation() {
         if (!isDisplayOn) return;
