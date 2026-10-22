@@ -333,11 +333,11 @@
         100% { transform: translate3d(0, 0, 0) scale(1.03) skewX(0deg); }
     }
     @keyframes bcWobbleSub {
-        0%   { transform: translate3d(0, 0, 0) scale(1.1) skewX(0deg); }
-        25%  { transform: translate3d(3px, 0, 0) scale(1.1) skewX(3.5deg); }
-        55%  { transform: translate3d(-3px, 0, 0) scale(1.1) skewX(-3.5deg); }
-        80%  { transform: translate3d(1.5px, 0, 0) scale(1.1) skewX(1.5deg); }
-        100% { transform: translate3d(0, 0, 0) scale(1.1) skewX(0deg); }
+        0%   { transform: translate3d(0, 0, 0) scale(1) skewX(0deg); }
+        25%  { transform: translate3d(3px, 0, 0) scale(1) skewX(3.5deg); }
+        55%  { transform: translate3d(-3px, 0, 0) scale(1) skewX(-3.5deg); }
+        80%  { transform: translate3d(1.5px, 0, 0) scale(1) skewX(1.5deg); }
+        100% { transform: translate3d(0, 0, 0) scale(1) skewX(0deg); }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wobble #custom-imgd:not(.disconnected) {
         animation: bcWobbleMain 0.46s steps(2, end) forwards;
@@ -358,9 +358,9 @@
         100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1.03); }
     }
     @keyframes bcFuzzySub {
-        0%, 100% { opacity: 0.95; transform: translate3d(0, 0, 0) scale(1.1); }
-        35%      { opacity: 0.55; transform: translate3d(2px, 0, 0) scale(1.1); }
-        70%      { opacity: 0.72; transform: translate3d(-2px, 0, 0) scale(1.1); }
+        0%, 100% { opacity: 0.95; transform: translate3d(0, 0, 0) scale(1); }
+        35%      { opacity: 0.55; transform: translate3d(2px, 0, 0) scale(1); }
+        70%      { opacity: 0.72; transform: translate3d(-2px, 0, 0) scale(1); }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-fuzzy #custom-imgd:not(.disconnected) {
         animation: bcFuzzyMain 0.58s ease-in-out forwards;
@@ -384,9 +384,9 @@
         100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1.03); }
     }
     @keyframes bcFlickerSub {
-        0%, 100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1.1); }
-        12%, 38%, 54%, 78% { opacity: 0.03; transform: translate3d(1px, 0, 0) scale(1.1); }
-        24%, 66% { opacity: 0.85; transform: translate3d(-1px, 0, 0) scale(1.1); }
+        0%, 100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+        12%, 38%, 54%, 78% { opacity: 0.03; transform: translate3d(1px, 0, 0) scale(1); }
+        24%, 66% { opacity: 0.85; transform: translate3d(-1px, 0, 0) scale(1); }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-flicker #custom-imgd:not(.disconnected) {
         animation: bcFlickerMain 0.62s steps(1, end) forwards;
@@ -414,14 +414,14 @@
         100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1.03, 1.03); }
     }
     @keyframes bcTvOffSub {
-        0%   { opacity: 1; transform: translate3d(0, 0, 0) scale(1.1, 1.1); }
-        10%  { opacity: 0; transform: translate3d(0, 0, 0) scale(1.15, 0.05); }
-        56%  { opacity: 0; transform: translate3d(0, 0, 0) scale(1.1, 1.1); }
-        62%  { opacity: 0.9; transform: translate3d(0, 0, 0) scale(1.1, 1.1); }
-        68%  { opacity: 0.04; transform: translate3d(0, 0, 0) scale(1.1, 1.1); }
-        75%  { opacity: 0.92; transform: translate3d(0, 0, 0) scale(1.1, 1.1); }
-        82%  { opacity: 0.08; transform: translate3d(0, 0, 0) scale(1.1, 1.1); }
-        100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1.1, 1.1); }
+        0%   { opacity: 1; transform: translate3d(0, 0, 0) scale(1, 1); }
+        10%  { opacity: 0; transform: translate3d(0, 0, 0) scale(1.05, 0.05); }
+        56%  { opacity: 0; transform: translate3d(0, 0, 0) scale(1, 1); }
+        62%  { opacity: 0.9; transform: translate3d(0, 0, 0) scale(1, 1); }
+        68%  { opacity: 0.04; transform: translate3d(0, 0, 0) scale(1, 1); }
+        75%  { opacity: 0.92; transform: translate3d(0, 0, 0) scale(1, 1); }
+        82%  { opacity: 0.08; transform: translate3d(0, 0, 0) scale(1, 1); }
+        100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1, 1); }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-off #custom-imgd:not(.disconnected) {
         animation: bcTvOffMain 1.35s ease-in-out forwards;
@@ -451,7 +451,7 @@
         91% { opacity: 0.04; }
     }
     @keyframes bcFastBlinkSub {
-        0%, 100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1.1); }
+        0%, 100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
         7%, 21%, 35%, 49%, 63%, 77%, 91% { opacity: 0.01; }
         14%, 28%, 42%, 56%, 70%, 84% { opacity: 0.95; }
     }
@@ -476,12 +476,12 @@
         100% { transform: translate3d(0, 0, 0) scale(1.03) skewX(0deg); }
     }
     @keyframes bcWavySub {
-        0%   { transform: translate3d(0, 0, 0) scale(1.1) skewX(0deg); }
-        18%  { transform: translate3d(5px, 0, 0) scale(1.1) skewX(8deg); }
-        38%  { transform: translate3d(-5.5px, 0, 0) scale(1.1) skewX(-8.5deg); }
-        58%  { transform: translate3d(4.5px, 0, 0) scale(1.1) skewX(7.5deg); }
-        78%  { transform: translate3d(-3.5px, 0, 0) scale(1.1) skewX(-5deg); }
-        100% { transform: translate3d(0, 0, 0) scale(1.1) skewX(0deg); }
+        0%   { transform: translate3d(0, 0, 0) scale(1) skewX(0deg); }
+        18%  { transform: translate3d(5px, 0, 0) scale(1) skewX(8deg); }
+        38%  { transform: translate3d(-5.5px, 0, 0) scale(1) skewX(-8.5deg); }
+        58%  { transform: translate3d(4.5px, 0, 0) scale(1) skewX(7.5deg); }
+        78%  { transform: translate3d(-3.5px, 0, 0) scale(1) skewX(-5deg); }
+        100% { transform: translate3d(0, 0, 0) scale(1) skewX(0deg); }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wavy #custom-imgd:not(.disconnected) {
         animation: bcWavyMain 0.82s ease-in-out forwards;
@@ -546,9 +546,9 @@
         100% { opacity: 1;    transform: translate3d(0, 0, 0) scale(1.03) skewX(0deg); }
     }
     @keyframes bcSnowDropSub {
-        0%, 80% { opacity: 0.04; transform: translate3d(3px, 0, 0) scale(1.1); }
-        90%     { opacity: 0.55; transform: translate3d(-1px, 0, 0) scale(1.1); }
-        100%    { opacity: 1;    transform: translate3d(0, 0, 0) scale(1.1); }
+        0%, 80% { opacity: 0.04; transform: translate3d(3px, 0, 0) scale(1); }
+        90%     { opacity: 0.55; transform: translate3d(-1px, 0, 0) scale(1); }
+        100%    { opacity: 1;    transform: translate3d(0, 0, 0) scale(1); }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-snow {
         --glitch-fx: url(#proscan-fx-fuzzy) blur(1.4px);
@@ -869,6 +869,27 @@
     #display-font-hud.visible {
         opacity: 1;
         transform: translateY(0);
+    }
+
+    /* 24-Hour Live Clock in Top-Right of Display */
+    #display-clock-hud {
+        position: absolute;
+        top: 6px;
+        right: 9px;
+        z-index: 3;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.8px;
+        color: var(--log-text);
+        opacity: 0.88;
+        pointer-events: none;
+        transition: opacity 0.3s ease, color 0.3s ease;
+    }
+    html.tv-off #display-clock-hud,
+    .scanner-display.tv-shutting-down #display-clock-hud {
+        filter: grayscale(1) brightness(2.5) !important;
+        animation: crtPowerOffImgF 0.38s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
     }
 
     #custom-imgd {
@@ -1696,6 +1717,19 @@
         line-height: 1.2;
     }
 
+    .freq-hit-badge {
+        display: inline-block;
+        font-size: 8.5px;
+        font-weight: 800;
+        padding: 0 3px;
+        margin-right: 3px;
+        border-radius: 3px;
+        border: 1px solid var(--log-header-text);
+        color: var(--log-header-text);
+        opacity: 0.9;
+        vertical-align: baseline;
+    }
+
     /* ========================================================
        LOG TRANSITION EFFECTS (data-log-fx)
        ======================================================== */
@@ -1777,11 +1811,11 @@
         animation: none;
     }
 
-    #mini-log-table th:nth-child(1) { width: 22%; }
-    #mini-log-table th:nth-child(2) { width: 22%; }
-    #mini-log-table th:nth-child(3) { width: 12%; }
+    #mini-log-table th:nth-child(1) { width: 21%; }
+    #mini-log-table th:nth-child(2) { width: 21%; }
+    #mini-log-table th:nth-child(3) { width: 11%; }
     #mini-log-table th:nth-child(4) { width: 13%; }
-    #mini-log-table th:nth-child(5) { width: 31%; }
+    #mini-log-table th:nth-child(5) { width: 34%; }
 
     /* ========================================================
        SKINS
@@ -2222,6 +2256,158 @@
         --brand-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
     }
 
+    /* 19. 3D Twill Carbon Fiber (CARBON - Clean dark border, no red ring) */
+    html[data-skin="carbon"] {
+        --ui-bg:
+            radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.12) 0%, transparent 65%),
+            repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 3px, rgba(0,0,0,0.45) 3px, rgba(0,0,0,0.45) 6px),
+            repeating-linear-gradient(-45deg, #26292e 0px, #26292e 3px, #121417 3px, #121417 6px);
+        --ui-border: 1px solid rgba(255, 255, 255, 0.08);
+        --ui-radius: 20px;
+        --ui-shadow: 0 0 0 1px #22252a, 0 0 0 2px #1c1f24, 0 0 0 3px #171a1e, 0 0 0 4px #121518, 0 0 0 5px #0e1013, 0 0 0 6px #0a0c0e, 0 0 0 7px #070809, 0 0 0 8px #040506, 0 16px 32px rgba(0,0,0,0.9);
+        --ui-bevel: inset 0 1px 2px rgba(255,255,255,0.15), inset 0 -3px 6px rgba(0,0,0,0.85);
+        --btn-bg: linear-gradient(180deg, #32363d 0%, #1d2025 48%, #131519 100%);
+        --btn-color: #f1f5f9;
+        --btn-active-color: #ef4444;
+        --btn-border: 1px solid #08090b;
+        --btn-radius: 6px;
+        --btn-shadow: 0 2px 0 #050607, 0 3px 5px rgba(0,0,0,0.75), inset 0 1px 0 rgba(255,255,255,0.18);
+        --btn-shadow-active: 0 0 0 #050607, inset 0 2px 5px rgba(0,0,0,0.9);
+        --btn-active-transform: translateY(2px);
+        --toggle-color: #e2e8f0;
+        --brand-primary: #f8fafc;
+        --brand-secondary: #94a3b8;
+        --brand-accent: #ef4444;
+        --brand-shadow: 0 1px 3px rgba(0,0,0,0.9);
+    }
+
+    /* 20. Brushed Anodized Titanium (TITAN) */
+    html[data-skin="titanium"] {
+        --ui-bg:
+            repeating-linear-gradient(90deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 3px),
+            repeating-linear-gradient(0deg, rgba(255,255,255,0.035) 0px, rgba(0,0,0,0.035) 1px, transparent 1px, transparent 2px),
+            linear-gradient(135deg, #4b5563 0%, #6b7280 24%, #9ca3af 38%, #4b5563 58%, #374151 82%, #6b7280 100%);
+        --ui-border: 1px solid rgba(255, 255, 255, 0.28);
+        --ui-radius: 16px;
+        --ui-shadow: 0 0 0 1px #525b67, 0 0 0 2px #464e59, 0 0 0 3px #3a414b, 0 0 0 4px #2f353d, 0 0 0 5px #252a31, 0 0 0 6px #1b1f24, 0 0 0 7px #121519, 0 0 0 8px #090b0d, 0 16px 32px rgba(0,0,0,0.88);
+        --ui-bevel: inset 0 2px 2px rgba(255,255,255,0.45), inset 0 -2px 5px rgba(0,0,0,0.75);
+        --btn-bg: linear-gradient(180deg, #374151 0%, #1f2937 52%, #111827 100%);
+        --btn-color: #e5e7eb;
+        --btn-active-color: #38bdf8;
+        --btn-border: 1px solid #090d14;
+        --btn-radius: 5px;
+        --btn-shadow: 0 2px 0 #090d14, 0 3px 5px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.25);
+        --btn-shadow-active: 0 0 0 #090d14, inset 0 2px 4px rgba(0,0,0,0.88);
+        --btn-active-transform: translateY(2px);
+        --toggle-color: #f3f4f6;
+        --brand-primary: #f9fafb;
+        --brand-secondary: #d1d5db;
+        --brand-accent: #38bdf8;
+        --brand-shadow: 0 1px 2px rgba(0,0,0,0.85);
+    }
+
+    /* 21. Vintage Pebbled Leatherette / Bakelite (PEBBLE - Clean dark border, no white ring) */
+    html[data-skin="bakelite"] {
+        --ui-bg:
+            radial-gradient(rgba(255,255,255,0.05) 1px, transparent 0),
+            radial-gradient(rgba(0,0,0,0.7) 1px, transparent 0),
+            radial-gradient(circle at 50% 10%, #292524 0%, #171412 65%, #0c0a09 100%);
+        --ui-border: 1px solid rgba(255, 255, 255, 0.08);
+        --ui-radius: 22px;
+        --ui-shadow: 0 0 0 1px #262220, 0 0 0 2px #201c1a, 0 0 0 3px #1a1715, 0 0 0 4px #151210, 0 0 0 5px #100e0c, 0 0 0 6px #0c0a09, 0 0 0 7px #080706, 0 0 0 8px #040303, 0 16px 32px rgba(0,0,0,0.9);
+        --ui-bevel: inset 0 1px 2px rgba(255,255,255,0.12), inset 0 -3px 6px rgba(0,0,0,0.9);
+        --btn-bg: linear-gradient(180deg, #38322e 0%, #211d1a 48%, #14110f 100%);
+        --btn-color: #fef3c7;
+        --btn-active-color: #f59e0b;
+        --btn-border: 1px solid #090807;
+        --btn-radius: 6px;
+        --btn-shadow: 0 2px 0 #070605, 0 3px 5px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.2);
+        --btn-shadow-active: 0 0 0 #070605, inset 0 2px 5px rgba(0,0,0,0.92);
+        --btn-active-transform: translateY(2px);
+        --toggle-color: #fde68a;
+        --brand-primary: #fef3c7;
+        --brand-secondary: #d6d3d1;
+        --brand-accent: #d97706;
+        --brand-shadow: 0 1px 2px rgba(0,0,0,0.95);
+    }
+
+    /* 22. Classic Walnut Woodgrain Receiver (WOOD - Clean dark wood border, no orange ring) */
+    html[data-skin="wood"] {
+        --ui-bg:
+            repeating-linear-gradient(178deg, rgba(0,0,0,0.12) 0px, rgba(0,0,0,0.12) 2px, transparent 2px, transparent 7px),
+            repeating-linear-gradient(2deg, rgba(255,215,160,0.05) 0px, rgba(255,215,160,0.05) 3px, rgba(0,0,0,0.18) 3px, rgba(0,0,0,0.18) 9px),
+            linear-gradient(145deg, #6e3f1d 0%, #4a2810 48%, #381d0a 85%, #593115 100%);
+        --ui-border: 1px solid rgba(255, 255, 255, 0.12);
+        --ui-radius: 16px;
+        --ui-shadow: 0 0 0 1px #4a2810, 0 0 0 2px #3f220d, 0 0 0 3px #341c0b, 0 0 0 4px #2a1608, 0 0 0 5px #211106, 0 0 0 6px #190d04, 0 0 0 7px #120903, 0 0 0 8px #0a0501, 0 16px 32px rgba(0,0,0,0.88);
+        --ui-bevel: inset 0 1px 2px rgba(255, 255, 255, 0.2), inset 0 -3px 6px rgba(0,0,0,0.8);
+        --btn-bg: linear-gradient(180deg, #2b231d 0%, #1c1612 52%, #120e0b 100%);
+        --btn-color: #fde68a;
+        --btn-active-color: #fbbf24;
+        --btn-border: 1px solid #0c0907;
+        --btn-radius: 6px;
+        --btn-shadow: 0 2px 0 #090705, 0 3px 5px rgba(0,0,0,0.7), inset 0 1px 0 rgba(253,230,138,0.22);
+        --btn-shadow-active: 0 0 0 #090705, inset 0 2px 4px rgba(0,0,0,0.9);
+        --btn-active-transform: translateY(2px);
+        --toggle-color: #fef3c7;
+        --brand-primary: #fde68a;
+        --brand-secondary: #fcd34d;
+        --brand-accent: #f59e0b;
+        --brand-shadow: 0 1px 3px rgba(0,0,0,0.9);
+    }
+
+    /* 23. CARC Olive Drab Tactical Field Radio (TACTIC) */
+    html[data-skin="milspec"] {
+        --ui-bg:
+            radial-gradient(rgba(255,255,255,0.03) 1px, transparent 0),
+            linear-gradient(155deg, #4b5338 0%, #3b422b 52%, #2c3220 100%);
+        --ui-border: 1px solid rgba(255, 255, 255, 0.12);
+        --ui-radius: 14px;
+        --ui-shadow: 0 0 0 1px #363d28, 0 0 0 2px #2f3522, 0 0 0 3px #282d1d, 0 0 0 4px #212518, 0 0 0 5px #1a1e13, 0 0 0 6px #14170e, 0 0 0 7px #0e100a, 0 0 0 8px #070805, 0 16px 32px rgba(0,0,0,0.88);
+        --ui-bevel: inset 0 2px 2px rgba(255,255,255,0.18), inset 0 -3px 6px rgba(0,0,0,0.8);
+        --buttons-box-border: 1px solid rgba(0, 0, 0, 0.45);
+        --buttons-box-radius: 10px;
+        --buttons-box-padding: 6px;
+        --buttons-box-shadow: inset 0 1px 4px rgba(0,0,0,0.55);
+        --btn-bg: linear-gradient(180deg, #2b3022 0%, #1c2016 55%, #13160f 100%);
+        --btn-color: #fef08a;
+        --btn-active-color: #a3e635;
+        --btn-border: 1px solid #0a0c08;
+        --btn-radius: 5px;
+        --btn-shadow: 0 2px 0 #080a06, 0 3px 4px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.14);
+        --btn-shadow-active: 0 0 0 #080a06, inset 0 2px 4px rgba(0,0,0,0.9);
+        --btn-active-transform: translateY(2px);
+        --toggle-color: #fef08a;
+        --brand-primary: #fef08a;
+        --brand-secondary: #d9f99d;
+        --brand-accent: #eab308;
+        --brand-shadow: 0 1px 2px rgba(0,0,0,0.9);
+    }
+
+    /* 24. Brushed Antique Copper & Brass (COPPER) */
+    html[data-skin="copper"] {
+        --ui-bg:
+            repeating-linear-gradient(0deg, rgba(255,255,255,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 2px),
+            linear-gradient(135deg, #7c3f23 0%, #b4653b 24%, #d98a5c 36%, #8c4828 54%, #5c2c16 78%, #a35832 100%);
+        --ui-border: 1px solid rgba(255, 255, 255, 0.25);
+        --ui-radius: 18px;
+        --ui-shadow: 0 0 0 1px #7c3f23, 0 0 0 2px #6b351d, 0 0 0 3px #5a2c18, 0 0 0 4px #492313, 0 0 0 5px #391b0e, 0 0 0 6px #29130a, 0 0 0 7px #1a0c06, 0 0 0 8px #0d0603, 0 16px 32px rgba(0,0,0,0.88);
+        --ui-bevel: inset 0 2px 3px rgba(254, 215, 170, 0.5), inset 0 -2px 5px rgba(43, 18, 8, 0.8);
+        --btn-bg: linear-gradient(180deg, #2e1d15 0%, #1f130e 52%, #140c08 100%);
+        --btn-color: #fed7aa;
+        --btn-active-color: #fbbf24;
+        --btn-border: 1px solid #0c0705;
+        --btn-radius: 6px;
+        --btn-shadow: 0 2px 0 #090503, 0 3px 5px rgba(0,0,0,0.7), inset 0 1px 0 rgba(254,215,170,0.22);
+        --btn-shadow-active: 0 0 0 #090503, inset 0 2px 4px rgba(0,0,0,0.9);
+        --btn-active-transform: translateY(2px);
+        --toggle-color: #29130a;
+        --brand-primary: #1f0e07;
+        --brand-secondary: #3b1b0e;
+        --brand-accent: #b91c1c;
+        --brand-shadow: 0 1px 0 rgba(254, 215, 170, 0.55);
+    }
+
     /* ========================================================
        MAIN DISPLAY THEMES (data-display)
        ======================================================== */
@@ -2430,40 +2616,41 @@
         --log-cell-border: rgba(255, 68, 68, 0.25);
     }
 
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-blur, .bc-blur-blink, .bc-wavy-blur) .scanner-display #mini-log-table {
+    /* Sync Bad Contact Glitches to the entire Log Container (including Scrollbar) AND the 24h Clock */
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-blur, .bc-blur-blink, .bc-wavy-blur) .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
         filter: blur(2.2px);
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-deep-blur .scanner-display #mini-log-table {
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-deep-blur .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
         filter: blur(2.9px);
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-fuzzy, .bc-flicker, .bc-tv-snow) .scanner-display #mini-log-table {
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-fuzzy, .bc-flicker, .bc-tv-snow) .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
         filter: blur(1.2px);
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wobble .scanner-display #mini-log-table {
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wobble .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
         animation: bcWobbleSub 0.46s steps(2, end) forwards;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-fuzzy .scanner-display #mini-log-table {
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-fuzzy .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
         animation: bcFuzzySub 0.58s ease-in-out forwards;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-flicker .scanner-display #mini-log-table {
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-flicker .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
         animation: bcFlickerSub 0.62s steps(1, end) forwards;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-off .scanner-display #mini-log-table {
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-off .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
         animation: bcTvOffSub 1.35s ease-in-out forwards;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-fast-blink, .bc-blur-blink) .scanner-display #mini-log-table {
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-fast-blink, .bc-blur-blink) .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
         animation: bcFastBlinkSub 0.64s steps(1, end) forwards;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-wavy, .bc-wavy-blur) .scanner-display #mini-log-table {
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-wavy, .bc-wavy-blur) .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
         animation: bcWavySub 0.82s ease-in-out forwards;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wavy-blink .scanner-display #mini-log-table {
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wavy-blink .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
         animation: bcWavySub 0.78s ease-in-out forwards, bcFastBlinkSub 0.78s steps(1, end) forwards;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-snow .scanner-display #mini-log-table {
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-snow .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
         animation: bcSnowDropSub 0.86s steps(2, end) forwards;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-snow-wavy .scanner-display #mini-log-table {
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-snow-wavy .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
         animation: bcWavySub 0.86s ease-in-out forwards, bcSnowDropSub 0.86s steps(2, end) forwards;
     }
 </style>
@@ -2653,7 +2840,7 @@
                         <p>The primary controls at the top are arranged into two dedicated rows: <span class="manual-key">AUDIO</span> and <span class="manual-key">DISPLAY</span> on their own row at the very top, followed by <span class="manual-key">LOG IN</span>, <span class="manual-key">LOG OUT</span>, <span class="manual-key">BRAND</span>, and <span class="manual-key">GUIDE</span> on the row directly beneath:</p>
                         <ul class="manual-list">
                             <li><span class="manual-key">AUDIO</span> Connects or disconnects the live scanner audio stream. Its inline LED turns green when active and enables real-time audio modulation detection.</li>
-                            <li><span class="manual-key">DISPLAY</span> Powers the unified scanner screen and integrated live history log ON or OFF in unison. Turning it ON randomly triggers one of <strong>6 synchronized hardware start-up boot animations</strong> (without repeating the same animation twice in a row): <em>AV1 / SCART</em>, <em>RF TUNE // LOCK</em>, <em>LCD SELF-TEST 8888</em>, <em>CRT RASTER SCAN</em>, <em>CAPACITOR WARMUP</em>, or <em>V-HOLD SYNC</em>. Turning it OFF immediately cuts the screen to <strong>pure black across all themes</strong> and collapses it into a <strong>crisp white SCART CRT horizontal line and phosphor center dot</strong>.</li>
+                            <li><span class="manual-key">DISPLAY</span> Powers the unified scanner screen, 24-hour clock, and integrated live history log ON or OFF in unison. Turning it ON randomly triggers one of <strong>6 synchronized hardware start-up boot animations</strong>: <em>AV1 / SCART</em>, <em>RF TUNE // LOCK</em>, <em>LCD SELF-TEST 8888</em>, <em>CRT RASTER SCAN</em>, <em>CAPACITOR WARMUP</em>, or <em>V-HOLD SYNC</em>. Turning it OFF immediately cuts the screen to <strong>pure black across all themes</strong> and collapses it into a <strong>crisp white SCART CRT horizontal line and phosphor center dot</strong>.</li>
                             <li><span class="manual-key">LOG IN</span> Opens the Super User password prompt so you can remotely control scanner keys. Viewing the display, listening to audio, and changing themes work without logging in.</li>
                             <li><span class="manual-key">LOG OUT</span> Ends your active ProScan Super User control session.</li>
                             <li><span class="manual-key">BRAND</span> Opens the Custom Brand dialog to personalise the centre faceplate badge (up to 10 characters, automatically followed by <strong>RADIOS</strong>). If a custom brand is already active, tapping <span class="manual-key">BRAND</span> immediately removes it.</li>
@@ -2672,7 +2859,7 @@
 
                     <div class="manual-section">
                         <h3>3. Display Colours &amp; Surface Textures (Hold DISP Colour Button)</h3>
-                        <p>Tap <span class="manual-key">DISP: [COLOUR]</span> to cycle through <strong>8 main display colour themes</strong> (<em>SOFT</em>, <em>LCD GREEN</em>, <em>BRT GREEN</em>, <em>LCD BLUE</em>, <em>LCD AMBER</em>, <em>OLED BRT</em>, <em>TERM</em>, and <em>PAPER</em>). <strong>Press and hold (0.5s long press)</strong> on the <span class="manual-key">DISP: [COLOUR]</span> button to cycle through <strong>10 screen surface textures</strong>:</p>
+                        <p>Tap <span class="manual-key">DISP: [COLOUR]</span> to cycle through <strong>8 main display colour themes</strong> (<em>SOFT</em>, <em>LCD GREEN</em>, <em>BRT GREEN</em>, <em>LCD BLUE</em>, <em>LCD AMBER</em>, <em>OLED BRT</em>, <em>TERM</em>, and <em>PAPER</em>). <strong>Press and hold (0.5s long press with haptic vibration)</strong> on the <span class="manual-key">DISP: [COLOUR]</span> button to cycle through <strong>10 screen surface textures</strong>:</p>
                         <ul class="manual-list">
                             <li><strong>RETRO CRT:</strong> Horizontal cathode scanlines with a recessed tube vignette.</li>
                             <li><strong>DOT MATRIX:</strong> Classic 3×3px dot-matrix grid with crisp pixelated rendering.</li>
@@ -2682,8 +2869,8 @@
                             <li><strong>GLOSS GLASS:</strong> Specular angled glass reflection over the display.</li>
                             <li><strong>SMOOTH:</strong> Clean, untextured high-clarity display surface.</li>
                             <li><strong>CRACKED LCD:</strong> Shattered spiderweb glass fracture lines with a dark liquid-crystal bruise—procedurally randomized every time it is selected.</li>
-                            <li><strong>BAD CONTACT:</strong> Smooth screen with a randomized loose-ribbon fault simulator that periodically fires hardware glitches and CRT static snow.</li>
-                            <li><strong>CRACK + GLITCH:</strong> Combines a freshly randomized <strong>CRACKED LCD</strong> fracture pattern with <strong>BAD CONTACT</strong> random text glitches.</li>
+                            <li><strong>BAD CONTACT:</strong> Smooth screen with a randomized loose-ribbon fault simulator that periodically glitches the readout, clock, log, and scrollbar.</li>
+                            <li><strong>CRACK + GLITCH:</strong> Combines a freshly randomized <strong>CRACKED LCD</strong> fracture pattern with <strong>BAD CONTACT</strong> random glitches.</li>
                         </ul>
                     </div>
 
@@ -2703,19 +2890,20 @@
                     </div>
 
                     <div class="manual-section">
-                        <h3>5. Text Colours, Skins, Brightness &amp; Log Transitions</h3>
+                        <h3>5. Text Colours, 24 Realistic Skins, Hit Counter &amp; Log FX</h3>
                         <ul class="manual-list">
-                            <li><span class="manual-key">TXT: [COLOUR]</span> <strong>Short Tap</strong> cycles the <strong>Main Display Text Colour</strong> (<em>AUTO</em>, <em>SOFT</em>, <em>WHITE</em>, <em>GREEN</em>, <em>AMBER</em>, <em>CYAN</em>, <em>INK</em>, <em>RED</em>). <strong>Long Press (0.5s)</strong> independently cycles the <strong>Log Text Colour</strong> through the same palette.</li>
+                            <li><strong>Frequency Hit Counter:</strong> The live log automatically tallies how many times each frequency has been logged in <code>History Log.txt</code> and displays a compact badge (e.g. <span class="manual-key">×4</span>) next to repeat channels.</li>
+                            <li><span class="manual-key">TXT: [COLOUR]</span> <strong>Short Tap</strong> cycles the <strong>Main Display Text Colour</strong> (<em>AUTO</em>, <em>SOFT</em>, <em>WHITE</em>, <em>GREEN</em>, <em>AMBER</em>, <em>CYAN</em>, <em>INK</em>, <em>RED</em>). <strong>Long Press (0.5s with haptic vibration)</strong> independently cycles the <strong>Log &amp; Clock Text Colour</strong> through the same palette.</li>
                             <li><span class="manual-key">FX: [EFFECT]</span> Cycles how new log rows animate in (with an instant preview on the top row): <em>BLOCK</em>, <em>SCROLL</em>, <em>BOARD</em>, <em>TYPE</em>, <em>GLOW</em>, and <em>OFF</em>.</li>
                             <li><span class="manual-key">DISP: 100%</span> Cycles display brightness through <strong>100%</strong>, <strong>80%</strong>, <strong>60%</strong>, <strong>40%</strong>, and <strong>20%</strong>.</li>
-                            <li><span class="manual-key">SKIN: [NAME]</span> Cycles through <strong>18 hardware chassis skins</strong>.</li>
+                            <li><span class="manual-key">SKIN: [NAME]</span> Cycles through <strong>24 hardware chassis skins</strong>, including realistic <em>CARBON</em>, <em>TITAN</em>, <em>PEBBLE</em>, <em>WOOD</em>, <em>TACTIC</em>, and <em>COPPER</em> finishes.</li>
                             <li><span class="manual-key">BG: [NAME]</span> Cycles the outer environment backdrop through <strong>8 styles</strong>.</li>
                         </ul>
                     </div>
 
                     <div class="manual-section">
                         <h3>6. Numeric Keypad &amp; 10-Slot Favourite Presets (0–9)</h3>
-                        <p>Numeric keys <span class="manual-key">0</span>–<span class="manual-key">9</span> serve as both scanner keypad buttons and <strong>10 favourite theme preset slots</strong> (storing Skin, Display Colour, Display Texture, Display Text Colour, Log Text Colour, Log FX, Background, Brightness, and Custom Brand):</p>
+                        <p>Numeric keys <span class="manual-key">0</span>–<span class="manual-key">9</span> serve as both scanner keypad buttons and <strong>10 favourite theme preset slots</strong> (with haptic vibration feedback on long press):</p>
                         <ul class="manual-list">
                             <li><strong>Short Tap (0–9, . / NO, E / YES):</strong> Sends standard numeric digits, decimal/No, or Enter/Yes to the scanner.</li>
                             <li><strong>Long Press (0.5s) on an Empty Key (0–9):</strong> Saves your current complete look to that number (<span class="manual-key">FAV X: SAVED</span>).</li>
@@ -2739,9 +2927,10 @@
                 <div class="login-note">Scanner display and audio remain available.</div>
             </div>
 
-            <!-- Unified Display + Expanded Integrated Live Log -->
+            <!-- Unified Display + 24h Clock + Expanded Integrated Live Log -->
             <div class="scanner-display">
                 <div id="display-font-hud">TEX: RETRO CRT</div>
+                <div id="display-clock-hud" class="disconnected">00:00:00</div>
                 <img id="custom-imgd" class="disconnected" alt="">
                 <img id="custom-imgf" class="disconnected" alt="">
 
@@ -2895,7 +3084,13 @@
         { id: 'armycamo', name: 'ARMY' },
         { id: 'desertcamo', name: 'SAND' },
         { id: 'metal', name: 'METAL' },
-        { id: 'silver', name: 'SILVER' }
+        { id: 'silver', name: 'SILVER' },
+        { id: 'carbon', name: 'CARBON' },
+        { id: 'titanium', name: 'TITAN' },
+        { id: 'bakelite', name: 'PEBBLE' },
+        { id: 'wood', name: 'WOOD' },
+        { id: 'milspec', name: 'TACTIC' },
+        { id: 'copper', name: 'COPPER' }
     ];
 
     const displays = [
@@ -2986,7 +3181,52 @@
     ];
     let badContactTimer = null;
     let badContactActiveTimer = null;
-/* Procedural Random Cracked LCD Pattern Generator */
+/* Haptic Vibration Feedback for Long Presses */
+    function triggerHaptic(pattern) {
+        try {
+            if (navigator && typeof navigator.vibrate === 'function') {
+                navigator.vibrate(pattern || 35);
+            }
+        } catch (e) {}
+    }
+
+    /* Inject fixed-width alignment for .freq-hit-badge so all channel names start on a dead-straight vertical line */
+    (function injectHitBadgeAlignmentCss() {
+        const st = document.createElement('style');
+        st.textContent = `
+            .freq-hit-badge {
+                display: inline-block !important;
+                width: 42px !important;
+                text-align: center !important;
+                font-size: 8.5px !important;
+                font-weight: 800 !important;
+                padding: 0 2px !important;
+                margin-right: 5px !important;
+                border-radius: 3px !important;
+                border: 1px solid var(--log-header-text) !important;
+                color: var(--log-header-text) !important;
+                opacity: 0.92 !important;
+                vertical-align: baseline !important;
+                box-sizing: border-box !important;
+            }
+        `;
+        document.head.appendChild(st);
+    })();
+
+    /* Live 24-Hour Digital Clock in Top-Right of Display */
+    function updateDisplayClock() {
+        const clockEl = document.getElementById('display-clock-hud');
+        if (!clockEl) return;
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2, '0');
+        const mm = String(now.getMinutes()).padStart(2, '0');
+        const ss = String(now.getSeconds()).padStart(2, '0');
+        clockEl.innerText = hh + ':' + mm + ':' + ss;
+    }
+    setInterval(updateDisplayClock, 1000);
+    updateDisplayClock();
+
+    /* Procedural Random Cracked LCD Pattern Generator */
     function generateRandomCrackPattern() {
         const W = 440;
         const H = 180;
@@ -3371,6 +3611,7 @@
             holdTimer = setTimeout(function () {
                 holdTimer = null;
                 longFired = true;
+                triggerHaptic(35);
                 onLongPress();
             }, HOLD_MS);
         });
@@ -3528,6 +3769,7 @@
 
                 loadTimer = setTimeout(function () {
                     longPressTriggered = true;
+                    triggerHaptic(35);
                     const presets = getSavedPresets();
 
                     if (!presets[slot]) {
@@ -3538,6 +3780,7 @@
                         showDisplayHud('FAV ' + slot + ': LOADED (HOLD=SAVE)', 2400);
 
                         saveTimer = setTimeout(function () {
+                            triggerHaptic([45, 60, 45]);
                             applyThemeSnapshot(prePressSnapshot);
                             savePresetToSlot(slot, prePressSnapshot);
                             showDisplayHud('FAV ' + slot + ': OVERWRITTEN!', 1800);
@@ -3842,6 +4085,7 @@
         const logWrap = document.querySelector('.log-wrapper');
         const imgD = document.getElementById('custom-imgd');
         const imgF = document.getElementById('custom-imgf');
+        const clockEl = document.getElementById('display-clock-hud');
         const root = document.documentElement;
 
         clearTimeout(tvPowerAnimTimer);
@@ -3870,6 +4114,10 @@
             root.style.setProperty('--ui-brightness', brightnessLevels[currentUiBrightnessLevel]);
             if (imgD) imgD.classList.remove('disconnected');
             if (imgF) imgF.classList.remove('disconnected');
+            if (clockEl) {
+                updateDisplayClock();
+                clockEl.classList.remove('disconnected');
+            }
             lastOrigImgUpdateTime = Date.now();
             setupScreenMirror();
             syncDisplay();
@@ -3918,6 +4166,7 @@
                     root.style.setProperty('--ui-brightness', 0);
                     if (imgD) imgD.classList.add('disconnected');
                     if (imgF) imgF.classList.add('disconnected');
+                    if (clockEl) clockEl.classList.add('disconnected');
                     document.getElementById('mini-log-data').innerHTML = '<tr><td colspan="5" style="text-align: center; opacity: 0.5; font-weight: bold;">OFF LINE. Press DISPLAY to start.</td></tr>';
                 }
             }, 580);
@@ -4236,6 +4485,24 @@
             let dataLines = lines.filter(line => line.includes(',') && !line.toLowerCase().includes('frequency'));
             if (dataLines.length === 0) return;
 
+            /* Calculate the sequential (running) hit count for each transmission row in chronological order */
+            const freqRunningCounts = {};
+            const rowHitNumber = new Array(dataLines.length);
+            for (let k = 0; k < dataLines.length; k++) {
+                let firstComma = dataLines[k].indexOf(',');
+                if (firstComma > 0) {
+                    let fKey = dataLines[k].slice(0, firstComma).trim();
+                    if (fKey && fKey !== "---") {
+                        freqRunningCounts[fKey] = (freqRunningCounts[fKey] || 0) + 1;
+                        rowHitNumber[k] = freqRunningCounts[fKey];
+                    } else {
+                        rowHitNumber[k] = 1;
+                    }
+                } else {
+                    rowHitNumber[k] = 1;
+                }
+            }
+
             for (let i = dataLines.length - 1; i >= 0; i--) {
                 if (rowsAdded >= 25) break;
 
@@ -4272,15 +4539,17 @@
                     }
 
                     let rowClass = (isNew && !isFirstLoad) ? "new-log-row" : "";
+                    let hits = rowHitNumber[i] || 1;
+                    let hitBadgeHTML = `<span class="freq-hit-badge">×${hits}</span>`;
 
                     if (freq !== "---" && freq !== "") {
                         tableHTML += `
                             <tr class="${rowClass}">
                                 <td title="${displayTime}">${displayTime}</td>
-                                <td title="${freq}">${freq}</td>
+                                <td title="${freq} (Hit #${hits})">${freq}</td>
                                 <td title="${tone}">${tone}</td>
                                 <td title="${dur}">${dur}</td>
-                                <td title="${name}">${name}</td>
+                                <td title="(Hit #${hits}) ${name}">${hitBadgeHTML}${name}</td>
                             </tr>
                         `;
                         rowsAdded++;
@@ -4306,12 +4575,12 @@
             if (error && error.name === 'AbortError') return;
             if (isDisplayOn && !document.getElementById('imgd')) {
                 document.getElementById('mini-log-data').innerHTML = `
-                    <tr class="new-log-row"><td>20:44:12</td><td>125.8500</td><td></td><td>00:02</td><td>Cardiff Airport</td></tr>
-                    <tr><td>20:42:08</td><td>135.2500</td><td></td><td>00:02</td><td>Ldn Ctrl (Pemb)</td></tr>
-                    <tr><td>20:41:19</td><td>134.2583</td><td></td><td>00:03</td><td>Shannon Ctrl</td></tr>
-                    <tr><td>20:39:51</td><td>128.5000</td><td></td><td>00:04</td><td>Bristol Approach</td></tr>
-                    <tr><td>20:38:04</td><td>119.1500</td><td></td><td>00:02</td><td>Cardiff Tower</td></tr>
-                    <tr><td>20:36:22</td><td>121.5000</td><td></td><td>00:01</td><td>Emergency Guard</td></tr>
+                    <tr class="new-log-row"><td>20:44:12</td><td>125.8500</td><td></td><td>00:02</td><td><span class="freq-hit-badge">×4</span>Cardiff Airport</td></tr>
+                    <tr><td>20:42:08</td><td>135.2500</td><td></td><td>00:02</td><td><span class="freq-hit-badge">×2</span>Ldn Ctrl (Pemb)</td></tr>
+                    <tr><td>20:41:19</td><td>134.2583</td><td></td><td>00:03</td><td><span class="freq-hit-badge">×1</span>Shannon Ctrl</td></tr>
+                    <tr><td>20:39:51</td><td>128.5000</td><td></td><td>00:04</td><td><span class="freq-hit-badge">×3</span>Bristol Approach</td></tr>
+                    <tr><td>20:38:04</td><td>119.1500</td><td></td><td>00:02</td><td><span class="freq-hit-badge">×1</span>Cardiff Tower</td></tr>
+                    <tr><td>20:36:22</td><td>121.5000</td><td></td><td>00:01</td><td><span class="freq-hit-badge">×1</span>Emergency Guard</td></tr>
                 `;
             }
         });
@@ -4329,8 +4598,6 @@
 
         let val = brightnessLevels[currentUiBrightnessLevel];
         document.getElementById('btn-brt-toggle').innerText = `DISP:\n${Math.round(val * 100)}%`;
-
-        prepareWakeLockMedia();
 
         syncDisplay();
         setTimeout(function() {
