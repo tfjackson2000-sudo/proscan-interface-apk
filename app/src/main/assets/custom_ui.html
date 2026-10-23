@@ -4865,4 +4865,227 @@
 })();
 </script>
 </body>
+
+<script>
+(function() {
+  function initTapeDeck() {
+    var topControls = document.querySelector('.top-controls');
+    if (!topControls || document.getElementById('custom-tape-btn')) return;
+
+    var FOLDER_ID = '1Per729uk121192-G7N82X_y99X19t0mG';
+    var apiKey = localStorage.getItem('gdrive_api_key') || '';
+    var tracks = [];
+    var currentIdx = -1;
+    var player = new Audio();
+
+    // 1. Add Styles
+    if (!document.getElementById('tape-deck-styles')) {
+      var st = document.createElement('style');
+      st.id = 'tape-deck-styles';
+      st.textContent = [
+        '#custom-tape-btn.active .led-indicator { background: #00ff66 !important; box-shadow: 0 0 8px #00ff66 !important; }',
+        '#custom-tape-btn.active .led-text { color: #00ff66 !important; }',
+        '#tape-deck-modal { display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(8, 12, 10, 0.96); z-index: 9999; flex-direction: column; padding: 10px; box-sizing: border-box; font-family: monospace; color: #00ff66; border: 2px solid #00ff66; }',
+        '#tape-deck-modal.open { display: flex; }',
+        '.td-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #00ff66; padding-bottom: 6px; margin-bottom: 6px; font-size: 15px; font-weight: bold; }',
+        '.td-mini-btn { background: #112211; color: #00ff66; border: 1px solid #00ff66; padding: 3px 8px; font-family: monospace; font-size: 13px; cursor: pointer; margin-left: 4px; }',
+        '.td-status-bar { background: #051005; border: 1px solid #005522; padding: 6px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }',
+        '.td-track-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 72%; }',
+        '.td-controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }',
+        '.td-ctrl-btn { background: #112211; color: #00ff66; border: 1px solid #00aa44; padding: 8px 4px; font-family: monospace; font-size: 14px; font-weight: bold; cursor: pointer; text-align: center; }',
+        '.td-ctrl-btn.playing { background: #00ff66; color: #000; }',
+        '.td-list { flex: 1; overflow-y: auto; border: 1px solid #004411; background: #030803; padding: 4px; }',
+        '.td-item { padding: 7px 6px; border-bottom: 1px solid #0a220a; cursor: pointer; display: flex; justify-content: space-between; font-size: 13px; color: #88cc88; }',
+        '.td-item.selected { background: #003311; color: #ffffff; font-weight: bold; border-left: 3px solid #00ff66; }'
+      ].join('\n');
+      document.head.appendChild(st);
+    }
+
+    // 2. Create Top Bar TAPE Button
+    var tapeBtn = document.createElement('button');
+    tapeBtn.id = 'custom-tape-btn';
+    tapeBtn.className = 'led-btn';
+    tapeBtn.innerHTML = '<div class="led-indicator"></div><span class="led-text">TAPE</span>';
+    topControls.insertBefore(tapeBtn, topControls.firstChild);
+
+    // 3. Create Tape Deck Overlay Window
+    var modal = document.createElement('div');
+    modal.id = 'tape-deck-modal';
+    modal.innerHTML = [
+      '<div class="td-header">',
+      '  <span>ARCHIVE TAPE DECK</span>',
+      '  <div>',
+      '    <button type="button" class="td-mini-btn" id="td-key-btn">API KEY</button>',
+      '    <button type="button" class="td-mini-btn" id="td-refresh-btn">SYNC</button>',
+      '    <button type="button" class="td-mini-btn" id="td-close-btn">X</button>',
+      '  </div>',
+      '</div>',
+      '<div class="td-status-bar">',
+      '  <div class="td-track-title" id="td-now-playing">READY</div>',
+      '  <div id="td-timer">00:00 / 00:00</div>',
+      '</div>',
+      '<div class="td-controls">',
+      '  <button type="button" class="td-ctrl-btn" id="td-prev-btn">|&lt;&lt;</button>',
+      '  <button type="button" class="td-ctrl-btn" id="td-play-btn">PLAY</button>',
+      '  <button type="button" class="td-ctrl-btn" id="td-stop-btn">STOP</button>',
+      '  <button type="button" class="td-ctrl-btn" id="td-next-btn">&gt;&gt;|</button>',
+      '</div>',
+      '<div class="td-list" id="td-file-list">Tap API KEY to configure Google Drive access.</div>'
+    ].join('');
+
+    var screenHost = document.querySelector('.bezel') || document.getElementById('lcd-screen') || document.querySelector('.chassis') || document.body;
+    if (getComputedStyle(screenHost).position === 'static') {
+      screenHost.style.position = 'relative';
+    }
+    screenHost.appendChild(modal);
+
+    // 4. Elements & Helpers
+    var nowPlayingEl = modal.querySelector('#td-now-playing');
+    var timerEl = modal.querySelector('#td-timer');
+    var listEl = modal.querySelector('#td-file-list');
+    var playBtn = modal.querySelector('#td-play-btn');
+
+    function fmtTime(sec) {
+      if (!sec || isNaN(sec)) return '00:00';
+      var m = Math.floor(sec / 60);
+      var s = Math.floor(sec % 60);
+      return (m < 10 ? '0' + m : m) + ':' + (s < 10 ? '0' + s : s);
+    }
+
+    function renderTracks() {
+      listEl.innerHTML = '';
+      if (!tracks.length) {
+        listEl.textContent = 'No audio recordings found in Drive folder.';
+        return;
+      }
+      tracks.forEach(function(item, idx) {
+        var row = document.createElement('div');
+        row.className = 'td-item' + (idx === currentIdx ? ' selected' : '');
+        var cleanName = item.name.replace(/\.(mp3|wav|m4a)$/i, '');
+        var dateStr = item.createdTime ? new Date(item.createdTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
+        row.innerHTML = '<span>' + cleanName + '</span><span>' + dateStr + '</span>';
+        row.addEventListener('click', function() {
+          startTrack(idx);
+        });
+        listEl.appendChild(row);
+      });
+    }
+
+    function fetchRecordings() {
+      if (!apiKey) {
+        listEl.textContent = 'Missing Google Drive API Key. Tap [API KEY] above.';
+        return;
+      }
+      listEl.textContent = 'Loading recordings from Google Drive...';
+      var q = encodeURIComponent("'" + FOLDER_ID + "' in parents and trashed = false");
+      var url = 'https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,createdTime,mimeType)&orderBy=createdTime+desc&pageSize=100&key=' + encodeURIComponent(apiKey);
+
+      fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.error) {
+            listEl.textContent = 'Drive Error: ' + (data.error.message || 'Check API Key');
+            return;
+          }
+          tracks = (data.files || []).filter(function(f) {
+            return /\.(mp3|wav|m4a|ogg)$/i.test(f.name) || (f.mimeType && f.mimeType.indexOf('audio/') === 0);
+          });
+          renderTracks();
+        })
+        .catch(function() {
+          listEl.textContent = 'Network error connecting to Google Drive.';
+        });
+    }
+
+    function startTrack(idx) {
+      if (idx < 0 || idx >= tracks.length) return;
+      currentIdx = idx;
+      var t = tracks[idx];
+      nowPlayingEl.textContent = t.name.replace(/\.(mp3|wav|m4a)$/i, '');
+      player.src = 'https://www.googleapis.com/drive/v3/files/' + t.id + '?alt=media&key=' + encodeURIComponent(apiKey);
+      player.play().then(function() {
+        playBtn.textContent = 'PAUSE';
+        playBtn.classList.add('playing');
+      }).catch(function() {
+        nowPlayingEl.textContent = 'ERR: CANNOT STREAM FILE';
+      });
+      renderTracks();
+    }
+
+    // 5. Button Events
+    tapeBtn.addEventListener('click', function() {
+      var isOpen = modal.classList.toggle('open');
+      tapeBtn.classList.toggle('active', isOpen);
+      if (isOpen && tracks.length === 0 && apiKey) {
+        fetchRecordings();
+      }
+    });
+
+    modal.querySelector('#td-close-btn').addEventListener('click', function() {
+      modal.classList.remove('open');
+      tapeBtn.classList.remove('active');
+    });
+
+    modal.querySelector('#td-key-btn').addEventListener('click', function() {
+      var entered = prompt('Enter Google Drive API Key:', apiKey);
+      if (entered !== null) {
+        apiKey = entered.trim();
+        localStorage.setItem('gdrive_api_key', apiKey);
+        fetchRecordings();
+      }
+    });
+
+    modal.querySelector('#td-refresh-btn').addEventListener('click', fetchRecordings);
+
+    playBtn.addEventListener('click', function() {
+      if (!player.src && tracks.length > 0) {
+        startTrack(0);
+      } else if (player.paused) {
+        player.play();
+        playBtn.textContent = 'PAUSE';
+        playBtn.classList.add('playing');
+      } else {
+        player.pause();
+        playBtn.textContent = 'PLAY';
+        playBtn.classList.remove('playing');
+      }
+    });
+
+    modal.querySelector('#td-stop-btn').addEventListener('click', function() {
+      player.pause();
+      player.currentTime = 0;
+      playBtn.textContent = 'PLAY';
+      playBtn.classList.remove('playing');
+    });
+
+    modal.querySelector('#td-prev-btn').addEventListener('click', function() {
+      if (currentIdx > 0) startTrack(currentIdx - 1);
+    });
+
+    modal.querySelector('#td-next-btn').addEventListener('click', function() {
+      if (currentIdx + 1 < tracks.length) startTrack(currentIdx + 1);
+    });
+
+    player.addEventListener('timeupdate', function() {
+      timerEl.textContent = fmtTime(player.currentTime) + ' / ' + fmtTime(player.duration);
+    });
+
+    player.addEventListener('ended', function() {
+      if (currentIdx + 1 < tracks.length) {
+        startTrack(currentIdx + 1);
+      } else {
+        playBtn.textContent = 'PLAY';
+        playBtn.classList.remove('playing');
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTapeDeck);
+  } else {
+    initTapeDeck();
+  }
+  setTimeout(initTapeDeck, 800);
+})();
+</script>
 </html>
