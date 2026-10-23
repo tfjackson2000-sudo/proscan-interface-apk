@@ -5,15 +5,10 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
-import android.media.AudioAttributes;
-import android.media.MediaPlayer;
-import android.net.Uri;
-import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.PowerManager;
 import android.text.InputType;
 import android.util.Base64;
 import android.view.View;
@@ -47,12 +42,7 @@ public class MainActivity extends Activity {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private String embeddedUiBase64 = null;
     private boolean userWakeLockEnabled = false;
-    private String activeBaseUrl = "";
-
-    private MediaPlayer bgPlayer = null;
-    private boolean isBgStreamPlaying = false;
-    private PowerManager.WakeLock cpuWakeLock = null;
-    private WifiManager.WifiLock wifiLock = null;
+    private boolean bgAudioModeEnabled = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,6 +50,12 @@ public class MainActivity extends Activity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemUI();
+
+        if (Build.VERSION.SDK_INT >= 33) {
+            try {
+                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 101);
+            } catch (Exception ignored) {}
+        }
 
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
         loadEmbeddedUiAsset();
@@ -75,8 +71,8 @@ public class MainActivity extends Activity {
 
             @Override
             protected void onWindowVisibilityChanged(int visibility) {
-                /* Keep WebView timers alive if background stream is active */
-                if (isBgStreamPlaying) {
+                /* When VLC/Screen-Off mode is active, trick WebView into thinking it's still visible so audio never pauses! */
+                if (bgAudioModeEnabled) {
                     super.onWindowVisibilityChanged(View.VISIBLE);
                 } else {
                     super.onWindowVisibilityChanged(visibility);
@@ -102,129 +98,20 @@ public class MainActivity extends Activity {
         }
     }
 
-    private String getActiveStreamUrl() {
-        String base = activeBaseUrl;
-        if (base == null || base.isEmpty()) {
-            base = webView.getUrl();
-        }
-        if (base == null || base.isEmpty()) return "";
-        base = base.replaceAll("/+$", "");
-        return base + "/stream";
-    }
-
-    private void acquireBackgroundLocks() {
+    private void setBgServiceRunning(boolean enable) {
+        bgAudioModeEnabled = enable;
+        Intent svc = new Intent(this, AudioKeepAliveService.class);
         try {
-            if (cpuWakeLock == null) {
-                PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-                if (pm != null) {
-                    cpuWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ProScan:BgAudioLock");
-                    cpuWakeLock.setReferenceCounted(false);
+            if (enable) {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    startForegroundService(svc);
+                } else {
+                    startService(svc);
                 }
-            }
-            if (cpuWakeLock != null && !cpuWakeLock.isHeld()) {
-                cpuWakeLock.acquire();
-            }
-            if (wifiLock == null) {
-                WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
-                if (wm != null) {
-                    wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "ProScan:BgWifiLock");
-                    wifiLock.setReferenceCounted(false);
-                }
-            }
-            if (wifiLock != null && !wifiLock.isHeld()) {
-                wifiLock.acquire();
+            } else {
+                stopService(svc);
             }
         } catch (Exception ignored) {}
-    }
-
-    private void releaseBackgroundLocks() {
-        try {
-            if (cpuWakeLock != null && cpuWakeLock.isHeld()) cpuWakeLock.release();
-            if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
-        } catch (Exception ignored) {}
-    }
-
-    private void startNativeBackgroundStream() {
-        stopNativeBackgroundStream();
-        String streamUrl = getActiveStreamUrl();
-        if (streamUrl.isEmpty()) {
-            Toast.makeText(this, "Stream URL not ready", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        try {
-            acquireBackgroundLocks();
-            bgPlayer = new MediaPlayer();
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                bgPlayer.setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build());
-            }
-            bgPlayer.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
-            bgPlayer.setDataSource(streamUrl);
-            bgPlayer.setOnPreparedListener(mp -> {
-                mp.start();
-                isBgStreamPlaying = true;
-                updateVlcBtnState(true);
-                Toast.makeText(MainActivity.this, "Background Stream ON (Plays with screen off)", Toast.LENGTH_SHORT).show();
-            });
-            bgPlayer.setOnErrorListener((mp, what, extra) -> {
-                stopNativeBackgroundStream();
-                Toast.makeText(MainActivity.this, "Stream error — Hold VLC button to open VLC app", Toast.LENGTH_LONG).show();
-                return true;
-            });
-            bgPlayer.prepareAsync();
-            updateVlcBtnState(true);
-        } catch (Exception e) {
-            stopNativeBackgroundStream();
-            launchExternalVlcApp();
-        }
-    }
-
-    private void stopNativeBackgroundStream() {
-        isBgStreamPlaying = false;
-        if (bgPlayer != null) {
-            try {
-                if (bgPlayer.isPlaying()) bgPlayer.stop();
-            } catch (Exception ignored) {}
-            try {
-                bgPlayer.reset();
-                bgPlayer.release();
-            } catch (Exception ignored) {}
-            bgPlayer = null;
-        }
-        releaseBackgroundLocks();
-        updateVlcBtnState(false);
-    }
-
-    private void updateVlcBtnState(final boolean active) {
-        mainHandler.post(() -> {
-            if (webView != null) {
-                String js = "var vb=document.getElementById('btn-vlc-toggle');if(vb){vb.classList.toggle('active'," + active + ");}";
-                webView.evaluateJavascript(js, null);
-            }
-        });
-    }
-
-    private void launchExternalVlcApp() {
-        stopNativeBackgroundStream();
-        String streamUrl = getActiveStreamUrl();
-        if (streamUrl.isEmpty()) return;
-        try {
-            Intent vlcIntent = new Intent(Intent.ACTION_VIEW);
-            vlcIntent.setPackage("org.videolan.vlc");
-            vlcIntent.setDataAndTypeAndNormalize(Uri.parse(streamUrl), "audio/*");
-            vlcIntent.putExtra("title", "ProScan Radio Stream");
-            startActivity(vlcIntent);
-            Toast.makeText(this, "Opening in VLC: " + streamUrl, Toast.LENGTH_SHORT).show();
-        } catch (Exception e) {
-            try {
-                Intent fallback = new Intent(Intent.ACTION_VIEW, Uri.parse(streamUrl));
-                startActivity(fallback);
-            } catch (Exception ex) {
-                Toast.makeText(this, "VLC App not found", Toast.LENGTH_SHORT).show();
-            }
-        }
     }
 
     private void loadEmbeddedUiAsset() {
@@ -261,20 +148,13 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void toggleVlcStream() {
+        public void setBackgroundAudioMode(final boolean enabled) {
             mainHandler.post(() -> {
-                if (isBgStreamPlaying || bgPlayer != null) {
-                    stopNativeBackgroundStream();
-                    Toast.makeText(MainActivity.this, "Background Stream OFF", Toast.LENGTH_SHORT).show();
-                } else {
-                    startNativeBackgroundStream();
+                setBgServiceRunning(enabled);
+                if (enabled) {
+                    Toast.makeText(MainActivity.this, "VLC / Screen-Off Stream: ON", Toast.LENGTH_SHORT).show();
                 }
             });
-        }
-
-        @JavascriptInterface
-        public void openExternalVlc() {
-            mainHandler.post(() -> launchExternalVlcApp());
         }
 
         @JavascriptInterface
@@ -284,7 +164,7 @@ public class MainActivity extends Activity {
     }
 
     private void closeAndExitApp() {
-        stopNativeBackgroundStream();
+        setBgServiceRunning(false);
         try {
             if (webView != null) {
                 webView.loadUrl("about:blank");
@@ -391,37 +271,59 @@ public class MainActivity extends Activity {
         js.append("      }\n");
         js.append("    };\n");
 
-        /* 1. Split the AUDIO button on Android into [AUDIO | VLC] */
-        js.append("    var audioBtn = document.getElementById('btn-audio-toggle');\n");
-        js.append("    if (audioBtn && !document.getElementById('btn-vlc-toggle')) {\n");
-        js.append("      var splitWrap = document.createElement('div');\n");
-        js.append("      splitWrap.className = 'split-btn-group';\n");
-        js.append("      audioBtn.parentNode.insertBefore(splitWrap, audioBtn);\n");
-        js.append("      splitWrap.appendChild(audioBtn);\n");
-        js.append("      var vlcBtn = document.createElement('button');\n");
-        js.append("      vlcBtn.id = 'btn-vlc-toggle';\n");
-        js.append("      vlcBtn.type = 'button';\n");
-        js.append("      vlcBtn.className = 'btn state-btn';\n");
-        js.append("      vlcBtn.innerHTML = '<span class=\"inline-led\" id=\"vlc-inline-led\"></span> VLC';\n");
-        js.append("      splitWrap.appendChild(vlcBtn);\n");
-        js.append("      var vTimer = null, vLong = false;\n");
-        js.append("      vlcBtn.addEventListener('pointerdown', function() {\n");
-        js.append("        clearTimeout(vTimer); vLong = false;\n");
-        js.append("        vTimer = setTimeout(function() {\n");
-        js.append("          vTimer = null; vLong = true;\n");
+        /* Single AUDIO button with Short Press (Normal Audio / Off) & Long Press (VLC Screen-Off Mode with Cone Icon) */
+        js.append("    var oldAudioBtn = document.getElementById('btn-audio-toggle');\n");
+        js.append("    if (oldAudioBtn && !oldAudioBtn.__vlcUnifiedHooked) {\n");
+        js.append("      var aBtn = oldAudioBtn.cloneNode(true);\n");
+        js.append("      aBtn.__vlcUnifiedHooked = true;\n");
+        js.append("      oldAudioBtn.parentNode.replaceChild(aBtn, oldAudioBtn);\n");
+        js.append("      var isVlcMode = false;\n");
+        js.append("      function renderAudioLabel() {\n");
+        js.append("        var cone = isVlcMode ? ' <span style=\"color:#ff8c00;font-size:10px;margin-left:2px;\">▲</span>' : '';\n");
+        js.append("        aBtn.innerHTML = '<span class=\"inline-led\" id=\"audio-inline-led\"></span> AUDIO' + cone;\n");
+        js.append("      }\n");
+        js.append("      function setAudioPlaying(play, vlcBg) {\n");
+        js.append("        var player = document.getElementById('audio_player');\n");
+        js.append("        isVlcMode = Boolean(play && vlcBg);\n");
+        js.append("        if (play) {\n");
+        js.append("          isConnected = true;\n");
+        js.append("          if (player && player.paused) { player.play(); if (typeof setupAudioDetection === 'function') setupAudioDetection(); }\n");
+        js.append("          aBtn.classList.add('active');\n");
+        js.append("          if (window.AndroidApp) window.AndroidApp.setBackgroundAudioMode(isVlcMode);\n");
+        js.append("        } else {\n");
+        js.append("          isConnected = false;\n");
+        js.append("          isVlcMode = false;\n");
+        js.append("          if (player && !player.paused) player.pause();\n");
+        js.append("          aBtn.classList.remove('active');\n");
+        js.append("          if (window.AndroidApp) window.AndroidApp.setBackgroundAudioMode(false);\n");
+        js.append("        }\n");
+        js.append("        renderAudioLabel();\n");
+        js.append("      }\n");
+        js.append("      var aTimer = null, aLong = false;\n");
+        js.append("      aBtn.addEventListener('pointerdown', function() {\n");
+        js.append("        clearTimeout(aTimer); aLong = false;\n");
+        js.append("        aTimer = setTimeout(function() {\n");
+        js.append("          aTimer = null; aLong = true;\n");
         js.append("          if (navigator.vibrate) navigator.vibrate(40);\n");
-        js.append("          if (window.AndroidApp) window.AndroidApp.openExternalVlc();\n");
+        js.append("          if (!isConnected) {\n");
+        js.append("            setAudioPlaying(true, true);\n");
+        js.append("          } else {\n");
+        js.append("            setAudioPlaying(true, !isVlcMode);\n");
+        js.append("          }\n");
         js.append("        }, 500);\n");
         js.append("      });\n");
-        js.append("      vlcBtn.addEventListener('pointerup', function() {\n");
-        js.append("        var wasActive = vTimer !== null; clearTimeout(vTimer); vTimer = null;\n");
-        js.append("        if (wasActive && !vLong && window.AndroidApp) window.AndroidApp.toggleVlcStream();\n");
+        js.append("      aBtn.addEventListener('pointerup', function() {\n");
+        js.append("        var wasActive = aTimer !== null; clearTimeout(aTimer); aTimer = null;\n");
+        js.append("        if (wasActive && !aLong) {\n");
+        js.append("          if (!isConnected) setAudioPlaying(true, false);\n");
+        js.append("          else setAudioPlaying(false, false);\n");
+        js.append("        }\n");
         js.append("      });\n");
-        js.append("      vlcBtn.addEventListener('pointerleave', function() { clearTimeout(vTimer); vTimer = null; });\n");
-        js.append("      vlcBtn.addEventListener('pointercancel', function() { clearTimeout(vTimer); vTimer = null; });\n");
+        js.append("      aBtn.addEventListener('pointerleave', function() { clearTimeout(aTimer); aTimer = null; });\n");
+        js.append("      aBtn.addEventListener('pointercancel', function() { clearTimeout(aTimer); aTimer = null; });\n");
         js.append("    }\n");
 
-        /* 2. Inject the dedicated Hardware EXIT button to the right of the RX & LOG LEDs */
+        /* Hardware EXIT button to the right of the RX & LOG LEDs */
         js.append("    var ledsRight = document.querySelector('.top-leds-right');\n");
         js.append("    if (ledsRight && !document.getElementById('btn-hardware-exit')) {\n");
         js.append("      var st = document.createElement('style');\n");
@@ -520,12 +422,10 @@ public class MainActivity extends Activity {
 
     private void connectSmart(String localUrl, String tailscaleUrl) {
         if (!localUrl.isEmpty() && tailscaleUrl.isEmpty()) {
-            activeBaseUrl = localUrl;
             webView.loadUrl(localUrl);
             return;
         }
         if (localUrl.isEmpty() && !tailscaleUrl.isEmpty()) {
-            activeBaseUrl = tailscaleUrl;
             webView.loadUrl(tailscaleUrl);
             return;
         }
@@ -534,11 +434,9 @@ public class MainActivity extends Activity {
             boolean localReachable = isUrlReachable(localUrl, 1500);
             mainHandler.post(() -> {
                 if (localReachable) {
-                    activeBaseUrl = localUrl;
                     Toast.makeText(this, "Connected via Local Wi-Fi", Toast.LENGTH_SHORT).show();
                     webView.loadUrl(localUrl);
                 } else {
-                    activeBaseUrl = tailscaleUrl;
                     Toast.makeText(this, "Switching to Tailscale...", Toast.LENGTH_SHORT).show();
                     webView.loadUrl(tailscaleUrl);
                 }
