@@ -238,19 +238,20 @@ public class MainActivity extends Activity {
         js.append("      }\n");
         js.append("    };\n");
 
-        /* 1. Uniform Recessed Keypad Well + True 3D Contoured Neon Skins + Hide Inline Hit Badge for Full Name Width */
-        js.append("    if (!document.getElementById('proscan-v3-upgrade-css')) {\n");
-        js.append("      var oldSt = document.getElementById('proscan-v2-upgrade-css'); if (oldSt) oldSt.remove();\n");
+        /* 1. Uniform Recessed Keypad Well + True 3D Contoured Neon Skins + Balanced Log Column Widths */
+        js.append("    if (!document.getElementById('proscan-v4-upgrade-css')) {\n");
+        js.append("      var oldSt = document.getElementById('proscan-v3-upgrade-css'); if (oldSt) oldSt.remove();\n");
         js.append("      var st = document.createElement('style');\n");
-        js.append("      st.id = 'proscan-v3-upgrade-css';\n");
+        js.append("      st.id = 'proscan-v4-upgrade-css';\n");
         js.append("      st.textContent = '' +\n");
         js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:7px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
         js.append("        '.freq-hit-badge{display:none!important;}' +\n");
-        js.append("        '#mini-log-table th:nth-child(1),#mini-log-table td:nth-child(1){width:20%!important;}' +\n");
-        js.append("        '#mini-log-table th:nth-child(2),#mini-log-table td:nth-child(2){width:21%!important;}' +\n");
-        js.append("        '#mini-log-table th:nth-child(3),#mini-log-table td:nth-child(3){width:10%!important;}' +\n");
-        js.append("        '#mini-log-table th:nth-child(4),#mini-log-table td:nth-child(4){width:12%!important;}' +\n");
-        js.append("        '#mini-log-table th:nth-child(5),#mini-log-table td:nth-child(5){width:37%!important;}' +\n");
+        js.append("        '#mini-log-table th,#mini-log-table td{padding:3px 2px 3px 4px!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(1),#mini-log-table td:nth-child(1){width:19%!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(2),#mini-log-table td:nth-child(2){width:20%!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(3),#mini-log-table td:nth-child(3){width:13%!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(4),#mini-log-table td:nth-child(4){width:14%!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(5),#mini-log-table td:nth-child(5){width:34%!important;}' +\n");
         js.append("        '#mini-log-table tbody tr{cursor:pointer;}#mini-log-table tbody tr:active{background:rgba(255,255,255,0.15)!important;}' +\n");
         js.append("        'html[data-skin=\"whiteline\"]{--ui-bg:radial-gradient(circle at 50% 12%,#26292e 0%,#121417 65%,#070809 100%)!important;--ui-bevel:inset 0 2px 3px rgba(255,255,255,0.35),inset 0 -3px 6px rgba(0,0,0,0.9)!important;--btn-bg:linear-gradient(180deg,#2e3238 0%,#181a1e 55%,#0d0e11 100%)!important;--btn-border:1px solid rgba(255,255,255,0.75)!important;--btn-shadow:0 3px 0 #94a3b8,0 4px 6px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.45)!important;--btn-shadow-active:0 0 0 #94a3b8,inset 0 2px 5px rgba(0,0,0,0.95)!important;--btn-active-transform:translateY(3px)!important;}' +\n");
         js.append("        'html[data-skin=\"tron\"]{--ui-bg:radial-gradient(circle at 50% 12%,#0c2e36 0%,#06161a 65%,#02080a 100%)!important;--ui-bevel:inset 0 2px 3px rgba(0,255,255,0.4),inset 0 -3px 6px rgba(0,0,0,0.9)!important;--btn-bg:linear-gradient(180deg,#103c47 0%,#071f26 55%,#031014 100%)!important;--btn-border:1px solid #00ffff!important;--btn-shadow:0 3px 0 #008b8b,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(180,255,255,0.45)!important;--btn-shadow-active:0 0 0 #008b8b,inset 0 2px 5px rgba(0,0,0,0.95)!important;--btn-active-transform:translateY(3px)!important;}' +\n");
