@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.speech.tts.TextToSpeech;
 import android.text.InputType;
 import android.view.View;
 import android.view.Window;
@@ -28,6 +29,7 @@ import android.widget.Toast;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -39,6 +41,8 @@ public class MainActivity extends Activity {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean userWakeLockEnabled = false;
     private boolean bgAudioModeEnabled = false;
+    private TextToSpeech tts = null;
+    private boolean ttsReady = false;
 
     private final Runnable periodicInjector = new Runnable() {
         @Override
@@ -64,6 +68,16 @@ public class MainActivity extends Activity {
         }
 
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
+
+        try {
+            tts = new TextToSpeech(getApplicationContext(), status -> {
+                if (status == TextToSpeech.SUCCESS && tts != null) {
+                    tts.setLanguage(Locale.UK);
+                    tts.setSpeechRate(1.05f);
+                    ttsReady = true;
+                }
+            });
+        } catch (Exception ignored) {}
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
@@ -146,6 +160,21 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void speakChannel(final String text) {
+            mainHandler.post(() -> {
+                if (tts != null && ttsReady && text != null && !text.trim().isEmpty()) {
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        Bundle params = new Bundle();
+                        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
+                        tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, params, "proscan_tts");
+                    } else {
+                        tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, null);
+                    }
+                }
+            });
+        }
+
+        @JavascriptInterface
         public void showSystemBars() {
             mainHandler.post(() -> {
                 getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
@@ -166,6 +195,12 @@ public class MainActivity extends Activity {
 
     private void closeAndExitApp() {
         setBgServiceRunning(false);
+        try {
+            if (tts != null) {
+                tts.stop();
+                tts.shutdown();
+            }
+        } catch (Exception ignored) {}
         try {
             if (webView != null) {
                 webView.loadUrl("about:blank");
@@ -238,11 +273,11 @@ public class MainActivity extends Activity {
         js.append("      }\n");
         js.append("    };\n");
 
-        /* 1. Uniform Recessed Keypad Well + True 3D Contoured Neon Skins + Balanced Log Column Widths */
-        js.append("    if (!document.getElementById('proscan-v4-upgrade-css')) {\n");
-        js.append("      var oldSt = document.getElementById('proscan-v3-upgrade-css'); if (oldSt) oldSt.remove();\n");
+        /* 1. Uniform Recessed Keypad Well + True 3D Neon Skins + Balanced Log Column Widths + VOICE Switch CSS */
+        js.append("    if (!document.getElementById('proscan-v5-upgrade-css')) {\n");
+        js.append("      var oldSt = document.getElementById('proscan-v4-upgrade-css'); if (oldSt) oldSt.remove();\n");
         js.append("      var st = document.createElement('style');\n");
-        js.append("      st.id = 'proscan-v4-upgrade-css';\n");
+        js.append("      st.id = 'proscan-v5-upgrade-css';\n");
         js.append("      st.textContent = '' +\n");
         js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:7px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
         js.append("        '.freq-hit-badge{display:none!important;}' +\n");
@@ -257,11 +292,73 @@ public class MainActivity extends Activity {
         js.append("        'html[data-skin=\"tron\"]{--ui-bg:radial-gradient(circle at 50% 12%,#0c2e36 0%,#06161a 65%,#02080a 100%)!important;--ui-bevel:inset 0 2px 3px rgba(0,255,255,0.4),inset 0 -3px 6px rgba(0,0,0,0.9)!important;--btn-bg:linear-gradient(180deg,#103c47 0%,#071f26 55%,#031014 100%)!important;--btn-border:1px solid #00ffff!important;--btn-shadow:0 3px 0 #008b8b,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(180,255,255,0.45)!important;--btn-shadow-active:0 0 0 #008b8b,inset 0 2px 5px rgba(0,0,0,0.95)!important;--btn-active-transform:translateY(3px)!important;}' +\n");
         js.append("        'html[data-skin=\"neongreen\"]{--ui-bg:radial-gradient(circle at 50% 12%,#11330d 0%,#081906 65%,#030a02 100%)!important;--ui-bevel:inset 0 2px 3px rgba(57,255,20,0.4),inset 0 -3px 6px rgba(0,0,0,0.9)!important;--btn-bg:linear-gradient(180deg,#184212 0%,#0b2108 55%,#051104 100%)!important;--btn-border:1px solid #39ff14!important;--btn-shadow:0 3px 0 #1b8a08,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(190,255,180,0.45)!important;--btn-shadow-active:0 0 0 #1b8a08,inset 0 2px 5px rgba(0,0,0,0.95)!important;--btn-active-transform:translateY(3px)!important;}' +\n");
         js.append("        'html[data-skin=\"amber\"]{--ui-bg:radial-gradient(circle at 50% 12%,#332406 0%,#1a1203 65%,#0a0701 100%)!important;--ui-bevel:inset 0 2px 3px rgba(255,176,0,0.4),inset 0 -3px 6px rgba(0,0,0,0.9)!important;--btn-bg:linear-gradient(180deg,#422f08 0%,#211704 55%,#120c02 100%)!important;--btn-border:1px solid #ffb000!important;--btn-shadow:0 3px 0 #996900,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,230,170,0.45)!important;--btn-shadow-active:0 0 0 #996900,inset 0 2px 5px rgba(0,0,0,0.95)!important;--btn-active-transform:translateY(3px)!important;}' +\n");
+        js.append("        '.top-leds-left{gap:10px!important;}' +\n");
+        js.append("        '#voice-switch-track{width:26px;height:11px;border-radius:999px;background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.16);box-shadow:inset 0 1px 3px rgba(0,0,0,0.85),0 1px 0 rgba(255,255,255,0.08);padding:1px;display:flex;align-items:center;position:relative;flex-shrink:0;}' +\n");
+        js.append("        '#voice-switch-thumb{width:11px;height:7px;border-radius:999px;background:var(--btn-bg);border:var(--btn-border);box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.2);transform:translateX(0);transition:transform 0.22s cubic-bezier(0.4,0,0.2,1);display:flex;align-items:center;justify-content:center;}' +\n");
+        js.append("        '#voice-switch-thumb::after{content:\"\";width:2px;height:3px;border-radius:1px;background:rgba(255,255,255,0.22);}' +\n");
+        js.append("        '#btn-voice-toggle.active #voice-switch-thumb{transform:translateX(11px);}' +\n");
+        js.append("        '#voice-led{flex-shrink:0;width:10px;height:10px;border-radius:50%;background-color:var(--led-off-bg,#1a1a1a);border:var(--led-off-border,2px solid #000);box-shadow:var(--led-off-shadow,inset 1px 1px 3px rgba(0,0,0,0.8),0 1px 1px rgba(255,255,255,0.1));transition:all 0.3s ease;}' +\n");
+        js.append("        '@keyframes voice-led-pulse-green{0%,100%{background-color:#10b981;border-color:#a7f3d0;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.9),0 0 0 1px rgba(0,0,0,0.65),0 0 8px #10b981,0 0 14px rgba(16,185,129,0.75);}50%{background-color:#065f46;border-color:#059669;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.35),0 0 0 1px rgba(0,0,0,0.65),0 0 2px rgba(16,185,129,0.25);}}' +\n");
+        js.append("        '#btn-voice-toggle.active #voice-led{border-style:solid!important;border-width:2px!important;animation:voice-led-pulse-green 3.8s ease-in-out infinite!important;}' +\n");
         js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:24px;height:11px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}';\n");
         js.append("      document.head.appendChild(st);\n");
         js.append("    }\n");
 
-        /* 2. Tap Any Log Row to Flash Full Channel Name + Hit Count on the Top-Left HUD! */
+        /* 2. Add VOICE Toggle Switch + LED next to WAKE + Observe New Log Rows to Speak Channel Name! */
+        js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
+        js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
+        js.append("      window.__voiceReadoutEnabled = false;\n");
+        js.append("      window.__lastSpokenChannel = '';\n");
+        js.append("      window.__lastSpokenTime = 0;\n");
+        js.append("      function speakTextNow(txt) {\n");
+        js.append("        if (window.AndroidApp && typeof window.AndroidApp.speakChannel === 'function') {\n");
+        js.append("          window.AndroidApp.speakChannel(txt);\n");
+        js.append("        } else if (window.speechSynthesis) {\n");
+        js.append("          try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(new SpeechSynthesisUtterance(txt)); } catch(e) {}\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("      var vBtn = document.createElement('button');\n");
+        js.append("      vBtn.id = 'btn-voice-toggle';\n");
+        js.append("      vBtn.className = 'wake-btn-wrapper';\n");
+        js.append("      vBtn.type = 'button';\n");
+        js.append("      vBtn.title = 'Voice Readout of Logged Channels';\n");
+        js.append("      vBtn.innerHTML = '<div class=\"wake-switch-col\"><div id=\"voice-switch-track\"><div id=\"voice-switch-thumb\"></div></div><span class=\"rx-label\">VOICE</span></div><div id=\"voice-led\"></div>';\n");
+        js.append("      vBtn.addEventListener('click', function() {\n");
+        js.append("        window.__voiceReadoutEnabled = !window.__voiceReadoutEnabled;\n");
+        js.append("        vBtn.classList.toggle('active', window.__voiceReadoutEnabled);\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("        if (window.__voiceReadoutEnabled) {\n");
+        js.append("          speakTextNow('Voice readout on');\n");
+        js.append("          if (typeof showDisplayHud === 'function') showDisplayHud('VOICE READOUT: ON', 1400);\n");
+        js.append("        } else {\n");
+        js.append("          if (typeof showDisplayHud === 'function') showDisplayHud('VOICE READOUT: OFF', 1400);\n");
+        js.append("        }\n");
+        js.append("      });\n");
+        js.append("      ledsLeft.appendChild(vBtn);\n");
+        js.append("      var logBody = document.getElementById('mini-log-data');\n");
+        js.append("      if (logBody) {\n");
+        js.append("        new MutationObserver(function() {\n");
+        js.append("          if (!window.__voiceReadoutEnabled) return;\n");
+        js.append("          var newRow = logBody.querySelector('tr.new-log-row');\n");
+        js.append("          if (newRow && newRow.children.length >= 5) {\n");
+        js.append("            var nameTd = newRow.children[4];\n");
+        js.append("            var rawTitle = nameTd.getAttribute('title') || nameTd.innerText || '';\n");
+        js.append("            var chName = rawTitle.replace(/^\\([^)]+\\)\\s*/, '').trim();\n");
+        js.append("            if (!chName || chName === '---') chName = (newRow.children[1].innerText || '').trim();\n");
+        js.append("            var now = Date.now();\n");
+        js.append("            if (chName && (chName !== window.__lastSpokenChannel || (now - window.__lastSpokenTime) > 15000)) {\n");
+        js.append("              window.__lastSpokenChannel = chName;\n");
+        js.append("              window.__lastSpokenTime = now;\n");
+        js.append("              setTimeout(function() {\n");
+        js.append("                if (window.__voiceReadoutEnabled) speakTextNow(chName);\n");
+        js.append("              }, 350);\n");
+        js.append("            }\n");
+        js.append("          }\n");
+        js.append("        }).observe(logBody, { childList: true });\n");
+        js.append("      }\n");
+        js.append("    }\n");
+
+        /* 3. Tap Any Log Row to Flash Full Channel Name + Hit Count on the Top-Left HUD (and Speak if VOICE is ON) */
         js.append("    var logTb = document.getElementById('mini-log-data');\n");
         js.append("    if (logTb && !logTb.__hitHudHooked) {\n");
         js.append("      logTb.__hitHudHooked = true;\n");
@@ -277,10 +374,13 @@ public class MainActivity extends Activity {
         js.append("        if (typeof showDisplayHud === 'function') {\n");
         js.append("          showDisplayHud(cleanName + ' • HITS: ' + hitsText, 2200);\n");
         js.append("        }\n");
+        js.append("        if (window.__voiceReadoutEnabled && window.AndroidApp && window.AndroidApp.speakChannel) {\n");
+        js.append("          window.AndroidApp.speakChannel(cleanName);\n");
+        js.append("        }\n");
         js.append("      });\n");
         js.append("    }\n");
 
-        /* 3. Single AUDIO button (Short Tap = Normal Audio / Off, Long Press = VLC Screen-Off Mode) */
+        /* 4. Single AUDIO button (Short Tap = Normal Audio / Off, Long Press = VLC Screen-Off Mode) */
         js.append("    var oldAudioBtn = document.getElementById('btn-audio-toggle');\n");
         js.append("    if (oldAudioBtn && !oldAudioBtn.__vlcUnifiedHooked) {\n");
         js.append("      var aBtn = oldAudioBtn.cloneNode(true);\n");
@@ -328,7 +428,7 @@ public class MainActivity extends Activity {
         js.append("      aBtn.addEventListener('pointercancel', function() { clearTimeout(aTimer); aTimer = null; });\n");
         js.append("    }\n");
 
-        /* 4. Hardware EXIT button: 1 Tap = Show System Bars, 2 Quick Taps = Minimize, Long Press = Power Off & Exit */
+        /* 5. Hardware EXIT button: 1 Tap = Show System Bars, 2 Quick Taps = Minimize, Long Press = Power Off & Exit */
         js.append("    var ledsRight = document.querySelector('.top-leds-right');\n");
         js.append("    if (ledsRight && !document.getElementById('btn-hardware-exit')) {\n");
         js.append("      var exitBtn = document.createElement('button');\n");
@@ -367,16 +467,17 @@ public class MainActivity extends Activity {
         js.append("      exitBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
         js.append("    }\n");
 
-        /* 5. Update GUIDE with the new Audio, Log-Tap Hit Counter & Exit Controls */
+        /* 6. Update GUIDE with the new VOICE Switch, Audio, Log-Tap Hit Counter & Exit Controls */
         js.append("    var mBody = document.querySelector('#proscan-manual-panel .manual-body');\n");
-        js.append("    if (mBody && !document.getElementById('manual-v3-sec')) {\n");
-        js.append("      var oldSec = document.getElementById('manual-v2-sec'); if (oldSec) oldSec.remove();\n");
+        js.append("    if (mBody && !document.getElementById('manual-v4-sec')) {\n");
+        js.append("      var oldSec = document.getElementById('manual-v3-sec'); if (oldSec) oldSec.remove();\n");
         js.append("      var sec = document.createElement('div');\n");
-        js.append("      sec.id = 'manual-v3-sec';\n");
+        js.append("      sec.id = 'manual-v4-sec';\n");
         js.append("      sec.className = 'manual-section';\n");
-        js.append("      sec.innerHTML = '<h3>7. Screen-Off Audio, Hit Counter &amp; Exit Button</h3><ul class=\"manual-list\">' +\n");
+        js.append("      sec.innerHTML = '<h3>7. Voice Readout, Screen-Off Audio &amp; Exit Controls</h3><ul class=\"manual-list\">' +\n");
+        js.append("        '<li><span class=\"manual-key\">VOICE</span> <strong>Slide Switch &amp; Green Pulsating LED:</strong> Announces the Channel Name out loud via Text-To-Speech whenever a new transmission is logged (or when you tap a row in the log).</li>' +\n");
         js.append("        '<li><span class=\"manual-key\">AUDIO</span> <strong>Short Tap:</strong> Turns normal radio audio ON or OFF. <strong>Long Press (0.5s):</strong> Switches to <strong>VLC / Screen-Off Mode</strong> (<span class=\"manual-key\">AUDIO &#9650;</span>) so audio keeps playing when your phone screen is locked. Long-press again to return to normal mode.</li>' +\n");
-        js.append("        '<li><strong>Log Row Hit Counter:</strong> Tap any row in the Live History Log to display the full Channel Name and its total Hit Count in the top-left screen HUD without cluttering the log column.</li>' +\n");
+        js.append("        '<li><strong>Log Row Hit Counter:</strong> Tap any row in the Live History Log to display the full Channel Name and its total Hit Count in the top-left screen HUD.</li>' +\n");
         js.append("        '<li><span class=\"manual-key\">EXIT</span> (Next to RX/LOG LEDs): <strong>Single Tap</strong> reveals Android top/bottom system bars; <strong>Double Tap</strong> minimizes the app to the background; <strong>Long Press (0.5s)</strong> powers down the radio and closes the app.</li></ul>';\n");
         js.append("      mBody.appendChild(sec);\n");
         js.append("    }\n");
