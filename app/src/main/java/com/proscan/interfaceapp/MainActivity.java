@@ -165,7 +165,7 @@ public class MainActivity extends Activity {
                 if (tts != null && ttsReady && text != null && !text.trim().isEmpty()) {
                     if (Build.VERSION.SDK_INT >= 21) {
                         Bundle params = new Bundle();
-                        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
+                        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.35f);
                         tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, params, "proscan_tts");
                     } else {
                         tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, null);
