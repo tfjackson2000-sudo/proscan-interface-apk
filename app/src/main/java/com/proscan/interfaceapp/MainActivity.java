@@ -2,13 +2,17 @@ package com.proscan.interfaceapp;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.MediaStore;
 import android.speech.tts.TextToSpeech;
 import android.text.InputType;
 import android.view.View;
@@ -27,14 +31,24 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
 
+    private static final int REQ_LOAD_JSON = 901;
     private WebView webView;
     private SharedPreferences prefs;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -132,6 +146,103 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
+    private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast) {
+        try {
+            JSONObject root = new JSONObject();
+            root.put("local_url", prefs.getString("local_url", ""));
+            root.put("tailscale_url", prefs.getString("tailscale_url", ""));
+            root.put("web_storage", webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject());
+            byte[] bytes = root.toString(2).getBytes(StandardCharsets.UTF_8);
+
+            prefs.edit().putString("last_backup_json", root.toString()).apply();
+
+            if (Build.VERSION.SDK_INT >= 29) {
+                try {
+                    getContentResolver().delete(
+                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            MediaStore.MediaColumns.DISPLAY_NAME + "=?",
+                            new String[]{"proscan_presets_backup.json"}
+                    );
+                } catch (Exception ignored) {}
+
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, "proscan_presets_backup.json");
+                values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+
+                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri != null) {
+                    OutputStream os = getContentResolver().openOutputStream(uri);
+                    if (os != null) {
+                        os.write(bytes);
+                        os.close();
+                    }
+                }
+            } else {
+                File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                File file = new File(dir, "proscan_presets_backup.json");
+                FileOutputStream fos = new FileOutputStream(file);
+                fos.write(bytes);
+                fos.close();
+            }
+
+            if (showToast) {
+                Toast.makeText(this, "Saved to Downloads/proscan_presets_backup.json", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            if (showToast) {
+                Toast.makeText(this, "Backup error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void restoreFromJsonString(String jsonStr) {
+        try {
+            JSONObject root = new JSONObject(jsonStr);
+            String loc = root.optString("local_url", "");
+            String ts = root.optString("tailscale_url", "");
+            JSONObject webStorage = root.optJSONObject("web_storage");
+
+            if (!loc.isEmpty() || !ts.isEmpty()) {
+                prefs.edit().putString("local_url", loc).putString("tailscale_url", ts).apply();
+            }
+            if (webStorage != null) {
+                prefs.edit().putString("pending_web_restore", webStorage.toString()).apply();
+            }
+
+            Toast.makeText(this, "Presets & IPs Restored! Loading...", Toast.LENGTH_SHORT).show();
+            String activeLoc = prefs.getString("local_url", "");
+            String activeTs = prefs.getString("tailscale_url", "");
+            if (!activeLoc.isEmpty() || !activeTs.isEmpty()) {
+                connectSmart(activeLoc, activeTs);
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Invalid backup JSON file", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_LOAD_JSON && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            try {
+                InputStream is = getContentResolver().openInputStream(data.getData());
+                if (is != null) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        sb.append(line);
+                    }
+                    reader.close();
+                    restoreFromJsonString(sb.toString());
+                }
+            } catch (Exception e) {
+                Toast.makeText(this, "Failed to read backup file", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
     public class WebAppBridge {
         @JavascriptInterface
         public void setKeepScreenOn(final boolean keepOn) {
@@ -172,6 +283,11 @@ public class MainActivity extends Activity {
                     }
                 }
             });
+        }
+
+        @JavascriptInterface
+        public void autoSavePresetsJson(final String webStorageJson, final boolean notifyUser) {
+            mainHandler.post(() -> saveBackupJsonToDownloads(webStorageJson, notifyUser));
         }
 
         @JavascriptInterface
@@ -252,6 +368,15 @@ public class MainActivity extends Activity {
     }
 
     private void injectEnhancements() {
+        String pendingRestore = prefs.getString("pending_web_restore", "");
+        if (!pendingRestore.isEmpty()) {
+            prefs.edit().remove("pending_web_restore").apply();
+            String safeJson = JSONObject.quote(pendingRestore);
+            String restoreJs = "(function(){try{var d=JSON.parse(" + safeJson + ");Object.keys(d).forEach(function(k){localStorage.setItem(k,d[k]);});window.location.reload();}catch(e){}})();";
+            webView.evaluateJavascript(restoreJs, null);
+            return;
+        }
+
         StringBuilder js = new StringBuilder();
         js.append("(function() {\n");
         js.append("  try {\n");
@@ -273,9 +398,32 @@ public class MainActivity extends Activity {
         js.append("      }\n");
         js.append("    };\n");
 
+        /* Hook auto-backup to Downloads/proscan_presets_backup.json whenever a preset (0-9) or brand is saved! */
+        js.append("    if (!window.__presetAutoBackupHooked) {\n");
+        js.append("      window.__presetAutoBackupHooked = true;\n");
+        js.append("      window.__exportAllProscanStorage = function(notify) {\n");
+        js.append("        try {\n");
+        js.append("          var dump = {};\n");
+        js.append("          for (var i = 0; i < localStorage.length; i++) {\n");
+        js.append("            var k = localStorage.key(i);\n");
+        js.append("            if (k && k.indexOf('proscan_') === 0) dump[k] = localStorage.getItem(k);\n");
+        js.append("          }\n");
+        js.append("          if (window.AndroidApp && window.AndroidApp.autoSavePresetsJson) {\n");
+        js.append("            window.AndroidApp.autoSavePresetsJson(JSON.stringify(dump), Boolean(notify));\n");
+        js.append("          }\n");
+        js.append("        } catch (e) {}\n");
+        js.append("      };\n");
+        js.append("      if (typeof window.savePresetToSlot === 'function') {\n");
+        js.append("        var origSave = window.savePresetToSlot;\n");
+        js.append("        window.savePresetToSlot = function(slot, snap) {\n");
+        js.append("          origSave(slot, snap);\n");
+        js.append("          window.__exportAllProscanStorage(false);\n");
+        js.append("        };\n");
+        js.append("      }\n");
+        js.append("    }\n");
+
         /* 1. Uniform Recessed Keypad Well + True 3D Neon Skins + Balanced Log Column Widths + VOICE Switch CSS */
         js.append("    if (!document.getElementById('proscan-v5-upgrade-css')) {\n");
-        js.append("      var oldSt = document.getElementById('proscan-v4-upgrade-css'); if (oldSt) oldSt.remove();\n");
         js.append("      var st = document.createElement('style');\n");
         js.append("      st.id = 'proscan-v5-upgrade-css';\n");
         js.append("      st.textContent = '' +\n");
@@ -304,7 +452,7 @@ public class MainActivity extends Activity {
         js.append("      document.head.appendChild(st);\n");
         js.append("    }\n");
 
-        /* 2. Add VOICE Toggle Switch + LED next to WAKE + Observe New Log Rows to Speak Channel Name! */
+        /* 2. Add VOICE Toggle Switch + LED next to WAKE + Observe New Log Rows to Speak Channel Name */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
         js.append("      window.__voiceReadoutEnabled = false;\n");
@@ -467,18 +615,18 @@ public class MainActivity extends Activity {
         js.append("      exitBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
         js.append("    }\n");
 
-        /* 6. Update GUIDE with the new VOICE Switch, Audio, Log-Tap Hit Counter & Exit Controls */
+        /* 6. Update GUIDE with the new VOICE Switch, Preset Backup, Audio, Log-Tap Hit Counter & Exit Controls */
         js.append("    var mBody = document.querySelector('#proscan-manual-panel .manual-body');\n");
-        js.append("    if (mBody && !document.getElementById('manual-v4-sec')) {\n");
-        js.append("      var oldSec = document.getElementById('manual-v3-sec'); if (oldSec) oldSec.remove();\n");
+        js.append("    if (mBody && !document.getElementById('manual-v5-sec')) {\n");
+        js.append("      var oldSec = document.getElementById('manual-v4-sec'); if (oldSec) oldSec.remove();\n");
         js.append("      var sec = document.createElement('div');\n");
-        js.append("      sec.id = 'manual-v4-sec';\n");
+        js.append("      sec.id = 'manual-v5-sec';\n");
         js.append("      sec.className = 'manual-section';\n");
-        js.append("      sec.innerHTML = '<h3>7. Voice Readout, Screen-Off Audio &amp; Exit Controls</h3><ul class=\"manual-list\">' +\n");
-        js.append("        '<li><span class=\"manual-key\">VOICE</span> <strong>Slide Switch &amp; Green Pulsating LED:</strong> Announces the Channel Name out loud via Text-To-Speech whenever a new transmission is logged (or when you tap a row in the log).</li>' +\n");
-        js.append("        '<li><span class=\"manual-key\">AUDIO</span> <strong>Short Tap:</strong> Turns normal radio audio ON or OFF. <strong>Long Press (0.5s):</strong> Switches to <strong>VLC / Screen-Off Mode</strong> (<span class=\"manual-key\">AUDIO &#9650;</span>) so audio keeps playing when your phone screen is locked. Long-press again to return to normal mode.</li>' +\n");
-        js.append("        '<li><strong>Log Row Hit Counter:</strong> Tap any row in the Live History Log to display the full Channel Name and its total Hit Count in the top-left screen HUD.</li>' +\n");
-        js.append("        '<li><span class=\"manual-key\">EXIT</span> (Next to RX/LOG LEDs): <strong>Single Tap</strong> reveals Android top/bottom system bars; <strong>Double Tap</strong> minimizes the app to the background; <strong>Long Press (0.5s)</strong> powers down the radio and closes the app.</li></ul>';\n");
+        js.append("      sec.innerHTML = '<h3>7. Voice Readout, JSON Preset Backup &amp; Exit Controls</h3><ul class=\"manual-list\">' +\n");
+        js.append("        '<li><span class=\"manual-key\">VOICE</span> <strong>Slide Switch &amp; Green Pulsating LED:</strong> Announces the Channel Name out loud via Text-To-Speech whenever a new transmission is logged.</li>' +\n");
+        js.append("        '<li><span class=\"manual-key\">AUDIO</span> <strong>Short Tap:</strong> Turns normal radio audio ON or OFF. <strong>Long Press (0.5s):</strong> Switches to <strong>VLC / Screen-Off Mode</strong> (<span class=\"manual-key\">AUDIO &#9650;</span>) so audio keeps playing when your phone screen is locked.</li>' +\n");
+        js.append("        '<li><strong>JSON Preset Auto-Backup:</strong> Saving any Numpad Preset (0-9) automatically backs up all your presets, active theme, custom brand, and IPs to <code>Downloads/proscan_presets_backup.json</code>. Press the Android Back button and tap <strong>Presets</strong> to export or load your backup file anytime.</li>' +\n");
+        js.append("        '<li><span class=\"manual-key\">EXIT</span> (Next to RX/LOG LEDs): <strong>Single Tap</strong> reveals Android top/bottom system bars; <strong>Double Tap</strong> minimizes the app; <strong>Long Press (0.5s)</strong> powers down the radio and closes the app.</li></ul>';\n");
         js.append("      mBody.appendChild(sec);\n");
         js.append("    }\n");
         js.append("  } catch (e) {}\n");
@@ -493,6 +641,29 @@ public class MainActivity extends Activity {
         if (u.isEmpty()) return "";
         if (!u.startsWith("http://") && !u.startsWith("https://")) u = "http://" + u;
         return u;
+    }
+
+    private void showPresetsBackupMenu() {
+        String[] options = new String[]{
+                "Save Backup to Downloads (proscan_presets_backup.json)",
+                "Load Backup File from Downloads"
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("Presets & IP Backup (JSON)")
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) {
+                        if (webView != null) {
+                            webView.evaluateJavascript("if(window.__exportAllProscanStorage)window.__exportAllProscanStorage(true);", null);
+                        }
+                    } else if (which == 1) {
+                        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                        intent.addCategory(Intent.CATEGORY_OPENABLE);
+                        intent.setType("*/*");
+                        startActivityForResult(intent, REQ_LOAD_JSON);
+                    }
+                })
+                .setNegativeButton("Back", null)
+                .show();
     }
 
     private void showSetupDialog(boolean isFirstRun) {
@@ -538,7 +709,7 @@ public class MainActivity extends Activity {
             connectSmart(loc, ts);
         });
 
-        builder.setNeutralButton("Exit App", (dialog, which) -> closeAndExitApp());
+        builder.setNeutralButton("Presets JSON", (dialog, which) -> showPresetsBackupMenu());
 
         if (!isFirstRun) {
             builder.setNegativeButton("Cancel", null);
