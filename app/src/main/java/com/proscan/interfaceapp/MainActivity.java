@@ -238,21 +238,48 @@ public class MainActivity extends Activity {
         js.append("      }\n");
         js.append("    };\n");
 
-        /* 1. Uniform Recessed Keypad Well + 3D Solid Neon Skins + Hardware EXIT Button CSS */
-        js.append("    if (!document.getElementById('proscan-v2-upgrade-css')) {\n");
+        /* 1. Uniform Recessed Keypad Well + True 3D Contoured Neon Skins + Hide Inline Hit Badge for Full Name Width */
+        js.append("    if (!document.getElementById('proscan-v3-upgrade-css')) {\n");
+        js.append("      var oldSt = document.getElementById('proscan-v2-upgrade-css'); if (oldSt) oldSt.remove();\n");
         js.append("      var st = document.createElement('style');\n");
-        js.append("      st.id = 'proscan-v2-upgrade-css';\n");
+        js.append("      st.id = 'proscan-v3-upgrade-css';\n");
         js.append("      st.textContent = '' +\n");
-        js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:7px!important;background:rgba(0,0,0,0.18)!important;box-shadow:inset 0 2px 5px rgba(0,0,0,0.65),0 1px 0 rgba(255,255,255,0.08)!important;}' +\n");
-        js.append("        'html[data-skin=\"whiteline\"]{--buttons-box-border:1px solid rgba(255,255,255,0.45);--btn-bg:linear-gradient(180deg,#262626 0%,#121212 55%,#080808 100%);--btn-border:1px solid rgba(255,255,255,0.85);--btn-shadow:0 2px 0 #ffffff,0 4px 6px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.35);--btn-shadow-active:0 0 0 #ffffff,inset 0 2px 5px rgba(0,0,0,0.9);--btn-active-transform:translateY(2px);}' +\n");
-        js.append("        'html[data-skin=\"tron\"]{--buttons-box-border:1px solid rgba(0,255,255,0.45);--btn-bg:linear-gradient(180deg,#082f38 0%,#04181d 55%,#020b0e 100%);--btn-border:1px solid #00ffff;--btn-shadow:0 2px 0 #00b3b3,0 3px 8px rgba(0,255,255,0.28),inset 0 1px 1px rgba(180,255,255,0.35);--btn-shadow-active:0 0 0 #00b3b3,inset 0 2px 5px rgba(0,0,0,0.9);--btn-active-transform:translateY(2px);}' +\n");
-        js.append("        'html[data-skin=\"neongreen\"]{--buttons-box-border:1px solid rgba(57,255,20,0.45);--btn-bg:linear-gradient(180deg,#0d3309 0%,#061a04 55%,#030d02 100%);--btn-border:1px solid #39ff14;--btn-shadow:0 2px 0 #22a80b,0 3px 8px rgba(57,255,20,0.28),inset 0 1px 1px rgba(190,255,180,0.35);--btn-shadow-active:0 0 0 #22a80b,inset 0 2px 5px rgba(0,0,0,0.9);--btn-active-transform:translateY(2px);}' +\n");
-        js.append("        'html[data-skin=\"amber\"]{--buttons-box-border:1px solid rgba(255,176,0,0.45);--btn-bg:linear-gradient(180deg,#332404 0%,#1a1202 55%,#0d0901 100%);--btn-border:1px solid #ffb000;--btn-shadow:0 2px 0 #b37b00,0 3px 8px rgba(255,176,0,0.28),inset 0 1px 1px rgba(255,230,170,0.35);--btn-shadow-active:0 0 0 #b37b00,inset 0 2px 5px rgba(0,0,0,0.9);--btn-active-transform:translateY(2px);}' +\n");
+        js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:7px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
+        js.append("        '.freq-hit-badge{display:none!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(1),#mini-log-table td:nth-child(1){width:20%!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(2),#mini-log-table td:nth-child(2){width:21%!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(3),#mini-log-table td:nth-child(3){width:10%!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(4),#mini-log-table td:nth-child(4){width:12%!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(5),#mini-log-table td:nth-child(5){width:37%!important;}' +\n");
+        js.append("        '#mini-log-table tbody tr{cursor:pointer;}#mini-log-table tbody tr:active{background:rgba(255,255,255,0.15)!important;}' +\n");
+        js.append("        'html[data-skin=\"whiteline\"]{--ui-bg:radial-gradient(circle at 50% 12%,#26292e 0%,#121417 65%,#070809 100%)!important;--ui-bevel:inset 0 2px 3px rgba(255,255,255,0.35),inset 0 -3px 6px rgba(0,0,0,0.9)!important;--btn-bg:linear-gradient(180deg,#2e3238 0%,#181a1e 55%,#0d0e11 100%)!important;--btn-border:1px solid rgba(255,255,255,0.75)!important;--btn-shadow:0 3px 0 #94a3b8,0 4px 6px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.45)!important;--btn-shadow-active:0 0 0 #94a3b8,inset 0 2px 5px rgba(0,0,0,0.95)!important;--btn-active-transform:translateY(3px)!important;}' +\n");
+        js.append("        'html[data-skin=\"tron\"]{--ui-bg:radial-gradient(circle at 50% 12%,#0c2e36 0%,#06161a 65%,#02080a 100%)!important;--ui-bevel:inset 0 2px 3px rgba(0,255,255,0.4),inset 0 -3px 6px rgba(0,0,0,0.9)!important;--btn-bg:linear-gradient(180deg,#103c47 0%,#071f26 55%,#031014 100%)!important;--btn-border:1px solid #00ffff!important;--btn-shadow:0 3px 0 #008b8b,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(180,255,255,0.45)!important;--btn-shadow-active:0 0 0 #008b8b,inset 0 2px 5px rgba(0,0,0,0.95)!important;--btn-active-transform:translateY(3px)!important;}' +\n");
+        js.append("        'html[data-skin=\"neongreen\"]{--ui-bg:radial-gradient(circle at 50% 12%,#11330d 0%,#081906 65%,#030a02 100%)!important;--ui-bevel:inset 0 2px 3px rgba(57,255,20,0.4),inset 0 -3px 6px rgba(0,0,0,0.9)!important;--btn-bg:linear-gradient(180deg,#184212 0%,#0b2108 55%,#051104 100%)!important;--btn-border:1px solid #39ff14!important;--btn-shadow:0 3px 0 #1b8a08,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(190,255,180,0.45)!important;--btn-shadow-active:0 0 0 #1b8a08,inset 0 2px 5px rgba(0,0,0,0.95)!important;--btn-active-transform:translateY(3px)!important;}' +\n");
+        js.append("        'html[data-skin=\"amber\"]{--ui-bg:radial-gradient(circle at 50% 12%,#332406 0%,#1a1203 65%,#0a0701 100%)!important;--ui-bevel:inset 0 2px 3px rgba(255,176,0,0.4),inset 0 -3px 6px rgba(0,0,0,0.9)!important;--btn-bg:linear-gradient(180deg,#422f08 0%,#211704 55%,#120c02 100%)!important;--btn-border:1px solid #ffb000!important;--btn-shadow:0 3px 0 #996900,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,230,170,0.45)!important;--btn-shadow-active:0 0 0 #996900,inset 0 2px 5px rgba(0,0,0,0.95)!important;--btn-active-transform:translateY(3px)!important;}' +\n");
         js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:24px;height:11px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}';\n");
         js.append("      document.head.appendChild(st);\n");
         js.append("    }\n");
 
-        /* 2. Single AUDIO button (Short Tap = Normal Audio / Off, Long Press = VLC Screen-Off Mode) */
+        /* 2. Tap Any Log Row to Flash Full Channel Name + Hit Count on the Top-Left HUD! */
+        js.append("    var logTb = document.getElementById('mini-log-data');\n");
+        js.append("    if (logTb && !logTb.__hitHudHooked) {\n");
+        js.append("      logTb.__hitHudHooked = true;\n");
+        js.append("      logTb.addEventListener('click', function(e) {\n");
+        js.append("        var tr = e.target.closest('tr');\n");
+        js.append("        if (!tr || tr.children.length < 5) return;\n");
+        js.append("        var nameTd = tr.children[4];\n");
+        js.append("        var badge = nameTd.querySelector('.freq-hit-badge');\n");
+        js.append("        var hitsText = badge ? badge.innerText.replace('×', '') : '1';\n");
+        js.append("        var rawTitle = nameTd.getAttribute('title') || nameTd.innerText || '';\n");
+        js.append("        var cleanName = rawTitle.replace(/^\\([^)]+\\)\\s*/, '').trim();\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(15);\n");
+        js.append("        if (typeof showDisplayHud === 'function') {\n");
+        js.append("          showDisplayHud(cleanName + ' • HITS: ' + hitsText, 2200);\n");
+        js.append("        }\n");
+        js.append("      });\n");
+        js.append("    }\n");
+
+        /* 3. Single AUDIO button (Short Tap = Normal Audio / Off, Long Press = VLC Screen-Off Mode) */
         js.append("    var oldAudioBtn = document.getElementById('btn-audio-toggle');\n");
         js.append("    if (oldAudioBtn && !oldAudioBtn.__vlcUnifiedHooked) {\n");
         js.append("      var aBtn = oldAudioBtn.cloneNode(true);\n");
@@ -300,7 +327,7 @@ public class MainActivity extends Activity {
         js.append("      aBtn.addEventListener('pointercancel', function() { clearTimeout(aTimer); aTimer = null; });\n");
         js.append("    }\n");
 
-        /* 3. Hardware EXIT button: 1 Tap = Show System Bars, 2 Quick Taps = Minimize, Long Press = Power Off & Exit */
+        /* 4. Hardware EXIT button: 1 Tap = Show System Bars, 2 Quick Taps = Minimize, Long Press = Power Off & Exit */
         js.append("    var ledsRight = document.querySelector('.top-leds-right');\n");
         js.append("    if (ledsRight && !document.getElementById('btn-hardware-exit')) {\n");
         js.append("      var exitBtn = document.createElement('button');\n");
@@ -339,14 +366,16 @@ public class MainActivity extends Activity {
         js.append("      exitBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
         js.append("    }\n");
 
-        /* 4. Update GUIDE with the new Audio & Exit Controls */
+        /* 5. Update GUIDE with the new Audio, Log-Tap Hit Counter & Exit Controls */
         js.append("    var mBody = document.querySelector('#proscan-manual-panel .manual-body');\n");
-        js.append("    if (mBody && !document.getElementById('manual-v2-sec')) {\n");
+        js.append("    if (mBody && !document.getElementById('manual-v3-sec')) {\n");
+        js.append("      var oldSec = document.getElementById('manual-v2-sec'); if (oldSec) oldSec.remove();\n");
         js.append("      var sec = document.createElement('div');\n");
-        js.append("      sec.id = 'manual-v2-sec';\n");
+        js.append("      sec.id = 'manual-v3-sec';\n");
         js.append("      sec.className = 'manual-section';\n");
-        js.append("      sec.innerHTML = '<h3>7. Screen-Off Audio &amp; Hardware Exit Button</h3><ul class=\"manual-list\">' +\n");
+        js.append("      sec.innerHTML = '<h3>7. Screen-Off Audio, Hit Counter &amp; Exit Button</h3><ul class=\"manual-list\">' +\n");
         js.append("        '<li><span class=\"manual-key\">AUDIO</span> <strong>Short Tap:</strong> Turns normal radio audio ON or OFF. <strong>Long Press (0.5s):</strong> Switches to <strong>VLC / Screen-Off Mode</strong> (<span class=\"manual-key\">AUDIO &#9650;</span>) so audio keeps playing when your phone screen is locked. Long-press again to return to normal mode.</li>' +\n");
+        js.append("        '<li><strong>Log Row Hit Counter:</strong> Tap any row in the Live History Log to display the full Channel Name and its total Hit Count in the top-left screen HUD without cluttering the log column.</li>' +\n");
         js.append("        '<li><span class=\"manual-key\">EXIT</span> (Next to RX/LOG LEDs): <strong>Single Tap</strong> reveals Android top/bottom system bars; <strong>Double Tap</strong> minimizes the app to the background; <strong>Long Press (0.5s)</strong> powers down the radio and closes the app.</li></ul>';\n");
         js.append("      mBody.appendChild(sec);\n");
         js.append("    }\n");
