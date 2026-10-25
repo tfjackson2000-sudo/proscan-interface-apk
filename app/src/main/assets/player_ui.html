@@ -20,7 +20,6 @@
         color: var(--deck-text); transition: all 0.3s ease;
     }
 
-    /* SKIN 1: 80s CASSETTE DECK */
     html[data-pskin="cassette"] {
         --deck-bg: linear-gradient(155deg, #2b3036 0%, #181b1f 60%, #101215 100%);
         --deck-border: 2px solid #525b66; --deck-text: #f1f5f9; --accent: #f59e0b;
@@ -28,7 +27,6 @@
         --btn-bg: linear-gradient(180deg, #374151 0%, #1f2937 55%, #111827 100%);
         --btn-txt: #e2e8f0;
     }
-    /* SKIN 2: 90s CD PLAYER */
     html[data-pskin="cd"] {
         --deck-bg: linear-gradient(155deg, #1e293b 0%, #0f172a 65%, #070b14 100%);
         --deck-border: 2px solid #38bdf8; --deck-text: #e0f2fe; --accent: #38bdf8;
@@ -36,7 +34,6 @@
         --btn-bg: linear-gradient(180deg, #1e3a5f 0%, #0f233d 55%, #081324 100%);
         --btn-txt: #bae6fd;
     }
-    /* SKIN 3: VINTAGE VINYL TURNTABLE */
     html[data-pskin="vinyl"] {
         --deck-bg: linear-gradient(145deg, #5c3418 0%, #3d210d 55%, #261407 100%);
         --deck-border: 2px solid #d97706; --deck-text: #fef3c7; --accent: #fbbf24;
@@ -44,7 +41,6 @@
         --btn-bg: linear-gradient(180deg, #33271e 0%, #1f1712 55%, #120d0a 100%);
         --btn-txt: #fde68a;
     }
-    /* SKIN 4: HACKER'S DEN (SIGINT TERMINAL) */
     html[data-pskin="hacker"] {
         --deck-bg: radial-gradient(circle at 50% 10%, #0b2410 0%, #041006 70%, #010502 100%);
         --deck-border: 2px solid #39ff14; --deck-text: #39ff14; --accent: #39ff14;
@@ -52,7 +48,6 @@
         --btn-bg: linear-gradient(180deg, #0f360b 0%, #071c05 55%, #030d02 100%);
         --btn-txt: #39ff14;
     }
-    /* SKIN 5: REEL-TO-REEL SPY RECORDER */
     html[data-pskin="reel"] {
         --deck-bg: linear-gradient(150deg, #4b5338 0%, #333926 60%, #1f2417 100%);
         --deck-border: 2px solid #a3e635; --deck-text: #fef08a; --accent: #facc15;
@@ -65,11 +60,11 @@
         display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-shrink: 0;
     }
     .deck-title {
-        font-family: 'Orbitron', sans-serif; font-size: 11px; font-weight: 800;
-        letter-spacing: 1.2px; color: var(--accent);
+        font-family: 'Orbitron', sans-serif; font-size: 10.5px; font-weight: 800;
+        letter-spacing: 1px; color: var(--accent); text-align: center; flex: 1;
     }
     .p-btn {
-        height: 28px; padding: 0 9px; border-radius: 6px; border: 1px solid #090b0e;
+        height: 28px; padding: 0 8px; border-radius: 6px; border: 1px solid #090b0e;
         background: var(--btn-bg); color: var(--btn-txt); font-size: 9.5px; font-weight: 800;
         box-shadow: 0 2px 0 #050608, inset 0 1px 0 rgba(255,255,255,0.22);
         cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
@@ -79,7 +74,6 @@
         color: var(--accent); border-color: var(--accent);
     }
 
-    /* Animated Visual Stage */
     #visual-stage {
         background: var(--well-bg); border: 2px solid #090a0d; border-radius: 14px;
         padding: 8px 10px; height: 122px; flex-shrink: 0; position: relative;
@@ -101,7 +95,6 @@
     @keyframes spinCW { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     @keyframes spinCCW { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
 
-    /* Reels / Discs */
     .wheel {
         width: 56px; height: 56px; border-radius: 50%; border: 3px solid #cbd5e1;
         background:
@@ -111,7 +104,6 @@
     }
     .playing .wheel { animation: spinCCW 1.8s linear infinite; }
 
-    /* CD Mode: Single large iridescent disc */
     html[data-pskin="cd"] #wheel-right { display: none; }
     html[data-pskin="cd"] #wheel-left {
         width: 72px; height: 72px; border: 2px solid #e0f2fe;
@@ -121,7 +113,6 @@
     }
     html[data-pskin="cd"] .playing #wheel-left { animation: spinCW 0.9s linear infinite; }
 
-    /* Vinyl Mode: Grooved black LP record with gold center label + tonearm */
     html[data-pskin="vinyl"] #wheel-right { display: none; }
     html[data-pskin="vinyl"] #wheel-left {
         width: 74px; height: 74px; border: 2px solid #27272a;
@@ -131,14 +122,12 @@
     }
     html[data-pskin="vinyl"] .playing #wheel-left { animation: spinCW 1.4s linear infinite; }
 
-    /* Reel-to-Reel Mode: Large 7-inch 3-slot metal reels */
     html[data-pskin="reel"] .wheel {
         width: 68px; height: 68px; border: 3px solid #d4d4d8;
         background:
             conic-gradient(from 0deg, #a1a1aa 0deg 30deg, #18181b 30deg 120deg, #a1a1aa 120deg 150deg, #18181b 150deg 240deg, #a1a1aa 240deg 270deg, #18181b 270deg 360deg);
     }
 
-    /* Hacker Mode: Hide wheels, show matrix/oscilloscope bars */
     html[data-pskin="hacker"] .wheel {
         border-color: #39ff14;
         background:
@@ -146,7 +135,6 @@
             repeating-conic-gradient(from 0deg, rgba(57,255,20,0.6) 0deg 15deg, transparent 15deg 30deg);
     }
 
-    /* Center Counter & VU Meter Box */
     .center-telemetry {
         display: flex; flex-direction: column; align-items: center; gap: 4px; z-index: 4;
     }
@@ -166,7 +154,6 @@
     .vu-bar:nth-child(7), .vu-bar:nth-child(8) { background: #eab308; }
     .vu-bar:nth-child(9), .vu-bar:nth-child(10) { background: #ef4444; }
 
-    /* Transport & Playback Mode Rows */
     .transport-grid {
         display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex-shrink: 0;
     }
@@ -182,7 +169,6 @@
         font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
     }
 
-    /* Recordings Playlist */
     #playlist-box {
         flex: 1; min-height: 0; overflow-y: auto; border-radius: 10px;
         border: 1px solid rgba(255,255,255,0.14); background: #07090c;
@@ -206,6 +192,7 @@
     <div class="top-bar">
         <button class="p-btn" type="button" id="btn-back-radio">&#9664; RADIO</button>
         <span class="deck-title" id="deck-skin-title">80s CASSETTE DECK</span>
+        <button class="p-btn" type="button" id="btn-open-gdrive">DRIVE</button>
         <button class="p-btn" type="button" id="btn-cycle-pskin">SKIN: TAPE</button>
     </div>
 
@@ -280,6 +267,11 @@
     document.getElementById('btn-back-radio').addEventListener('click', function () {
         if (window.PlayerBridge) window.PlayerBridge.closePlayer();
     });
+    document.getElementById('btn-open-gdrive').addEventListener('click', function () {
+        if (window.PlayerBridge && window.PlayerBridge.openGoogleDriveFolder) {
+            window.PlayerBridge.openGoogleDriveFolder();
+        }
+    });
 
     var audio = new Audio();
     var allRecs = [];
@@ -330,26 +322,19 @@
 
     audio.addEventListener('error', function () {
         setPlayingUI(false);
-        document.getElementById('banner-name').innerText = 'FILE NOT FOUND ON SERVER';
+        document.getElementById('banner-name').innerText = 'SYNCING TO G-DRIVE...';
         if (isCont && curIdx + 1 < filteredRecs.length) {
-            setTimeout(function () { playIndex(curIdx + 1); }, 800);
+            setTimeout(function () { playIndex(curIdx + 1); }, 1000);
         }
     });
 
-    function buildMp3Url(baseUrl, r) {
+    function extractDateAndSubfolder(folderPath) {
         var bs = String.fromCharCode(92);
-        var f = r.folderPath.split(bs).join('/');
-        var sub = '';
-        var ix = f.toLowerCase().indexOf('/recordings/');
-        if (ix !== -1) {
-            sub = f.slice(ix + 12);
-        } else {
-            var ps = f.split('/').filter(Boolean);
-            if (ps.length >= 2) sub = ps.slice(-2).join('/') + '/';
-        }
-        if (sub && !sub.endsWith('/')) sub += '/';
-        var rel = ('Recordings/' + sub + r.fileName).split('/').map(encodeURIComponent).join('/');
-        return baseUrl.replace(/\/+$/, '') + '/' + rel;
+        var f = (folderPath || '').split(bs).join('/');
+        var parts = f.split('/').filter(Boolean);
+        var sub = parts.length >= 1 ? parts[parts.length - 1] : 'Scan';
+        var dt = parts.length >= 2 ? parts[parts.length - 2] : '';
+        return { dateFolder: dt, subFolder: sub };
     }
 
     function renderPlaylist() {
@@ -391,15 +376,37 @@
         });
     }
 
-    function startAudioPlayback(r) {
-        var baseUrl = window.PlayerBridge ? window.PlayerBridge.getServerUrl() : '';
-        audio.src = buildMp3Url(baseUrl, r);
+    /* Callback when PlayerActivity resolves the Google Drive File ID */
+    window.onDriveStreamResolved = function (driveUrl, fileId) {
+        if (!driveUrl || curIdx < 0 || curIdx >= filteredRecs.length) {
+            setPlayingUI(false);
+            document.getElementById('banner-name').innerText = 'NOT YET IN G-DRIVE (TAP DRIVE)';
+            return;
+        }
+        var r = filteredRecs[curIdx];
+        document.getElementById('banner-name').innerText = r.dateStr + ' ' + r.timeStr + ' • ' + r.name;
+        audio.src = driveUrl;
         audio.play().then(function () {
             setPlayingUI(true);
             renderPlaylist();
         }).catch(function () {
-            setPlayingUI(false);
+            /* Fallback Google Drive docs stream URL */
+            audio.src = 'https://docs.google.com/uc?export=open&id=' + fileId;
+            audio.play().then(function () {
+                setPlayingUI(true);
+                renderPlaylist();
+            }).catch(function () {
+                setPlayingUI(false);
+            });
         });
+    };
+
+    function startAudioResolution(r) {
+        var info = extractDateAndSubfolder(r.folderPath);
+        document.getElementById('banner-name').innerText = 'LOADING FROM G-DRIVE: ' + r.name;
+        if (window.PlayerBridge && window.PlayerBridge.resolveAndPlayOnDrive) {
+            window.PlayerBridge.resolveAndPlayOnDrive(info.dateFolder, info.subFolder, r.fileName);
+        }
     }
 
     function playIndex(idx) {
@@ -415,14 +422,13 @@
             var tShort = r.timeStr.slice(0, 5);
             window.PlayerBridge.speakCaption(tShort + ', ' + r.name);
             setTimeout(function () {
-                if (curIdx === idx) startAudioPlayback(r);
-            }, 1900);
+                if (curIdx === idx) startAudioResolution(r);
+            }, 1800);
         } else {
-            startAudioPlayback(r);
+            startAudioResolution(r);
         }
     }
 
-    /* Called by PlayerActivity once Recording Data.txt is fetched */
     window.onRecordingDataLoaded = function (rawText) {
         var lines = (rawText || '').trim().split(/\r?\n/);
         var parsed = [];
@@ -435,15 +441,17 @@
             if (p.length >= 14) {
                 var dur = (p[5] || '').trim();
                 if (dur.indexOf('00:') === 0) dur = dur.slice(3);
+                var folderPath = (p[10] || '').trim();
+                var info = extractDateAndSubfolder(folderPath);
                 var startRaw = (p[11] || p[8] || '').trim().split(/\s+/);
-                var dateStr = startRaw[0] || '';
+                var dateStr = info.dateFolder || startRaw[0] || '';
                 var timeStr = startRaw.length > 1 ? startRaw[startRaw.length - 1] : '';
                 if (dateStr) datesSet[dateStr] = true;
                 parsed.push({
                     fileName: (p[0] || '').trim(),
                     freq: (p[3] || '').trim(),
                     dur: dur,
-                    folderPath: (p[10] || '').trim(),
+                    folderPath: folderPath,
                     dateStr: dateStr,
                     timeStr: timeStr,
                     name: (p[13] || 'Unknown').trim()
