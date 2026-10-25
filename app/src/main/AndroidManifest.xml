@@ -25,6 +25,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".PlayerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:screenOrientation="unspecified" />
+
         <service
             android:name=".AudioKeepAliveService"
             android:exported="false"
