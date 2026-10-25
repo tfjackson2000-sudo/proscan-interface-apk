@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en" data-pskin="cassette">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>ProScan Archive Player</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700;800&family=Orbitron:wght@700;800&display=swap" rel="stylesheet">
+<style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; user-select: none; }
+    html, body {
+        margin: 0; padding: 0; width: 100vw; height: 100dvh; overflow: hidden;
+        background: #0d1117; font-family: system-ui, -apple-system, sans-serif;
+        display: flex; align-items: center; justify-content: center;
+    }
+    #player-chassis {
+        width: 94%; max-width: 500px; height: calc(100dvh - 28px);
+        background: var(--deck-bg); border: var(--deck-border); border-radius: 20px;
+        box-shadow: 0 0 0 6px #090b0e, 0 16px 36px rgba(0,0,0,0.9), inset 0 2px 3px rgba(255,255,255,0.22);
+        padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+        color: var(--deck-text); transition: all 0.3s ease;
+    }
+
+    /* SKIN 1: 80s CASSETTE DECK */
+    html[data-pskin="cassette"] {
+        --deck-bg: linear-gradient(155deg, #2b3036 0%, #181b1f 60%, #101215 100%);
+        --deck-border: 2px solid #525b66; --deck-text: #f1f5f9; --accent: #f59e0b;
+        --well-bg: linear-gradient(145deg, #0e1013, #1e2228);
+        --btn-bg: linear-gradient(180deg, #374151 0%, #1f2937 55%, #111827 100%);
+        --btn-txt: #e2e8f0;
+    }
+    /* SKIN 2: 90s CD PLAYER */
+    html[data-pskin="cd"] {
+        --deck-bg: linear-gradient(155deg, #1e293b 0%, #0f172a 65%, #070b14 100%);
+        --deck-border: 2px solid #38bdf8; --deck-text: #e0f2fe; --accent: #38bdf8;
+        --well-bg: radial-gradient(circle, #0f172a 0%, #05080f 100%);
+        --btn-bg: linear-gradient(180deg, #1e3a5f 0%, #0f233d 55%, #081324 100%);
+        --btn-txt: #bae6fd;
+    }
+    /* SKIN 3: VINTAGE VINYL TURNTABLE */
+    html[data-pskin="vinyl"] {
+        --deck-bg: linear-gradient(145deg, #5c3418 0%, #3d210d 55%, #261407 100%);
+        --deck-border: 2px solid #d97706; --deck-text: #fef3c7; --accent: #fbbf24;
+        --well-bg: linear-gradient(145deg, #1c1613, #2b231e);
+        --btn-bg: linear-gradient(180deg, #33271e 0%, #1f1712 55%, #120d0a 100%);
+        --btn-txt: #fde68a;
+    }
+    /* SKIN 4: HACKER'S DEN (SIGINT TERMINAL) */
+    html[data-pskin="hacker"] {
+        --deck-bg: radial-gradient(circle at 50% 10%, #0b2410 0%, #041006 70%, #010502 100%);
+        --deck-border: 2px solid #39ff14; --deck-text: #39ff14; --accent: #39ff14;
+        --well-bg: #020803;
+        --btn-bg: linear-gradient(180deg, #0f360b 0%, #071c05 55%, #030d02 100%);
+        --btn-txt: #39ff14;
+    }
+    /* SKIN 5: REEL-TO-REEL SPY RECORDER */
+    html[data-pskin="reel"] {
+        --deck-bg: linear-gradient(150deg, #4b5338 0%, #333926 60%, #1f2417 100%);
+        --deck-border: 2px solid #a3e635; --deck-text: #fef08a; --accent: #facc15;
+        --well-bg: linear-gradient(180deg, #1a1d14, #282c1f);
+        --btn-bg: linear-gradient(180deg, #2b3022 0%, #181b13 55%, #0f110c 100%);
+        --btn-txt: #fef08a;
+    }
+
+    .top-bar {
+        display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-shrink: 0;
+    }
+    .deck-title {
+        font-family: 'Orbitron', sans-serif; font-size: 11px; font-weight: 800;
+        letter-spacing: 1.2px; color: var(--accent);
+    }
+    .p-btn {
+        height: 28px; padding: 0 9px; border-radius: 6px; border: 1px solid #090b0e;
+        background: var(--btn-bg); color: var(--btn-txt); font-size: 9.5px; font-weight: 800;
+        box-shadow: 0 2px 0 #050608, inset 0 1px 0 rgba(255,255,255,0.22);
+        cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+    }
+    .p-btn:active, .p-btn.active {
+        transform: translateY(2px); box-shadow: inset 0 2px 4px rgba(0,0,0,0.85);
+        color: var(--accent); border-color: var(--accent);
+    }
+
+    /* Animated Visual Stage */
+    #visual-stage {
+        background: var(--well-bg); border: 2px solid #090a0d; border-radius: 14px;
+        padding: 8px 10px; height: 122px; flex-shrink: 0; position: relative;
+        box-shadow: inset 0 3px 10px rgba(0,0,0,0.95);
+        display: flex; flex-direction: column; justify-content: space-between; overflow: hidden;
+    }
+    .track-banner {
+        display: flex; justify-content: space-between; align-items: center;
+        background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.14);
+        border-radius: 6px; padding: 3px 8px; font-family: 'JetBrains Mono', monospace;
+        font-size: 10.5px; font-weight: 800; color: var(--accent); z-index: 5;
+    }
+    .track-banner span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .stage-anim-area {
+        flex: 1; display: flex; align-items: center; justify-content: space-around;
+        position: relative; margin-top: 4px;
+    }
+    @keyframes spinCW { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes spinCCW { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+
+    /* Reels / Discs */
+    .wheel {
+        width: 56px; height: 56px; border-radius: 50%; border: 3px solid #cbd5e1;
+        background:
+            conic-gradient(from 0deg, transparent 0deg 40deg, rgba(255,255,255,0.75) 40deg 60deg, transparent 60deg 160deg, rgba(255,255,255,0.75) 160deg 180deg, transparent 180deg 280deg, rgba(255,255,255,0.75) 280deg 300deg, transparent 300deg 360deg),
+            radial-gradient(circle, #090b0e 28%, #334155 30%, #1e293b 70%);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.85);
+    }
+    .playing .wheel { animation: spinCCW 1.8s linear infinite; }
+
+    /* CD Mode: Single large iridescent disc */
+    html[data-pskin="cd"] #wheel-right { display: none; }
+    html[data-pskin="cd"] #wheel-left {
+        width: 72px; height: 72px; border: 2px solid #e0f2fe;
+        background:
+            radial-gradient(circle, #090b0e 16%, #cbd5e1 18%, #94a3b8 26%, transparent 27%),
+            conic-gradient(#38bdf8, #a855f7, #ec4899, #eab308, #22c55e, #38bdf8);
+    }
+    html[data-pskin="cd"] .playing #wheel-left { animation: spinCW 0.9s linear infinite; }
+
+    /* Vinyl Mode: Grooved black LP record with gold center label + tonearm */
+    html[data-pskin="vinyl"] #wheel-right { display: none; }
+    html[data-pskin="vinyl"] #wheel-left {
+        width: 74px; height: 74px; border: 2px solid #27272a;
+        background:
+            radial-gradient(circle, #000 6%, #f59e0b 7%, #d97706 32%, #111 33%),
+            repeating-radial-gradient(circle, #111 0px, #111 2px, #222 3px, #111 4px);
+    }
+    html[data-pskin="vinyl"] .playing #wheel-left { animation: spinCW 1.4s linear infinite; }
+
+    /* Reel-to-Reel Mode: Large 7-inch 3-slot metal reels */
+    html[data-pskin="reel"] .wheel {
+        width: 68px; height: 68px; border: 3px solid #d4d4d8;
+        background:
+            conic-gradient(from 0deg, #a1a1aa 0deg 30deg, #18181b 30deg 120deg, #a1a1aa 120deg 150deg, #18181b 150deg 240deg, #a1a1aa 240deg 270deg, #18181b 270deg 360deg);
+    }
+
+    /* Hacker Mode: Hide wheels, show matrix/oscilloscope bars */
+    html[data-pskin="hacker"] .wheel {
+        border-color: #39ff14;
+        background:
+            radial-gradient(circle, #020803 30%, transparent 31%),
+            repeating-conic-gradient(from 0deg, rgba(57,255,20,0.6) 0deg 15deg, transparent 15deg 30deg);
+    }
+
+    /* Center Counter & VU Meter Box */
+    .center-telemetry {
+        display: flex; flex-direction: column; align-items: center; gap: 4px; z-index: 4;
+    }
+    #time-counter {
+        font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 800;
+        padding: 2px 8px; border-radius: 5px; background: #050709;
+        border: 1px solid rgba(255,255,255,0.18); color: #39ff14;
+        text-shadow: 0 0 6px rgba(57,255,20,0.6);
+    }
+    .vu-bars {
+        display: flex; gap: 2px; align-items: flex-end; height: 16px;
+    }
+    .vu-bar {
+        width: 4px; height: 3px; background: #22c55e; border-radius: 1px;
+        transition: height 0.08s ease;
+    }
+    .vu-bar:nth-child(7), .vu-bar:nth-child(8) { background: #eab308; }
+    .vu-bar:nth-child(9), .vu-bar:nth-child(10) { background: #ef4444; }
+
+    /* Transport & Playback Mode Rows */
+    .transport-grid {
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex-shrink: 0;
+    }
+    .modes-grid {
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex-shrink: 0;
+    }
+    .filter-row {
+        display: grid; grid-template-columns: 115px 1fr 34px; gap: 6px; flex-shrink: 0;
+    }
+    select, input[type="text"] {
+        height: 28px; border-radius: 6px; border: 1px solid #475569;
+        background: #090c10; color: #f8fafc; padding: 0 6px;
+        font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    }
+
+    /* Recordings Playlist */
+    #playlist-box {
+        flex: 1; min-height: 0; overflow-y: auto; border-radius: 10px;
+        border: 1px solid rgba(255,255,255,0.14); background: #07090c;
+        scrollbar-width: thin; scrollbar-color: var(--accent) #07090c;
+    }
+    .rec-row {
+        display: grid; grid-template-columns: 54px 58px 66px 36px 1fr; gap: 4px;
+        padding: 6px 7px; border-bottom: 1px solid rgba(255,255,255,0.06);
+        font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #cbd5e1;
+        align-items: center; cursor: pointer;
+    }
+    .rec-row:active { background: rgba(255,255,255,0.12); }
+    .rec-row.playing {
+        background: rgba(57, 255, 20, 0.18); color: #39ff14; font-weight: 800;
+    }
+    .rec-row span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+<div id="player-chassis">
+    <div class="top-bar">
+        <button class="p-btn" type="button" id="btn-back-radio">&#9664; RADIO</button>
+        <span class="deck-title" id="deck-skin-title">80s CASSETTE DECK</span>
+        <button class="p-btn" type="button" id="btn-cycle-pskin">SKIN: TAPE</button>
+    </div>
+
+    <div id="visual-stage">
+        <div class="track-banner">
+            <span id="banner-name">SELECT A RECORDING BELOW</span>
+            <span id="banner-freq">---.----</span>
+        </div>
+        <div class="stage-anim-area" id="anim-stage">
+            <div class="wheel" id="wheel-left"></div>
+            <div class="center-telemetry">
+                <div id="time-counter">00:00</div>
+                <div class="vu-bars" id="vu-meter">
+                    <div class="vu-bar"></div><div class="vu-bar"></div><div class="vu-bar"></div>
+                    <div class="vu-bar"></div><div class="vu-bar"></div><div class="vu-bar"></div>
+                    <div class="vu-bar"></div><div class="vu-bar"></div><div class="vu-bar"></div>
+                    <div class="vu-bar"></div>
+                </div>
+            </div>
+            <div class="wheel" id="wheel-right"></div>
+        </div>
+    </div>
+
+    <div class="transport-grid">
+        <button class="p-btn" type="button" id="btn-prev">|&lt;&lt; PREV</button>
+        <button class="p-btn" type="button" id="btn-play">&#9654; PLAY</button>
+        <button class="p-btn" type="button" id="btn-stop">&#9632; STOP</button>
+        <button class="p-btn" type="button" id="btn-next">NEXT &gt;&gt;|</button>
+    </div>
+
+    <div class="modes-grid">
+        <button class="p-btn active" type="button" id="btn-mode-cont">CONT: ON</button>
+        <button class="p-btn" type="button" id="btn-mode-tts">CAPTION: OFF</button>
+        <button class="p-btn" type="button" id="btn-mode-loop">LOOP: OFF</button>
+        <button class="p-btn" type="button" id="btn-mode-order">NEW &#8594; OLD</button>
+    </div>
+
+    <div class="filter-row">
+        <select id="date-select"><option value="">ALL DATES</option></select>
+        <input type="text" id="search-box" placeholder="Search channel or freq..." autocomplete="off">
+        <button class="p-btn" type="button" id="btn-refresh">&#8635;</button>
+    </div>
+
+    <div id="playlist-box">
+        <div style="padding:20px;text-align:center;opacity:0.6;font-size:11px;">Loading Recording Data.txt...</div>
+    </div>
+</div>
+
+<script>
+    var pSkins = [
+        { id: 'cassette', btn: 'SKIN: TAPE', title: '80s CASSETTE DECK' },
+        { id: 'cd',       btn: 'SKIN: CD',   title: '90s OPTICAL CD DECK' },
+        { id: 'vinyl',    btn: 'SKIN: VINYL',title: 'VINYL TURNTABLE' },
+        { id: 'hacker',   btn: 'SKIN: HACK', title: 'SIGINT INTERCEPT DEN' },
+        { id: 'reel',     btn: 'SKIN: REEL', title: 'REEL-TO-REEL ARCHIVE' }
+    ];
+    var pSkinIdx = parseInt(localStorage.getItem('proscan_pskin_idx') || '0', 10) || 0;
+
+    function applyPSkin(idx) {
+        pSkinIdx = ((idx % pSkins.length) + pSkins.length) % pSkins.length;
+        var s = pSkins[pSkinIdx];
+        document.documentElement.setAttribute('data-pskin', s.id);
+        document.getElementById('btn-cycle-pskin').innerText = s.btn;
+        document.getElementById('deck-skin-title').innerText = s.title;
+        localStorage.setItem('proscan_pskin_idx', pSkinIdx);
+    }
+    applyPSkin(pSkinIdx);
+
+    document.getElementById('btn-cycle-pskin').addEventListener('click', function () {
+        applyPSkin(pSkinIdx + 1);
+    });
+    document.getElementById('btn-back-radio').addEventListener('click', function () {
+        if (window.PlayerBridge) window.PlayerBridge.closePlayer();
+    });
+
+    var audio = new Audio();
+    var allRecs = [];
+    var filteredRecs = [];
+    var curIdx = -1;
+    var isCont = true;
+    var isTtsCaption = false;
+    var isLoop = false;
+    var isOldestFirst = false;
+    var vuTimer = null;
+
+    function setPlayingUI(playing) {
+        var stage = document.getElementById('anim-stage');
+        var pBtn = document.getElementById('btn-play');
+        if (stage) stage.classList.toggle('playing', playing);
+        if (pBtn) {
+            pBtn.classList.toggle('active', playing);
+            pBtn.innerHTML = playing ? '|| PAUSE' : '&#9654; PLAY';
+        }
+        clearInterval(vuTimer);
+        var bars = document.querySelectorAll('#vu-meter .vu-bar');
+        if (playing) {
+            vuTimer = setInterval(function () {
+                bars.forEach(function (b, i) {
+                    var h = Math.max(3, Math.round(Math.random() * (16 - Math.abs(4 - i))));
+                    b.style.height = h + 'px';
+                });
+            }, 90);
+        } else {
+            bars.forEach(function (b) { b.style.height = '3px'; });
+        }
+    }
+
+    audio.addEventListener('timeupdate', function () {
+        var s = Math.floor(audio.currentTime || 0);
+        document.getElementById('time-counter').innerText =
+            String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+    });
+
+    audio.addEventListener('ended', function () {
+        setPlayingUI(false);
+        if (isLoop && curIdx >= 0) {
+            playIndex(curIdx);
+        } else if (isCont && curIdx + 1 < filteredRecs.length) {
+            playIndex(curIdx + 1);
+        }
+    });
+
+    audio.addEventListener('error', function () {
+        setPlayingUI(false);
+        document.getElementById('banner-name').innerText = 'FILE NOT FOUND ON SERVER';
+        if (isCont && curIdx + 1 < filteredRecs.length) {
+            setTimeout(function () { playIndex(curIdx + 1); }, 800);
+        }
+    });
+
+    function buildMp3Url(baseUrl, r) {
+        var bs = String.fromCharCode(92);
+        var f = r.folderPath.split(bs).join('/');
+        var sub = '';
+        var ix = f.toLowerCase().indexOf('/recordings/');
+        if (ix !== -1) {
+            sub = f.slice(ix + 12);
+        } else {
+            var ps = f.split('/').filter(Boolean);
+            if (ps.length >= 2) sub = ps.slice(-2).join('/') + '/';
+        }
+        if (sub && !sub.endsWith('/')) sub += '/';
+        var rel = ('Recordings/' + sub + r.fileName).split('/').map(encodeURIComponent).join('/');
+        return baseUrl.replace(/\/+$/, '') + '/' + rel;
+    }
+
+    function renderPlaylist() {
+        var box = document.getElementById('playlist-box');
+        var selDate = document.getElementById('date-select').value;
+        var q = (document.getElementById('search-box').value || '').trim().toLowerCase();
+
+        var list = allRecs.filter(function (r) {
+            if (selDate && r.dateStr !== selDate) return false;
+            if (q && !r.name.toLowerCase().includes(q) && !r.freq.toLowerCase().includes(q) && !r.timeStr.toLowerCase().includes(q)) return false;
+            return true;
+        });
+
+        if (isOldestFirst) list = list.slice().reverse();
+        filteredRecs = list;
+
+        if (!filteredRecs.length) {
+            box.innerHTML = '<div style="padding:20px;text-align:center;opacity:0.6;font-size:11px;">No matching recordings found.</div>';
+            return;
+        }
+
+        var html = '';
+        for (var i = 0; i < filteredRecs.length; i++) {
+            var r = filteredRecs[i];
+            var cls = (i === curIdx && !audio.paused) ? 'playing' : '';
+            html += '<div class="rec-row ' + cls + '" data-idx="' + i + '">' +
+                '<span>' + r.dateStr + '</span>' +
+                '<span>' + r.timeStr + '</span>' +
+                '<span>' + r.freq + '</span>' +
+                '<span>' + r.dur + '</span>' +
+                '<span title="' + r.name + '">' + r.name + '</span>' +
+            '</div>';
+        }
+        box.innerHTML = html;
+        box.querySelectorAll('.rec-row').forEach(function (el) {
+            el.addEventListener('click', function () {
+                playIndex(parseInt(el.getAttribute('data-idx'), 10));
+            });
+        });
+    }
+
+    function startAudioPlayback(r) {
+        var baseUrl = window.PlayerBridge ? window.PlayerBridge.getServerUrl() : '';
+        audio.src = buildMp3Url(baseUrl, r);
+        audio.play().then(function () {
+            setPlayingUI(true);
+            renderPlaylist();
+        }).catch(function () {
+            setPlayingUI(false);
+        });
+    }
+
+    function playIndex(idx) {
+        if (idx < 0 || idx >= filteredRecs.length) return;
+        curIdx = idx;
+        var r = filteredRecs[idx];
+        audio.pause();
+        document.getElementById('banner-name').innerText = r.dateStr + ' ' + r.timeStr + ' • ' + r.name;
+        document.getElementById('banner-freq').innerText = r.freq;
+        renderPlaylist();
+
+        if (isTtsCaption && window.PlayerBridge) {
+            var tShort = r.timeStr.slice(0, 5);
+            window.PlayerBridge.speakCaption(tShort + ', ' + r.name);
+            setTimeout(function () {
+                if (curIdx === idx) startAudioPlayback(r);
+            }, 1900);
+        } else {
+            startAudioPlayback(r);
+        }
+    }
+
+    /* Called by PlayerActivity once Recording Data.txt is fetched */
+    window.onRecordingDataLoaded = function (rawText) {
+        var lines = (rawText || '').trim().split(/\r?\n/);
+        var parsed = [];
+        var datesSet = {};
+
+        for (var i = 0; i < lines.length && parsed.length < 300; i++) {
+            var ln = lines[i].trim();
+            if (!ln || ln.indexOf('.mp3') === -1) continue;
+            var p = ln.split(',');
+            if (p.length >= 14) {
+                var dur = (p[5] || '').trim();
+                if (dur.indexOf('00:') === 0) dur = dur.slice(3);
+                var startRaw = (p[11] || p[8] || '').trim().split(/\s+/);
+                var dateStr = startRaw[0] || '';
+                var timeStr = startRaw.length > 1 ? startRaw[startRaw.length - 1] : '';
+                if (dateStr) datesSet[dateStr] = true;
+                parsed.push({
+                    fileName: (p[0] || '').trim(),
+                    freq: (p[3] || '').trim(),
+                    dur: dur,
+                    folderPath: (p[10] || '').trim(),
+                    dateStr: dateStr,
+                    timeStr: timeStr,
+                    name: (p[13] || 'Unknown').trim()
+                });
+            }
+        }
+        allRecs = parsed;
+
+        var dSel = document.getElementById('date-select');
+        var curVal = dSel.value;
+        var dHtml = '<option value="">ALL DATES</option>';
+        Object.keys(datesSet).forEach(function (d) {
+            dHtml += '<option value="' + d + '">' + d + '</option>';
+        });
+        dSel.innerHTML = dHtml;
+        dSel.value = curVal;
+
+        renderPlaylist();
+    };
+
+    document.getElementById('btn-play').addEventListener('click', function () {
+        if (curIdx === -1 && filteredRecs.length > 0) playIndex(0);
+        else if (audio.paused && audio.src) { audio.play(); setPlayingUI(true); }
+        else { audio.pause(); setPlayingUI(false); }
+    });
+    document.getElementById('btn-stop').addEventListener('click', function () {
+        audio.pause(); audio.currentTime = 0; setPlayingUI(false); renderPlaylist();
+    });
+    document.getElementById('btn-prev').addEventListener('click', function () {
+        if (curIdx > 0) playIndex(curIdx - 1);
+    });
+    document.getElementById('btn-next').addEventListener('click', function () {
+        if (curIdx + 1 < filteredRecs.length) playIndex(curIdx + 1);
+    });
+
+    document.getElementById('btn-mode-cont').addEventListener('click', function () {
+        isCont = !isCont;
+        this.classList.toggle('active', isCont);
+        this.innerText = isCont ? 'CONT: ON' : 'CONT: OFF';
+    });
+    document.getElementById('btn-mode-tts').addEventListener('click', function () {
+        isTtsCaption = !isTtsCaption;
+        this.classList.toggle('active', isTtsCaption);
+        this.innerText = isTtsCaption ? 'CAPTION: ON' : 'CAPTION: OFF';
+    });
+    document.getElementById('btn-mode-loop').addEventListener('click', function () {
+        isLoop = !isLoop;
+        this.classList.toggle('active', isLoop);
+        this.innerText = isLoop ? 'LOOP: ON' : 'LOOP: OFF';
+    });
+    document.getElementById('btn-mode-order').addEventListener('click', function () {
+        isOldestFirst = !isOldestFirst;
+        this.classList.toggle('active', isOldestFirst);
+        this.innerHTML = isOldestFirst ? 'OLD &#8594; NEW' : 'NEW &#8594; OLD';
+        curIdx = -1;
+        renderPlaylist();
+    });
+
+    document.getElementById('date-select').addEventListener('change', function () {
+        curIdx = -1; renderPlaylist();
+    });
+    document.getElementById('search-box').addEventListener('input', function () {
+        curIdx = -1; renderPlaylist();
+    });
+    document.getElementById('btn-refresh').addEventListener('click', function () {
+        if (window.PlayerBridge) window.PlayerBridge.refreshRecordings();
+    });
+</script>
+</body>
+</html>
