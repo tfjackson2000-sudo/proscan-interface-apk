@@ -104,7 +104,7 @@ public class PlayerActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 injectNativePlayerHooks();
-                fetchRecordingDataFromServer();
+                fetchRecordingDataFromServer(false);
             }
         });
 
@@ -113,38 +113,89 @@ public class PlayerActivity extends Activity {
     }
 
     private void injectNativePlayerHooks() {
-        String js = "(function(){" +
-                "window.onNativeTimeUpdate=function(sec){" +
-                "  var el=document.getElementById('time-counter');" +
-                "  if(el)el.innerText=String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');" +
-                "};" +
-                "window.onNativePlayStarted=function(){" +
-                "  if(typeof setPlayingUI==='function')setPlayingUI(true);" +
-                "  if(typeof renderPlaylist==='function')renderPlaylist();" +
-                "};" +
-                "window.onNativePlayEnded=function(){" +
-                "  if(typeof setPlayingUI==='function')setPlayingUI(false);" +
-                "  if(typeof isLoop!=='undefined'&&isLoop&&curIdx>=0)playIndex(curIdx);" +
-                "  else if(typeof isCont!=='undefined'&&isCont&&curIdx+1<filteredRecs.length)playIndex(curIdx+1);" +
-                "};" +
-                "window.onNativePlayError=function(msg){" +
-                "  if(typeof setPlayingUI==='function')setPlayingUI(false);" +
-                "  var b=document.getElementById('banner-name');if(b)b.innerText=msg||'NOT IN G-DRIVE YET';" +
-                "};" +
-                "window.startAudioPlayback=function(r){" +
-                "  var bs=String.fromCharCode(92),f=(r.folderPath||'').split(bs).join('/'),ps=f.split('/').filter(Boolean);" +
-                "  var sub=ps.length>=1?ps[ps.length-1]:'Scan',dt=ps.length>=2?ps[ps.length-2]:r.dateStr;" +
-                "  var b=document.getElementById('banner-name');if(b)b.innerText='LOADING G-DRIVE: '+r.name;" +
-                "  if(window.PlayerBridge&&window.PlayerBridge.resolveAndPlayOnDrive){" +
-                "    window.PlayerBridge.resolveAndPlayOnDrive(dt,sub,r.fileName);" +
-                "  }" +
-                "};" +
-                "var stopB=document.getElementById('btn-stop');" +
-                "if(stopB)stopB.addEventListener('click',function(){if(window.PlayerBridge&&window.PlayerBridge.stopAudio)window.PlayerBridge.stopAudio();});" +
-                "var playB=document.getElementById('btn-play');" +
-                "if(playB)playB.addEventListener('click',function(){if(curIdx!==-1&&window.PlayerBridge&&window.PlayerBridge.togglePause)window.PlayerBridge.togglePause();});" +
-                "})();";
-        if (playerWeb != null) playerWeb.evaluateJavascript(js, null);
+        StringBuilder js = new StringBuilder();
+        js.append("(function(){\n");
+        js.append("  var st=document.createElement('style');\n");
+        js.append("  st.textContent='.rec-row{grid-template-columns:50px 56px 64px 36px 1fr!important;}';\n");
+        js.append("  document.head.appendChild(st);\n");
+
+        /* Smart Parser for Recording Data.txt so Channel Name, Freq, Dur, Date & Time are ALWAYS in the right columns! */
+        js.append("  window.onRecordingDataLoaded=function(rawText){\n");
+        js.append("    var lines=(rawText||'').trim().split('\\n');\n");
+        js.append("    var parsed=[], datesSet={};\n");
+        js.append("    var bs=String.fromCharCode(92);\n");
+        js.append("    for(var i=0;i<lines.length&&parsed.length<350;i++){\n");
+        js.append("      var ln=lines[i].trim();\n");
+        js.append("      if(!ln||ln.indexOf('.mp3')===-1)continue;\n");
+        js.append("      var p=ln.split(',');\n");
+        js.append("      var fileName=(p[0]||'').trim();\n");
+        js.append("      var chNameFromFile=fileName.indexOf(' - ')!==-1?fileName.split(' - ')[0].trim():'';\n");
+        js.append("      var freq=(p[3]||'').trim();\n");
+        js.append("      var dur='', folderPath='', dateStr='', timeStr='', chName='';\n");
+        js.append("      for(var j=1;j<p.length;j++){\n");
+        js.append("        var cell=(p[j]||'').trim();\n");
+        js.append("        if(!dur&&cell.length===8&&cell.charAt(2)===':'&&cell.charAt(5)===':'){\n");
+        js.append("          dur=cell.indexOf('00:')===0?cell.slice(3):cell;\n");
+        js.append("        } else if(!folderPath&&cell.indexOf(bs)!==-1){\n");
+        js.append("          folderPath=cell;\n");
+        js.append("        } else if(cell.indexOf('/')!==-1&&cell.indexOf(':')!==-1&&cell.indexOf(' ')!==-1){\n");
+        js.append("          var sp=cell.split(' ');\n");
+        js.append("          dateStr=sp[0]; timeStr=sp[sp.length-1];\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("      var info=extractDateAndSubfolder(folderPath);\n");
+        js.append("      if(info.dateFolder)dateStr=info.dateFolder;\n");
+        js.append("      chName=chNameFromFile||(p[p.length-2]||'Unknown').trim();\n");
+        js.append("      if(dateStr)datesSet[dateStr]=true;\n");
+        js.append("      parsed.push({fileName:fileName,freq:freq,dur:dur||'00:01',folderPath:folderPath,dateStr:dateStr,timeStr:timeStr,name:chName});\n");
+        js.append("    }\n");
+        js.append("    allRecs=parsed;\n");
+        js.append("    var dSel=document.getElementById('date-select');\n");
+        js.append("    var curVal=dSel.value;\n");
+        js.append("    var dHtml='<option value=\"\">ALL DATES</option>';\n");
+        js.append("    Object.keys(datesSet).forEach(function(d){dHtml+='<option value=\"'+d+'\">'+d+'</option>';});\n");
+        js.append("    dSel.innerHTML=dHtml; dSel.value=curVal;\n");
+        js.append("    renderPlaylist();\n");
+        js.append("  };\n");
+
+        js.append("  window.onNativeTimeUpdate=function(sec){\n");
+        js.append("    var el=document.getElementById('time-counter');\n");
+        js.append("    if(el)el.innerText=String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');\n");
+        js.append("  };\n");
+        js.append("  window.onNativePlayStarted=function(){\n");
+        js.append("    if(curIdx>=0&&curIdx<filteredRecs.length){\n");
+        js.append("      var r=filteredRecs[curIdx];\n");
+        js.append("      var b=document.getElementById('banner-name');\n");
+        js.append("      if(b)b.innerText='PLAYING: '+r.name+' ('+r.timeStr+')';\n");
+        js.append("      var f=document.getElementById('banner-freq');\n");
+        js.append("      if(f)f.innerText=r.freq;\n");
+        js.append("    }\n");
+        js.append("    if(typeof setPlayingUI==='function')setPlayingUI(true);\n");
+        js.append("    if(typeof renderPlaylist==='function')renderPlaylist();\n");
+        js.append("  };\n");
+        js.append("  window.onNativePlayEnded=function(){\n");
+        js.append("    if(typeof setPlayingUI==='function')setPlayingUI(false);\n");
+        js.append("    if(typeof isLoop!=='undefined'&&isLoop&&curIdx>=0)playIndex(curIdx);\n");
+        js.append("    else if(typeof isCont!=='undefined'&&isCont&&curIdx+1<filteredRecs.length)playIndex(curIdx+1);\n");
+        js.append("  };\n");
+        js.append("  window.onNativePlayError=function(msg){\n");
+        js.append("    if(typeof setPlayingUI==='function')setPlayingUI(false);\n");
+        js.append("    var b=document.getElementById('banner-name');if(b)b.innerText=msg||'SYNCING TO G-DRIVE...';\n");
+        js.append("  };\n");
+        js.append("  window.startAudioResolution=function(r){\n");
+        js.append("    var info=extractDateAndSubfolder(r.folderPath);\n");
+        js.append("    var b=document.getElementById('banner-name');if(b)b.innerText='LOADING: '+r.name+' ('+r.timeStr+')';\n");
+        js.append("    if(window.PlayerBridge&&window.PlayerBridge.resolveAndPlayOnDrive){\n");
+        js.append("      window.PlayerBridge.resolveAndPlayOnDrive(info.dateFolder||r.dateStr,info.subFolder||'Scan',r.fileName);\n");
+        js.append("    }\n");
+        js.append("  };\n");
+        js.append("  var stopB=document.getElementById('btn-stop');\n");
+        js.append("  if(stopB)stopB.addEventListener('click',function(){if(window.PlayerBridge&&window.PlayerBridge.stopAudio)window.PlayerBridge.stopAudio();});\n");
+        js.append("  var playB=document.getElementById('btn-play');\n");
+        js.append("  if(playB)playB.addEventListener('click',function(){if(curIdx!==-1&&window.PlayerBridge&&window.PlayerBridge.togglePause)window.PlayerBridge.togglePause();});\n");
+        js.append("})();");
+
+        if (playerWeb != null) playerWeb.evaluateJavascript(js.toString(), null);
     }
 
     private void stopNativePlayer() {
@@ -209,7 +260,8 @@ public class PlayerActivity extends Activity {
 
         @JavascriptInterface
         public void refreshRecordings() {
-            fetchRecordingDataFromServer();
+            mainHandler.post(() -> Toast.makeText(PlayerActivity.this, "Refreshing Recordings & G-Drive...", Toast.LENGTH_SHORT).show());
+            fetchRecordingDataFromServer(true);
         }
 
         @JavascriptInterface
@@ -243,7 +295,7 @@ public class PlayerActivity extends Activity {
                     if (fileId != null && !fileId.isEmpty()) {
                         playDriveFileIdNatively(fileId);
                     } else if (playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('NOT FOUND ON G-DRIVE');", null);
+                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('WAIT: SYNCING TO G-DRIVE');", null);
                     }
                 });
             });
@@ -289,6 +341,8 @@ public class PlayerActivity extends Activity {
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setConnectTimeout(9000);
             conn.setReadTimeout(9000);
+            conn.setUseCaches(false);
+            conn.setRequestProperty("Cache-Control", "no-cache");
             conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
             BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
@@ -308,7 +362,6 @@ public class PlayerActivity extends Activity {
         Map<String, String> map = new HashMap<>();
         if (folderId == null || folderId.isEmpty()) return map;
 
-        /* 1. Parse embeddedfolderview */
         String html1 = fetchUrlText("https://drive.google.com/embeddedfolderview?id=" + folderId + "#list");
         if (!html1.isEmpty()) {
             Pattern p1 = Pattern.compile("id=\"entry-([A-Za-z0-9_-]{15,})\"[\\s\\S]*?<div class=\"flip-entry-title\">([^<]+)</div>");
@@ -320,7 +373,6 @@ public class PlayerActivity extends Activity {
             }
         }
 
-        /* 2. Also parse full drive/folders page (contains JSON array of more files beyond the 50 limit) */
         String html2 = fetchUrlText("https://drive.google.com/drive/folders/" + folderId);
         if (!html2.isEmpty()) {
             String unescaped = html2.replace("\\u0022", "\"").replace("\\\"", "\"");
@@ -359,6 +411,10 @@ public class PlayerActivity extends Activity {
         }
 
         String dId = matchNameInMap(dateFolderIdCache, dateFolder);
+        if (dId == null) {
+            dateFolderIdCache.putAll(parseDriveFolderAllItems(GDRIVE_ROOT_FOLDER_ID));
+            dId = matchNameInMap(dateFolderIdCache, dateFolder);
+        }
         if (dId == null) return "";
 
         String scanCacheKey = dateFolder + "/" + subFolder;
@@ -377,6 +433,7 @@ public class PlayerActivity extends Activity {
         }
 
         if (targetFolderId != null) {
+            /* Always re-fetch the Scan subfolder if the requested file wasn't in the cache yet! */
             Map<String, String> mp3sInSub = parseDriveFolderAllItems(targetFolderId);
             mp3FileIdCache.putAll(mp3sInSub);
         }
@@ -385,15 +442,22 @@ public class PlayerActivity extends Activity {
         return found != null ? found : "";
     }
 
-    private void fetchRecordingDataFromServer() {
+    private void fetchRecordingDataFromServer(final boolean clearDriveCache) {
         if (serverBaseUrl.isEmpty()) return;
         executor.execute(() -> {
+            if (clearDriveCache) {
+                dateFolderIdCache.clear();
+                scanFolderIdCache.clear();
+                mp3FileIdCache.clear();
+            }
             try {
                 URL url = new URL(serverBaseUrl + "/Recording%20Data.txt");
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setConnectTimeout(8000);
                 conn.setReadTimeout(8000);
                 conn.setUseCaches(false);
+                conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
+                conn.setRequestProperty("Pragma", "no-cache");
                 BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
                 StringBuilder sb = new StringBuilder();
                 String line;
