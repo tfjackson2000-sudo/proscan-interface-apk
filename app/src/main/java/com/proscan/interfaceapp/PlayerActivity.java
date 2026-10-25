@@ -21,6 +21,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -28,7 +29,11 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -46,10 +51,6 @@ public class PlayerActivity extends Activity {
     private TextToSpeech tts = null;
     private boolean ttsReady = false;
     private MediaPlayer nativePlayer = null;
-
-    private final Map<String, String> dateFolderIdCache = new HashMap<>();
-    private final Map<String, String> scanFolderIdCache = new HashMap<>();
-    private final Map<String, String> mp3FileIdCache = new HashMap<>();
 
     private final Runnable progressTicker = new Runnable() {
         @Override
@@ -104,7 +105,7 @@ public class PlayerActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 injectNativePlayerHooks();
-                fetchRecordingDataFromServer(false);
+                loadLiveGoogleDriveRecordings();
             }
         });
 
@@ -116,46 +117,28 @@ public class PlayerActivity extends Activity {
         StringBuilder js = new StringBuilder();
         js.append("(function(){\n");
         js.append("  var st=document.createElement('style');\n");
-        js.append("  st.textContent='.rec-row{grid-template-columns:50px 56px 64px 36px 1fr!important;}';\n");
+        js.append("  st.textContent='.rec-row{grid-template-columns:52px 56px 64px 36px 1fr!important;}';\n");
         js.append("  document.head.appendChild(st);\n");
 
-        /* Smart Parser for Recording Data.txt so Channel Name, Freq, Dur, Date & Time are ALWAYS in the right columns! */
-        js.append("  window.onRecordingDataLoaded=function(rawText){\n");
-        js.append("    var lines=(rawText||'').trim().split('\\n');\n");
-        js.append("    var parsed=[], datesSet={};\n");
-        js.append("    var bs=String.fromCharCode(92);\n");
-        js.append("    for(var i=0;i<lines.length&&parsed.length<350;i++){\n");
-        js.append("      var ln=lines[i].trim();\n");
-        js.append("      if(!ln||ln.indexOf('.mp3')===-1)continue;\n");
-        js.append("      var p=ln.split(',');\n");
-        js.append("      var fileName=(p[0]||'').trim();\n");
-        js.append("      var chNameFromFile=fileName.indexOf(' - ')!==-1?fileName.split(' - ')[0].trim():'';\n");
-        js.append("      var freq=(p[3]||'').trim();\n");
-        js.append("      var dur='', folderPath='', dateStr='', timeStr='', chName='';\n");
-        js.append("      for(var j=1;j<p.length;j++){\n");
-        js.append("        var cell=(p[j]||'').trim();\n");
-        js.append("        if(!dur&&cell.length===8&&cell.charAt(2)===':'&&cell.charAt(5)===':'){\n");
-        js.append("          dur=cell.indexOf('00:')===0?cell.slice(3):cell;\n");
-        js.append("        } else if(!folderPath&&cell.indexOf(bs)!==-1){\n");
-        js.append("          folderPath=cell;\n");
-        js.append("        } else if(cell.indexOf('/')!==-1&&cell.indexOf(':')!==-1&&cell.indexOf(' ')!==-1){\n");
-        js.append("          var sp=cell.split(' ');\n");
-        js.append("          dateStr=sp[0]; timeStr=sp[sp.length-1];\n");
-        js.append("        }\n");
-        js.append("      }\n");
-        js.append("      var info=extractDateAndSubfolder(folderPath);\n");
-        js.append("      if(info.dateFolder)dateStr=info.dateFolder;\n");
-        js.append("      chName=chNameFromFile||(p[p.length-2]||'Unknown').trim();\n");
-        js.append("      if(dateStr)datesSet[dateStr]=true;\n");
-        js.append("      parsed.push({fileName:fileName,freq:freq,dur:dur||'00:01',folderPath:folderPath,dateStr:dateStr,timeStr:timeStr,name:chName});\n");
-        js.append("    }\n");
-        js.append("    allRecs=parsed;\n");
-        js.append("    var dSel=document.getElementById('date-select');\n");
-        js.append("    var curVal=dSel.value;\n");
-        js.append("    var dHtml='<option value=\"\">ALL DATES</option>';\n");
-        js.append("    Object.keys(datesSet).forEach(function(d){dHtml+='<option value=\"'+d+'\">'+d+'</option>';});\n");
-        js.append("    dSel.innerHTML=dHtml; dSel.value=curVal;\n");
-        js.append("    renderPlaylist();\n");
+        /* Set CONT: OFF by default! */
+        js.append("  isCont = false;\n");
+        js.append("  var cBtn = document.getElementById('btn-mode-cont');\n");
+        js.append("  if (cBtn) { cBtn.classList.remove('active'); cBtn.innerText = 'CONT: OFF'; }\n");
+
+        /* Receive live recordings array directly from Google Drive crawler */
+        js.append("  window.onDriveRecordingsLoaded=function(itemsJson){\n");
+        js.append("    try {\n");
+        js.append("      var arr = JSON.parse(itemsJson);\n");
+        js.append("      allRecs = arr;\n");
+        js.append("      var datesSet = {};\n");
+        js.append("      arr.forEach(function(r){ if(r.dateStr) datesSet[r.dateStr]=true; });\n");
+        js.append("      var dSel = document.getElementById('date-select');\n");
+        js.append("      var curVal = dSel.value;\n");
+        js.append("      var dHtml = '<option value=\"\">ALL DATES</option>';\n");
+        js.append("      Object.keys(datesSet).forEach(function(d){ dHtml += '<option value=\"'+d+'\">'+d+'</option>'; });\n");
+        js.append("      dSel.innerHTML = dHtml; dSel.value = curVal;\n");
+        js.append("      renderPlaylist();\n");
+        js.append("    } catch(e) {}\n");
         js.append("  };\n");
 
         js.append("  window.onNativeTimeUpdate=function(sec){\n");
@@ -180,13 +163,13 @@ public class PlayerActivity extends Activity {
         js.append("  };\n");
         js.append("  window.onNativePlayError=function(msg){\n");
         js.append("    if(typeof setPlayingUI==='function')setPlayingUI(false);\n");
-        js.append("    var b=document.getElementById('banner-name');if(b)b.innerText=msg||'SYNCING TO G-DRIVE...';\n");
+        js.append("    var b=document.getElementById('banner-name');if(b)b.innerText=msg||'STREAM ERROR';\n");
         js.append("  };\n");
         js.append("  window.startAudioResolution=function(r){\n");
-        js.append("    var info=extractDateAndSubfolder(r.folderPath);\n");
         js.append("    var b=document.getElementById('banner-name');if(b)b.innerText='LOADING: '+r.name+' ('+r.timeStr+')';\n");
-        js.append("    if(window.PlayerBridge&&window.PlayerBridge.resolveAndPlayOnDrive){\n");
-        js.append("      window.PlayerBridge.resolveAndPlayOnDrive(info.dateFolder||r.dateStr,info.subFolder||'Scan',r.fileName);\n");
+        js.append("    var f=document.getElementById('banner-freq');if(f)f.innerText=r.freq;\n");
+        js.append("    if(r.fileId&&window.PlayerBridge&&window.PlayerBridge.playDriveIdDirect){\n");
+        js.append("      window.PlayerBridge.playDriveIdDirect(r.fileId);\n");
         js.append("    }\n");
         js.append("  };\n");
         js.append("  var stopB=document.getElementById('btn-stop');\n");
@@ -260,8 +243,13 @@ public class PlayerActivity extends Activity {
 
         @JavascriptInterface
         public void refreshRecordings() {
-            mainHandler.post(() -> Toast.makeText(PlayerActivity.this, "Refreshing Recordings & G-Drive...", Toast.LENGTH_SHORT).show());
-            fetchRecordingDataFromServer(true);
+            mainHandler.post(() -> Toast.makeText(PlayerActivity.this, "Syncing latest files from Google Drive...", Toast.LENGTH_SHORT).show());
+            loadLiveGoogleDriveRecordings();
+        }
+
+        @JavascriptInterface
+        public void playDriveIdDirect(final String fileId) {
+            mainHandler.post(() -> playDriveFileIdNatively(fileId));
         }
 
         @JavascriptInterface
@@ -284,20 +272,6 @@ public class PlayerActivity extends Activity {
                         }
                     }
                 } catch (Exception ignored) {}
-            });
-        }
-
-        @JavascriptInterface
-        public void resolveAndPlayOnDrive(final String dateFolder, final String subFolder, final String fileName) {
-            executor.execute(() -> {
-                String fileId = findGoogleDriveFileId(dateFolder, subFolder, fileName);
-                mainHandler.post(() -> {
-                    if (fileId != null && !fileId.isEmpty()) {
-                        playDriveFileIdNatively(fileId);
-                    } else if (playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('WAIT: SYNCING TO G-DRIVE');", null);
-                    }
-                });
             });
         }
 
@@ -337,12 +311,14 @@ public class PlayerActivity extends Activity {
 
     private String fetchUrlText(String urlStr) {
         try {
-            URL url = new URL(urlStr);
+            String sep = urlStr.contains("?") ? "&" : "?";
+            URL url = new URL(urlStr + sep + "_t=" + System.currentTimeMillis());
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setConnectTimeout(9000);
             conn.setReadTimeout(9000);
             conn.setUseCaches(false);
-            conn.setRequestProperty("Cache-Control", "no-cache");
+            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
+            conn.setRequestProperty("Pragma", "no-cache");
             conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
             BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
@@ -359,10 +335,10 @@ public class PlayerActivity extends Activity {
     }
 
     private Map<String, String> parseDriveFolderAllItems(String folderId) {
-        Map<String, String> map = new HashMap<>();
+        Map<String, String> map = new LinkedHashMap<>();
         if (folderId == null || folderId.isEmpty()) return map;
 
-        String html1 = fetchUrlText("https://drive.google.com/embeddedfolderview?id=" + folderId + "#list");
+        String html1 = fetchUrlText("https://drive.google.com/embeddedfolderview?id=" + folderId);
         if (!html1.isEmpty()) {
             Pattern p1 = Pattern.compile("id=\"entry-([A-Za-z0-9_-]{15,})\"[\\s\\S]*?<div class=\"flip-entry-title\">([^<]+)</div>");
             Matcher m1 = p1.matcher(html1);
@@ -376,12 +352,14 @@ public class PlayerActivity extends Activity {
         String html2 = fetchUrlText("https://drive.google.com/drive/folders/" + folderId);
         if (!html2.isEmpty()) {
             String unescaped = html2.replace("\\u0022", "\"").replace("\\\"", "\"");
-            Pattern p2 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,120}?\"([^\"]+\\.mp3)\"");
+            Pattern p2 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"([^\"]+\\.mp3)\"");
             Matcher m2 = p2.matcher(unescaped);
             while (m2.find()) {
-                map.put(m2.group(2).trim(), m2.group(1).trim());
+                String id = m2.group(1).trim();
+                String title = m2.group(2).trim().replace("&amp;", "&").replace("&#39;", "'");
+                map.put(title, id);
             }
-            Pattern p3 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,120}?\"(\\d{2}-\\d{2}-\\d{2}|Scan)\"");
+            Pattern p3 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"(\\d{2}-\\d{2}-\\d{2}|Scan)\"");
             Matcher m3 = p3.matcher(unescaped);
             while (m3.find()) {
                 map.put(m3.group(2).trim(), m3.group(1).trim());
@@ -390,88 +368,125 @@ public class PlayerActivity extends Activity {
         return map;
     }
 
-    private String matchNameInMap(Map<String, String> map, String targetName) {
-        if (map.containsKey(targetName)) return map.get(targetName);
-        String prefix = targetName.length() > 22 ? targetName.substring(0, 22).toLowerCase() : targetName.toLowerCase();
-        for (Map.Entry<String, String> e : map.entrySet()) {
-            String k = e.getKey();
-            if (k.equalsIgnoreCase(targetName) || k.toLowerCase().startsWith(prefix)) {
-                return e.getValue();
-            }
+    private static class RecItem implements Comparable<RecItem> {
+        String fileId;
+        String fileName;
+        String dateStr;
+        String timeStr;
+        String freq;
+        String dur;
+        String name;
+        String sortKey;
+
+        @Override
+        public int compareTo(RecItem o) {
+            return o.sortKey.compareTo(this.sortKey);
         }
-        return null;
     }
 
-    private String findGoogleDriveFileId(String dateFolder, String subFolder, String fileName) {
-        String cached = matchNameInMap(mp3FileIdCache, fileName);
-        if (cached != null) return cached;
+    private RecItem parseMp3Filename(String dateFolder, String fileName, String fileId) {
+        /* Format: Channel Name - 455.7500 - 12-42-31 - CC 3 TO 12-42-35.mp3 */
+        String base = fileName.endsWith(".mp3") ? fileName.substring(0, fileName.length() - 4) : fileName;
+        Pattern pat = Pattern.compile("^(.*?)\\s+-\\s+(\\d+\\.\\d+)\\s+-\\s+(\\d{2})-(\\d{2})-(\\d{2})(?:.*?TO\\s+(\\d{2})-(\\d{2})-(\\d{2}))?");
+        Matcher m = pat.matcher(base);
 
-        if (dateFolderIdCache.isEmpty()) {
-            dateFolderIdCache.putAll(parseDriveFolderAllItems(GDRIVE_ROOT_FOLDER_ID));
-        }
+        RecItem item = new RecItem();
+        item.fileId = fileId;
+        item.fileName = fileName;
+        item.dateStr = dateFolder;
 
-        String dId = matchNameInMap(dateFolderIdCache, dateFolder);
-        if (dId == null) {
-            dateFolderIdCache.putAll(parseDriveFolderAllItems(GDRIVE_ROOT_FOLDER_ID));
-            dId = matchNameInMap(dateFolderIdCache, dateFolder);
-        }
-        if (dId == null) return "";
-
-        String scanCacheKey = dateFolder + "/" + subFolder;
-        String targetFolderId = scanFolderIdCache.get(scanCacheKey);
-        if (targetFolderId == null) {
-            Map<String, String> childrenOfDate = parseDriveFolderAllItems(dId);
-            for (Map.Entry<String, String> e : childrenOfDate.entrySet()) {
-                if (e.getKey().endsWith(".mp3")) {
-                    mp3FileIdCache.put(e.getKey(), e.getValue());
-                }
+        if (m.find()) {
+            item.name = m.group(1).trim();
+            item.freq = m.group(2).trim();
+            String h1 = m.group(3), m1 = m.group(4), s1 = m.group(5);
+            item.timeStr = h1 + ":" + m1 + ":" + s1;
+            item.dur = "00:03";
+            if (m.group(6) != null) {
+                try {
+                    int t1 = Integer.parseInt(h1) * 3600 + Integer.parseInt(m1) * 60 + Integer.parseInt(s1);
+                    int t2 = Integer.parseInt(m.group(6)) * 3600 + Integer.parseInt(m.group(7)) * 60 + Integer.parseInt(m.group(8));
+                    int diff = t2 - t1;
+                    if (diff < 0) diff += 86400;
+                    item.dur = String.format(Locale.US, "%02d:%02d", diff / 60, diff % 60);
+                } catch (Exception ignored) {}
             }
-            targetFolderId = matchNameInMap(childrenOfDate, subFolder);
-            if (targetFolderId != null) {
-                scanFolderIdCache.put(scanCacheKey, targetFolderId);
-            }
+        } else {
+            String[] parts = base.split(" - ");
+            item.name = parts.length > 0 ? parts[0].trim() : base;
+            item.freq = parts.length > 1 ? parts[1].trim() : "---.----";
+            item.timeStr = parts.length > 2 ? parts[2].replace('-', ':').trim() : "00:00:00";
+            item.dur = "--:--";
         }
 
-        if (targetFolderId != null) {
-            /* Always re-fetch the Scan subfolder if the requested file wasn't in the cache yet! */
-            Map<String, String> mp3sInSub = parseDriveFolderAllItems(targetFolderId);
-            mp3FileIdCache.putAll(mp3sInSub);
-        }
-
-        String found = matchNameInMap(mp3FileIdCache, fileName);
-        return found != null ? found : "";
+        /* Sort key YYYY-MM-DD HH:MM:SS for newest-first sorting */
+        String[] dp = dateFolder.split("-");
+        String isoDate = dp.length == 3 ? (dp[2] + "-" + dp[0] + "-" + dp[1]) : dateFolder;
+        item.sortKey = isoDate + " " + item.timeStr + " " + fileName;
+        return item;
     }
 
-    private void fetchRecordingDataFromServer(final boolean clearDriveCache) {
-        if (serverBaseUrl.isEmpty()) return;
+    private void loadLiveGoogleDriveRecordings() {
         executor.execute(() -> {
-            if (clearDriveCache) {
-                dateFolderIdCache.clear();
-                scanFolderIdCache.clear();
-                mp3FileIdCache.clear();
-            }
             try {
-                URL url = new URL(serverBaseUrl + "/Recording%20Data.txt");
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(8000);
-                conn.setReadTimeout(8000);
-                conn.setUseCaches(false);
-                conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
-                conn.setRequestProperty("Pragma", "no-cache");
-                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                int count = 0;
-                while ((line = reader.readLine()) != null && count < 350) {
-                    sb.append(line).append("\n");
-                    count++;
+                Map<String, String> rootItems = parseDriveFolderAllItems(GDRIVE_ROOT_FOLDER_ID);
+                List<String> dateFolders = new ArrayList<>();
+                for (String title : rootItems.keySet()) {
+                    if (title.matches("\\d{2}-\\d{2}-\\d{2}")) {
+                        dateFolders.add(title);
+                    }
                 }
-                reader.close();
-                conn.disconnect();
-                final String escaped = JSONObject.quote(sb.toString());
+                /* Sort date folders newest first */
+                Collections.sort(dateFolders, (a, b) -> {
+                    String[] pa = a.split("-"), pb = b.split("-");
+                    String ka = pa.length == 3 ? (pa[2] + pa[0] + pa[1]) : a;
+                    String kb = pb.length == 3 ? (pb[2] + pb[0] + pb[1]) : b;
+                    return kb.compareTo(ka);
+                });
+
+                List<RecItem> allItems = new ArrayList<>();
+                /* Crawl the 3 most recent date folders on Google Drive */
+                int maxDates = Math.min(dateFolders.size(), 3);
+                for (int i = 0; i < maxDates; i++) {
+                    String dFolder = dateFolders.get(i);
+                    String dId = rootItems.get(dFolder);
+                    if (dId == null) continue;
+
+                    Map<String, String> dateChildren = parseDriveFolderAllItems(dId);
+                    for (Map.Entry<String, String> e : dateChildren.entrySet()) {
+                        if (e.getKey().toLowerCase().endsWith(".mp3")) {
+                            allItems.add(parseMp3Filename(dFolder, e.getKey(), e.getValue()));
+                        } else {
+                            /* Subfolder like Scan */
+                            Map<String, String> subChildren = parseDriveFolderAllItems(e.getValue());
+                            for (Map.Entry<String, String> se : subChildren.entrySet()) {
+                                if (se.getKey().toLowerCase().endsWith(".mp3")) {
+                                    allItems.add(parseMp3Filename(dFolder, se.getKey(), se.getValue()));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Collections.sort(allItems);
+
+                JSONArray arr = new JSONArray();
+                for (RecItem it : allItems) {
+                    JSONObject o = new JSONObject();
+                    o.put("fileId", it.fileId);
+                    o.put("fileName", it.fileName);
+                    o.put("dateStr", it.dateStr);
+                    o.put("timeStr", it.timeStr);
+                    o.put("freq", it.freq);
+                    o.put("dur", it.dur);
+                    o.put("name", it.name);
+                    o.put("folderPath", it.dateStr + "/Scan");
+                    arr.put(o);
+                }
+
+                final String escapedJson = JSONObject.quote(arr.toString());
                 mainHandler.post(() -> {
                     if (playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onRecordingDataLoaded)window.onRecordingDataLoaded(" + escaped + ");", null);
+                        playerWeb.evaluateJavascript("if(window.onDriveRecordingsLoaded)window.onDriveRecordingsLoaded(" + escapedJson + ");", null);
                     }
                 });
             } catch (Exception ignored) {}
