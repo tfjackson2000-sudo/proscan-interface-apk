@@ -55,6 +55,7 @@ public class MainActivity extends Activity {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean userWakeLockEnabled = false;
     private boolean bgAudioModeEnabled = false;
+    private String activeServerUrl = "";
     private TextToSpeech tts = null;
     private boolean ttsReady = false;
 
@@ -286,6 +287,17 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void openArchivePlayer() {
+            mainHandler.post(() -> {
+                String base = activeServerUrl;
+                if (base == null || base.isEmpty()) base = webView.getUrl();
+                Intent i = new Intent(MainActivity.this, PlayerActivity.class);
+                i.putExtra("server_url", base != null ? base : "");
+                startActivity(i);
+            });
+        }
+
+        @JavascriptInterface
         public void autoSavePresetsJson(final String webStorageJson, final boolean notifyUser) {
             mainHandler.post(() -> saveBackupJsonToDownloads(webStorageJson, notifyUser));
         }
@@ -308,8 +320,7 @@ public class MainActivity extends Activity {
             mainHandler.post(() -> closeAndExitApp());
         }
     }
-
-    private void closeAndExitApp() {
+private void closeAndExitApp() {
         setBgServiceRunning(false);
         try {
             if (tts != null) {
@@ -398,7 +409,6 @@ public class MainActivity extends Activity {
         js.append("      }\n");
         js.append("    };\n");
 
-        /* Hook auto-backup to Downloads/proscan_presets_backup.json whenever a preset (0-9) or brand is saved! */
         js.append("    if (!window.__presetAutoBackupHooked) {\n");
         js.append("      window.__presetAutoBackupHooked = true;\n");
         js.append("      window.__exportAllProscanStorage = function(notify) {\n");
@@ -422,10 +432,49 @@ public class MainActivity extends Activity {
         js.append("      }\n");
         js.append("    }\n");
 
-        /* 1. Uniform Recessed Keypad Well + True 3D Neon Skins + Balanced Log Column Widths + VOICE Switch CSS */
-        js.append("    if (!document.getElementById('proscan-v5-upgrade-css')) {\n");
+        /* Merge LOG IN / LOG OUT into 1 Smart Button & Convert 2nd Button to PLAYER */
+        js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
+        js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
+        js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
+        js.append("      var newAuthBtn = loginBtn.cloneNode(true);\n");
+        js.append("      newAuthBtn.__mergedAuthHooked = true;\n");
+        js.append("      loginBtn.parentNode.replaceChild(newAuthBtn, loginBtn);\n");
+        js.append("      function isSuperUserLoggedIn() {\n");
+        js.append("        return (document.body.innerText || '').indexOf('Logged In: Super User') !== -1;\n");
+        js.append("      }\n");
+        js.append("      function syncAuthBtnLabel() {\n");
+        js.append("        newAuthBtn.textContent = isSuperUserLoggedIn() ? 'LOG OUT' : 'LOG IN';\n");
+        js.append("      }\n");
+        js.append("      syncAuthBtnLabel();\n");
+        js.append("      setInterval(syncAuthBtnLabel, 1000);\n");
+        js.append("      newAuthBtn.addEventListener('click', function() {\n");
+        js.append("        if (isSuperUserLoggedIn()) {\n");
+        js.append("          var origOut = document.getElementById('input3');\n");
+        js.append("          if (origOut) origOut.click();\n");
+        js.append("          var p = document.getElementById('proscan-login-panel');\n");
+        js.append("          if (p) p.hidden = true;\n");
+        js.append("        } else {\n");
+        js.append("          var p = document.getElementById('proscan-login-panel');\n");
+        js.append("          var pw = document.getElementById('proscan-password');\n");
+        js.append("          if (p) p.hidden = false;\n");
+        js.append("          if (pw) pw.focus();\n");
+        js.append("        }\n");
+        js.append("      });\n");
+        js.append("      var playerBtn = logoutBtn.cloneNode(true);\n");
+        js.append("      playerBtn.id = 'btn-open-player-app';\n");
+        js.append("      playerBtn.textContent = 'PLAYER';\n");
+        js.append("      logoutBtn.parentNode.replaceChild(playerBtn, logoutBtn);\n");
+        js.append("      playerBtn.addEventListener('click', function() {\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("        if (window.AndroidApp && window.AndroidApp.openArchivePlayer) {\n");
+        js.append("          window.AndroidApp.openArchivePlayer();\n");
+        js.append("        }\n");
+        js.append("      });\n");
+        js.append("    }\n");
+
+        js.append("    if (!document.getElementById('proscan-v6-upgrade-css')) {\n");
         js.append("      var st = document.createElement('style');\n");
-        js.append("      st.id = 'proscan-v5-upgrade-css';\n");
+        js.append("      st.id = 'proscan-v6-upgrade-css';\n");
         js.append("      st.textContent = '' +\n");
         js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:7px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
         js.append("        '.freq-hit-badge{display:none!important;}' +\n");
@@ -452,7 +501,7 @@ public class MainActivity extends Activity {
         js.append("      document.head.appendChild(st);\n");
         js.append("    }\n");
 
-        /* 2. Add VOICE Toggle Switch + LED next to WAKE + Observe New Log Rows to Speak Channel Name */
+        /* Add VOICE Switch + LED next to WAKE */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
         js.append("      window.__voiceReadoutEnabled = false;\n");
@@ -461,15 +510,12 @@ public class MainActivity extends Activity {
         js.append("      function speakTextNow(txt) {\n");
         js.append("        if (window.AndroidApp && typeof window.AndroidApp.speakChannel === 'function') {\n");
         js.append("          window.AndroidApp.speakChannel(txt);\n");
-        js.append("        } else if (window.speechSynthesis) {\n");
-        js.append("          try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(new SpeechSynthesisUtterance(txt)); } catch(e) {}\n");
         js.append("        }\n");
         js.append("      }\n");
         js.append("      var vBtn = document.createElement('button');\n");
         js.append("      vBtn.id = 'btn-voice-toggle';\n");
         js.append("      vBtn.className = 'wake-btn-wrapper';\n");
         js.append("      vBtn.type = 'button';\n");
-        js.append("      vBtn.title = 'Voice Readout of Logged Channels';\n");
         js.append("      vBtn.innerHTML = '<div class=\"wake-switch-col\"><div id=\"voice-switch-track\"><div id=\"voice-switch-thumb\"></div></div><span class=\"rx-label\">VOICE</span></div><div id=\"voice-led\"></div>';\n");
         js.append("      vBtn.addEventListener('click', function() {\n");
         js.append("        window.__voiceReadoutEnabled = !window.__voiceReadoutEnabled;\n");
@@ -491,7 +537,8 @@ public class MainActivity extends Activity {
         js.append("          if (newRow && newRow.children.length >= 5) {\n");
         js.append("            var nameTd = newRow.children[4];\n");
         js.append("            var rawTitle = nameTd.getAttribute('title') || nameTd.innerText || '';\n");
-        js.append("            var chName = rawTitle.replace(/^\\([^)]+\\)\\s*/, '').trim();\n");
+        js.append("            var closeParen = rawTitle.indexOf(')');\n");
+        js.append("            var chName = (closeParen !== -1 ? rawTitle.slice(closeParen + 1) : rawTitle).trim();\n");
         js.append("            if (!chName || chName === '---') chName = (newRow.children[1].innerText || '').trim();\n");
         js.append("            var now = Date.now();\n");
         js.append("            if (chName && (chName !== window.__lastSpokenChannel || (now - window.__lastSpokenTime) > 15000)) {\n");
@@ -506,7 +553,7 @@ public class MainActivity extends Activity {
         js.append("      }\n");
         js.append("    }\n");
 
-        /* 3. Tap Any Log Row to Flash Full Channel Name + Hit Count on the Top-Left HUD (and Speak if VOICE is ON) */
+        /* Tap Log Row to Flash Full Name + Hit Count on HUD */
         js.append("    var logTb = document.getElementById('mini-log-data');\n");
         js.append("    if (logTb && !logTb.__hitHudHooked) {\n");
         js.append("      logTb.__hitHudHooked = true;\n");
@@ -517,18 +564,16 @@ public class MainActivity extends Activity {
         js.append("        var badge = nameTd.querySelector('.freq-hit-badge');\n");
         js.append("        var hitsText = badge ? badge.innerText.replace('×', '') : '1';\n");
         js.append("        var rawTitle = nameTd.getAttribute('title') || nameTd.innerText || '';\n");
-        js.append("        var cleanName = rawTitle.replace(/^\\([^)]+\\)\\s*/, '').trim();\n");
+        js.append("        var closeParen = rawTitle.indexOf(')');\n");
+        js.append("        var cleanName = (closeParen !== -1 ? rawTitle.slice(closeParen + 1) : rawTitle).trim();\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(15);\n");
         js.append("        if (typeof showDisplayHud === 'function') {\n");
         js.append("          showDisplayHud(cleanName + ' • HITS: ' + hitsText, 2200);\n");
         js.append("        }\n");
-        js.append("        if (window.__voiceReadoutEnabled && window.AndroidApp && window.AndroidApp.speakChannel) {\n");
-        js.append("          window.AndroidApp.speakChannel(cleanName);\n");
-        js.append("        }\n");
         js.append("      });\n");
         js.append("    }\n");
 
-        /* 4. Single AUDIO button (Short Tap = Normal Audio / Off, Long Press = VLC Screen-Off Mode) */
+        /* Single AUDIO button */
         js.append("    var oldAudioBtn = document.getElementById('btn-audio-toggle');\n");
         js.append("    if (oldAudioBtn && !oldAudioBtn.__vlcUnifiedHooked) {\n");
         js.append("      var aBtn = oldAudioBtn.cloneNode(true);\n");
@@ -576,7 +621,7 @@ public class MainActivity extends Activity {
         js.append("      aBtn.addEventListener('pointercancel', function() { clearTimeout(aTimer); aTimer = null; });\n");
         js.append("    }\n");
 
-        /* 5. Hardware EXIT button: 1 Tap = Show System Bars, 2 Quick Taps = Minimize, Long Press = Power Off & Exit */
+        /* Hardware EXIT button */
         js.append("    var ledsRight = document.querySelector('.top-leds-right');\n");
         js.append("    if (ledsRight && !document.getElementById('btn-hardware-exit')) {\n");
         js.append("      var exitBtn = document.createElement('button');\n");
@@ -615,18 +660,18 @@ public class MainActivity extends Activity {
         js.append("      exitBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
         js.append("    }\n");
 
-        /* 6. Update GUIDE with the new VOICE Switch, Preset Backup, Audio, Log-Tap Hit Counter & Exit Controls */
+        /* Update GUIDE */
         js.append("    var mBody = document.querySelector('#proscan-manual-panel .manual-body');\n");
-        js.append("    if (mBody && !document.getElementById('manual-v5-sec')) {\n");
-        js.append("      var oldSec = document.getElementById('manual-v4-sec'); if (oldSec) oldSec.remove();\n");
+        js.append("    if (mBody && !document.getElementById('manual-v6-sec')) {\n");
         js.append("      var sec = document.createElement('div');\n");
-        js.append("      sec.id = 'manual-v5-sec';\n");
+        js.append("      sec.id = 'manual-v6-sec';\n");
         js.append("      sec.className = 'manual-section';\n");
-        js.append("      sec.innerHTML = '<h3>7. Voice Readout, JSON Preset Backup &amp; Exit Controls</h3><ul class=\"manual-list\">' +\n");
+        js.append("      sec.innerHTML = '<h3>7. Archive Player, Voice Readout &amp; Exit Controls</h3><ul class=\"manual-list\">' +\n");
+        js.append("        '<li><span class=\"manual-key\">LOG IN / LOG OUT</span> Single smart button that switches between Log In and Log Out automatically.</li>' +\n");
+        js.append("        '<li><span class=\"manual-key\">PLAYER</span> Opens the dedicated <strong>Archive Recordings Player</strong> (with 5 skins: Cassette Deck, CD Player, Vinyl Turntable, Hacker SIGINT Den, and Reel-to-Reel, plus Date Folder Filter, Continuous Play, and Spoken Audio Captions).</li>' +\n");
         js.append("        '<li><span class=\"manual-key\">VOICE</span> <strong>Slide Switch &amp; Green Pulsating LED:</strong> Announces the Channel Name out loud via Text-To-Speech whenever a new transmission is logged.</li>' +\n");
-        js.append("        '<li><span class=\"manual-key\">AUDIO</span> <strong>Short Tap:</strong> Turns normal radio audio ON or OFF. <strong>Long Press (0.5s):</strong> Switches to <strong>VLC / Screen-Off Mode</strong> (<span class=\"manual-key\">AUDIO &#9650;</span>) so audio keeps playing when your phone screen is locked.</li>' +\n");
-        js.append("        '<li><strong>JSON Preset Auto-Backup:</strong> Saving any Numpad Preset (0-9) automatically backs up all your presets, active theme, custom brand, and IPs to <code>Downloads/proscan_presets_backup.json</code>. Press the Android Back button and tap <strong>Presets</strong> to export or load your backup file anytime.</li>' +\n");
-        js.append("        '<li><span class=\"manual-key\">EXIT</span> (Next to RX/LOG LEDs): <strong>Single Tap</strong> reveals Android top/bottom system bars; <strong>Double Tap</strong> minimizes the app; <strong>Long Press (0.5s)</strong> powers down the radio and closes the app.</li></ul>';\n");
+        js.append("        '<li><span class=\"manual-key\">AUDIO</span> <strong>Short Tap:</strong> Turns normal radio audio ON/OFF. <strong>Long Press (0.5s):</strong> Switches to <strong>VLC / Screen-Off Mode</strong> (<span class=\"manual-key\">AUDIO &#9650;</span>).</li>' +\n");
+        js.append("        '<li><span class=\"manual-key\">EXIT</span> <strong>Single Tap</strong> shows Android bars; <strong>Double Tap</strong> minimizes app; <strong>Long Press (0.5s)</strong> powers down and closes app.</li></ul>';\n");
         js.append("      mBody.appendChild(sec);\n");
         js.append("    }\n");
         js.append("  } catch (e) {}\n");
@@ -719,10 +764,12 @@ public class MainActivity extends Activity {
 
     private void connectSmart(String localUrl, String tailscaleUrl) {
         if (!localUrl.isEmpty() && tailscaleUrl.isEmpty()) {
+            activeServerUrl = localUrl;
             webView.loadUrl(localUrl);
             return;
         }
         if (localUrl.isEmpty() && !tailscaleUrl.isEmpty()) {
+            activeServerUrl = tailscaleUrl;
             webView.loadUrl(tailscaleUrl);
             return;
         }
@@ -731,9 +778,11 @@ public class MainActivity extends Activity {
             boolean localReachable = isUrlReachable(localUrl, 1500);
             mainHandler.post(() -> {
                 if (localReachable) {
+                    activeServerUrl = localUrl;
                     Toast.makeText(this, "Connected via Local Wi-Fi", Toast.LENGTH_SHORT).show();
                     webView.loadUrl(localUrl);
                 } else {
+                    activeServerUrl = tailscaleUrl;
                     Toast.makeText(this, "Switching to Tailscale...", Toast.LENGTH_SHORT).show();
                     webView.loadUrl(tailscaleUrl);
                 }
