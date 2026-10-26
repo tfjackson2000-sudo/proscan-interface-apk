@@ -26,6 +26,10 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -47,21 +51,37 @@ public class PlayerActivity extends Activity {
     private WebView playerWeb;
     private String serverBaseUrl = "";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService audioFetchExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private TextToSpeech tts = null;
     private boolean ttsReady = false;
     private MediaPlayer nativePlayer = null;
     private boolean isFetchingDrive = false;
+    private float[] currentEnvelope = new float[0];
 
+    /* 50ms (20fps) real-time telemetry ticker for Progress (0..1) + Real Audio Envelope Amplitude (0..1) */
     private final Runnable progressTicker = new Runnable() {
         @Override
         public void run() {
             try {
                 if (nativePlayer != null && nativePlayer.isPlaying() && playerWeb != null) {
-                    int sec = nativePlayer.getCurrentPosition() / 1000;
-                    int tot = Math.max(1, nativePlayer.getDuration() / 1000);
-                    playerWeb.evaluateJavascript("if(window.onNativeTimeUpdate)window.onNativeTimeUpdate(" + sec + "," + tot + ");", null);
-                    mainHandler.postDelayed(this, 350);
+                    int posMs = nativePlayer.getCurrentPosition();
+                    int durMs = Math.max(1, nativePlayer.getDuration());
+                    int sec = posMs / 1000;
+                    int tot = Math.max(1, durMs / 1000);
+                    float prog = Math.min(1f, Math.max(0f, (float) posMs / (float) durMs));
+
+                    float level = 0.25f;
+                    if (currentEnvelope.length > 0) {
+                        int envIdx = Math.min(currentEnvelope.length - 1, (int) (prog * currentEnvelope.length));
+                        level = currentEnvelope[envIdx];
+                    }
+
+                    playerWeb.evaluateJavascript(
+                            "if(window.onNativeTelemetry)window.onNativeTelemetry(" + sec + "," + tot + "," + prog + "," + level + ");",
+                            null
+                    );
+                    mainHandler.postDelayed(this, 60);
                 }
             } catch (Exception ignored) {}
         }
@@ -114,7 +134,7 @@ public class PlayerActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                injectSizeThemeAndSelectPlayMode();
+                injectReactiveDecksAndTheme();
                 loadLiveGoogleDriveRecordings();
                 mainHandler.removeCallbacks(autoSyncRunnable);
                 mainHandler.postDelayed(autoSyncRunnable, 12000);
@@ -125,7 +145,7 @@ public class PlayerActivity extends Activity {
         playerWeb.loadUrl("file:///android_asset/player_ui.html");
     }
 
-    private void injectSizeThemeAndSelectPlayMode() {
+    private void injectReactiveDecksAndTheme() {
         SharedPreferences prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
         String backupJson = prefs.getString("last_backup_json", "");
         String safeBackup = JSONObject.quote(backupJson);
@@ -149,6 +169,7 @@ public class PlayerActivity extends Activity {
                 "    }" +
                 "  }" +
                 "} catch(e) {}" +
+
                 "var st = document.createElement('style');" +
                 "st.textContent = '" +
                 "  .scanner-display { height: 245px !important; }" +
@@ -156,8 +177,123 @@ public class PlayerActivity extends Activity {
                 "  .buttons-box { gap: 10px !important; }" +
                 "  #mech-bay { height: 232px !important; }" +
                 "  .rec-row.selected { outline: 1px dashed var(--log-text, #38bdf8) !important; background: rgba(255,255,255,0.14) !important; font-weight: 800 !important; }" +
+                /* Fix Vinyl Tonearm geometry so needle sits right over the record grooves and sweeps inward */
+                "  .tt-platter { left: -24px !important; width: 162px !important; height: 162px !important; }" +
+                "  .tt-record { width: 150px !important; height: 150px !important; }" +
+                "  .tt-arm-base { top: 18px !important; right: 32px !important; }" +
+                "  .tt-tonearm { top: 34px !important; right: 46px !important; height: 124px !important; transform-origin: top center !important; transform: rotate(4deg); transition: transform 0.25s linear !important; }" +
+                /* Add Reactive LED VU Meter Strip inside Cassette, CD, and Reel decks */
+                "  #reactive-vu-strip { position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); display: flex; gap: 3px; z-index: 12; background: rgba(0,0,0,0.65); padding: 3px 7px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.14); }" +
+                "  .rvu-seg { width: 6px; height: 5px; border-radius: 1px; background: #1e293b; transition: background 0.05s ease, box-shadow 0.05s ease; }" +
                 "';" +
                 "document.head.appendChild(st);" +
+
+                /* Add 14-segment reactive LED VU meter bar to the bottom of the mechanical bay */
+                "var mb = document.getElementById('mech-bay');" +
+                "if (mb && !document.getElementById('reactive-vu-strip')) {" +
+                "  var vu = document.createElement('div');" +
+                "  vu.id = 'reactive-vu-strip';" +
+                "  var segs = ''; for (var s=0; s<14; s++) segs += '<div class=\"rvu-seg\"></div>';" +
+                "  vu.innerHTML = segs;" +
+                "  mb.appendChild(vu);" +
+                "}" +
+
+                "window.__audioLevel = 0;" +
+                "window.__audioProgress = 0;" +
+
+                /* Real-time telemetry callback driving all 5 decks! */
+                "window.onNativeTelemetry = function(sec, totSec, prog, level) {" +
+                "  window.__audioProgress = prog || 0;" +
+                "  window.__audioLevel = level || 0;" +
+                "  if (typeof window.onNativeTimeUpdate === 'function') window.onNativeTimeUpdate(sec, totSec);" +
+
+                /* 1. Vinyl Tonearm: 26deg (outer groove at 0%) -> 45deg (inner groove at 100%) */
+                "  var arm = document.querySelector('.tt-tonearm');" +
+                "  if (arm) {" +
+                "    var angle = 26 + (window.__audioProgress * 19);" +
+                "    arm.style.transform = 'rotate(' + angle.toFixed(2) + 'deg)';" +
+                "  }" +
+                /* Pulse Vinyl strobe with audio level */
+                "  var strb = document.querySelector('.tt-strobe');" +
+                "  if (strb) strb.style.opacity = (0.55 + window.__audioLevel * 0.45).toFixed(2);" +
+
+                /* 2. Cassette Tape Spools: Left spool shrinks (64px -> 44px), Right spool grows (44px -> 64px) */
+                "  var spL = document.querySelector('.c-spool.left');" +
+                "  var spR = document.querySelector('.c-spool.right');" +
+                "  if (spL && spR) {" +
+                "    var szL = 64 - (window.__audioProgress * 20);" +
+                "    var szR = 44 + (window.__audioProgress * 20);" +
+                "    spL.style.width = szL + 'px'; spL.style.height = szL + 'px';" +
+                "    spR.style.width = szR + 'px'; spR.style.height = szR + 'px';" +
+                "  }" +
+
+                /* 3. CD Laser Pickup Glint: Pulses & tracks with audio */
+                "  var cdDisc = document.querySelector('.cd-disc');" +
+                "  if (cdDisc) {" +
+                "    var glow = Math.round(6 + window.__audioLevel * 18);" +
+                "    cdDisc.style.boxShadow = '0 0 ' + glow + 'px rgba(56,189,248,' + (0.25 + window.__audioLevel * 0.65).toFixed(2) + ')';" +
+                "  }" +
+
+                /* 4. 14-Segment LED VU Meter Bar (Active across Tape, CD, Vinyl, and Reel!) */
+                "  var activeSegs = Math.round(window.__audioLevel * 14);" +
+                "  document.querySelectorAll('#reactive-vu-strip .rvu-seg').forEach(function(seg, idx) {" +
+                "    if (idx < activeSegs) {" +
+                "      var col = idx >= 11 ? '#ef4444' : (idx >= 8 ? '#facc15' : '#22c55e');" +
+                "      seg.style.background = col;" +
+                "      seg.style.boxShadow = '0 0 5px ' + col;" +
+                "    } else {" +
+                "      seg.style.background = '#1e293b';" +
+                "      seg.style.boxShadow = 'none';" +
+                "    }" +
+                "  });" +
+                "};" +
+
+                /* Reset Tonearm & VU meter when stopped/ended */
+                "var origSetPlaying = window.setPlayingUI;" +
+                "window.setPlayingUI = function(playing) {" +
+                "  if (origSetPlaying) origSetPlaying(playing);" +
+                "  if (!playing) {" +
+                "    window.__audioLevel = 0;" +
+                "    var arm = document.querySelector('.tt-tonearm');" +
+                "    if (arm) arm.style.transform = 'rotate(4deg)';" +
+                "    document.querySelectorAll('#reactive-vu-strip .rvu-seg').forEach(function(seg) {" +
+                "      seg.style.background = '#1e293b'; seg.style.boxShadow = 'none';" +
+                "    });" +
+                "  }" +
+                "};" +
+
+                /* Override Hacker Oscilloscope to use REAL window.__audioLevel from the MP3! */
+                "var hCanvas = document.getElementById('hack-canvas');" +
+                "if (hCanvas) {" +
+                "  var hCtx = hCanvas.getContext('2d');" +
+                "  var hPhase = 0;" +
+                "  function drawRealAudioScope() {" +
+                "    requestAnimationFrame(drawRealAudioScope);" +
+                "    if (document.documentElement.getAttribute('data-deck') !== 'hack') return;" +
+                "    hCtx.clearRect(0, 0, hCanvas.width, hCanvas.height);" +
+                "    var lvl = isPlayingNow ? window.__audioLevel : 0;" +
+                "    hCtx.strokeStyle = '#39ff14';" +
+                "    hCtx.lineWidth = 2.2;" +
+                "    hCtx.beginPath();" +
+                "    for (var x = 0; x < hCanvas.width; x += 3) {" +
+                "      var env = Math.sin((x / hCanvas.width) * Math.PI);" +
+                "      var wave = Math.sin(x * 0.08 + hPhase) * Math.cos(x * 0.03 - hPhase * 0.7);" +
+                "      var y = 50 + (wave * env * (lvl * 44));" +
+                "      if (x === 0) hCtx.moveTo(x, y); else hCtx.lineTo(x, y);" +
+                "    }" +
+                "    hCtx.stroke();" +
+                "    hCtx.fillStyle = 'rgba(57,255,20,0.8)';" +
+                "    for (var b = 0; b < 24; b++) {" +
+                "      var bandFactor = Math.abs(Math.sin(b * 0.55 + hPhase * 0.4));" +
+                "      var bh = lvl > 0.02 ? Math.max(3, Math.floor(lvl * bandFactor * 48)) : 2;" +
+                "      hCtx.fillRect(10 + b * 15, 134 - bh, 11, bh);" +
+                "    }" +
+                "    hPhase += 0.28 + (lvl * 0.35);" +
+                "  }" +
+                "  drawRealAudioScope();" +
+                "}" +
+
+                /* Tap Row = Highlight/Select First; Press PLAY = Play Selected Row */
                 "window.selectIndexOnly = function(idx) {" +
                 "  if (idx < 0 || idx >= filteredRecs.length) return;" +
                 "  curIdx = idx;" +
@@ -245,44 +381,126 @@ public class PlayerActivity extends Activity {
         }
     }
 
-    private void playDriveFileIdNatively(String fileId) {
-        stopNativePlayer();
-        String url = "https://drive.usercontent.google.com/download?id=" + fileId + "&export=download";
+    /* Extract 250-bucket audio amplitude envelope directly from the downloaded MP3 file bytes */
+    private float[] extractMp3AmplitudeEnvelope(File mp3File) {
+        int buckets = 240;
+        float[] env = new float[buckets];
         try {
-            nativePlayer = new MediaPlayer();
-            if (Build.VERSION.SDK_INT >= 21) {
-                nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build());
+            long len = mp3File.length();
+            if (len <= 512) return env;
+            FileInputStream fis = new FileInputStream(mp3File);
+            byte[] data = new byte[(int) Math.min(len, 2 * 1024 * 1024)];
+            int read = fis.read(data);
+            fis.close();
+            if (read <= 256) return env;
+
+            /* Skip ID3 header if present and measure frame bit-reservoir / byte variance per time slice */
+            int startOffset = Math.min(read / 10, 1024);
+            int sliceLen = Math.max(1, (read - startOffset) / buckets);
+            float minVal = Float.MAX_VALUE;
+            float maxVal = Float.MIN_VALUE;
+
+            for (int b = 0; b < buckets; b++) {
+                int s = startOffset + b * sliceLen;
+                int end = Math.min(read - 1, s + sliceLen);
+                long energy = 0;
+                int zeroPad = 0;
+                for (int i = s; i < end; i++) {
+                    int v = data[i] & 0xFF;
+                    if (v == 0x00 || v == 0xFF || v == 0xAA || v == 0x55) {
+                        zeroPad++;
+                    }
+                    int diff = Math.abs((data[i] & 0xFF) - (data[i + 1] & 0xFF));
+                    energy += diff;
+                }
+                int count = Math.max(1, end - s);
+                float padRatio = (float) zeroPad / (float) count;
+                float rawScore = ((float) energy / (float) count) * (1.0f - padRatio * 0.85f);
+                env[b] = rawScore;
+                if (rawScore < minVal) minVal = rawScore;
+                if (rawScore > maxVal) maxVal = rawScore;
             }
-            nativePlayer.setDataSource(url);
-            nativePlayer.setOnPreparedListener(mp -> {
-                mp.start();
-                if (playerWeb != null) {
-                    playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
-                }
-                mainHandler.post(progressTicker);
-            });
-            nativePlayer.setOnCompletionListener(mp -> {
-                stopNativePlayer();
-                if (playerWeb != null) {
-                    playerWeb.evaluateJavascript("if(window.onNativePlayEnded)window.onNativePlayEnded();", null);
-                }
-            });
-            nativePlayer.setOnErrorListener((mp, what, extra) -> {
-                stopNativePlayer();
-                if (playerWeb != null) {
-                    playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
-                }
-                return true;
-            });
-            nativePlayer.prepareAsync();
-        } catch (Exception e) {
-            if (playerWeb != null) {
-                playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('PLAY ERROR');", null);
+
+            float range = Math.max(1f, maxVal - minVal);
+            for (int b = 0; b < buckets; b++) {
+                float norm = (env[b] - minVal) / range;
+                /* Expand dynamic range so quiet frames drop near 0 and voice peaks hit 0.95 */
+                norm = (float) Math.pow(norm, 1.6);
+                env[b] = Math.min(1f, Math.max(0.03f, norm));
             }
-        }
+        } catch (Exception ignored) {}
+        return env;
+    }
+
+    private void playDriveFileIdNatively(final String fileId) {
+        stopNativePlayer();
+        final String urlStr = "https://drive.usercontent.google.com/download?id=" + fileId + "&export=download";
+
+        audioFetchExecutor.execute(() -> {
+            try {
+                File tempMp3 = new File(getCacheDir(), "active_track.mp3");
+                URL url = new URL(urlStr);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(9000);
+                conn.setReadTimeout(9000);
+                conn.setInstanceFollowRedirects(true);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+
+                InputStream is = conn.getInputStream();
+                FileOutputStream fos = new FileOutputStream(tempMp3);
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = is.read(buf)) != -1) {
+                    fos.write(buf, 0, n);
+                }
+                fos.close();
+                is.close();
+                conn.disconnect();
+
+                final float[] env = extractMp3AmplitudeEnvelope(tempMp3);
+
+                mainHandler.post(() -> {
+                    try {
+                        stopNativePlayer();
+                        currentEnvelope = env;
+                        nativePlayer = new MediaPlayer();
+                        if (Build.VERSION.SDK_INT >= 21) {
+                            nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
+                                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                    .build());
+                        }
+                        FileInputStream fis = new FileInputStream(tempMp3);
+                        nativePlayer.setDataSource(fis.getFD());
+                        fis.close();
+                        nativePlayer.setOnPreparedListener(mp -> {
+                            mp.start();
+                            if (playerWeb != null) {
+                                playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
+                            }
+                            mainHandler.post(progressTicker);
+                        });
+                        nativePlayer.setOnCompletionListener(mp -> {
+                            stopNativePlayer();
+                            if (playerWeb != null) {
+                                playerWeb.evaluateJavascript("if(window.onNativePlayEnded)window.onNativePlayEnded();", null);
+                            }
+                        });
+                        nativePlayer.prepareAsync();
+                    } catch (Exception e) {
+                        if (playerWeb != null) {
+                            playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('PLAY ERROR');", null);
+                        }
+                    }
+                });
+            } catch (Exception e) {
+                mainHandler.post(() -> {
+                    if (playerWeb != null) {
+                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
+                    }
+                });
+            }
+        });
     }
 
     public class PlayerBridge {
