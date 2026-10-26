@@ -287,6 +287,17 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void syncActiveThemeInMemory(final String webStorageJson) {
+            try {
+                JSONObject root = new JSONObject();
+                root.put("local_url", prefs.getString("local_url", ""));
+                root.put("tailscale_url", prefs.getString("tailscale_url", ""));
+                root.put("web_storage", webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject());
+                prefs.edit().putString("last_backup_json", root.toString()).apply();
+            } catch (Exception ignored) {}
+        }
+
+        @JavascriptInterface
         public void openArchivePlayer() {
             mainHandler.post(() -> {
                 String base = activeServerUrl;
@@ -409,6 +420,20 @@ private void closeAndExitApp() {
         js.append("      }\n");
         js.append("    };\n");
 
+        js.append("    window.__syncThemeInMem = function() {\n");
+        js.append("      try {\n");
+        js.append("        var dump = {};\n");
+        js.append("        for (var i = 0; i < localStorage.length; i++) {\n");
+        js.append("          var k = localStorage.key(i);\n");
+        js.append("          if (k && k.indexOf('proscan_') === 0) dump[k] = localStorage.getItem(k);\n");
+        js.append("        }\n");
+        js.append("        if (window.AndroidApp && window.AndroidApp.syncActiveThemeInMemory) {\n");
+        js.append("          window.AndroidApp.syncActiveThemeInMemory(JSON.stringify(dump));\n");
+        js.append("        }\n");
+        js.append("      } catch (e) {}\n");
+        js.append("    };\n");
+        js.append("    window.__syncThemeInMem();\n");
+
         js.append("    if (!window.__presetAutoBackupHooked) {\n");
         js.append("      window.__presetAutoBackupHooked = true;\n");
         js.append("      window.__exportAllProscanStorage = function(notify) {\n");
@@ -466,6 +491,7 @@ private void closeAndExitApp() {
         js.append("      logoutBtn.parentNode.replaceChild(playerBtn, logoutBtn);\n");
         js.append("      playerBtn.addEventListener('click', function() {\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("        if (window.__syncThemeInMem) window.__syncThemeInMem();\n");
         js.append("        if (window.AndroidApp && window.AndroidApp.openArchivePlayer) {\n");
         js.append("          window.AndroidApp.openArchivePlayer();\n");
         js.append("        }\n");
@@ -668,7 +694,7 @@ private void closeAndExitApp() {
         js.append("      sec.className = 'manual-section';\n");
         js.append("      sec.innerHTML = '<h3>7. Archive Player, Voice Readout &amp; Exit Controls</h3><ul class=\"manual-list\">' +\n");
         js.append("        '<li><span class=\"manual-key\">LOG IN / LOG OUT</span> Single smart button that switches between Log In and Log Out automatically.</li>' +\n");
-        js.append("        '<li><span class=\"manual-key\">PLAYER</span> Opens the dedicated <strong>Archive Recordings Player</strong> (with 5 skins: Cassette Deck, CD Player, Vinyl Turntable, Hacker SIGINT Den, and Reel-to-Reel, plus Date Folder Filter, Continuous Play, and Spoken Audio Captions).</li>' +\n");
+        js.append("        '<li><span class=\"manual-key\">PLAYER</span> Opens the dedicated <strong>Archive Recordings Player</strong> matching your active radio theme. Tap a recording to select/highlight it, then press <strong>PLAY</strong>.</li>' +\n");
         js.append("        '<li><span class=\"manual-key\">VOICE</span> <strong>Slide Switch &amp; Green Pulsating LED:</strong> Announces the Channel Name out loud via Text-To-Speech whenever a new transmission is logged.</li>' +\n");
         js.append("        '<li><span class=\"manual-key\">AUDIO</span> <strong>Short Tap:</strong> Turns normal radio audio ON/OFF. <strong>Long Press (0.5s):</strong> Switches to <strong>VLC / Screen-Off Mode</strong> (<span class=\"manual-key\">AUDIO &#9650;</span>).</li>' +\n");
         js.append("        '<li><span class=\"manual-key\">EXIT</span> <strong>Single Tap</strong> shows Android bars; <strong>Double Tap</strong> minimizes app; <strong>Long Press (0.5s)</strong> powers down and closes app.</li></ul>';\n");
