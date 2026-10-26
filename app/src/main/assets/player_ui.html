@@ -1,367 +1,650 @@
 <!DOCTYPE html>
-<html lang="en" data-pskin="cassette">
+<html lang="en" data-skin="neumorphic" data-display="disp-soft" data-disp-tex="crt" data-bg="bg-dark" data-deck="tape">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>ProScan Archive Player</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700;800&family=Orbitron:wght@700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@700&family=JetBrains+Mono:wght@700;800&family=Orbitron:wght@700;800&display=swap" rel="stylesheet">
 <style>
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; user-select: none; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent !important; outline: none; user-select: none; }
     html, body {
         margin: 0; padding: 0; width: 100vw; height: 100dvh; overflow: hidden;
-        background: #0d1117; font-family: system-ui, -apple-system, sans-serif;
-        display: flex; align-items: center; justify-content: center;
+        background-color: #000; font-family: system-ui, -apple-system, sans-serif;
     }
-    #player-chassis {
-        width: 94%; max-width: 500px; height: calc(100dvh - 28px);
-        background: var(--deck-bg); border: var(--deck-border); border-radius: 20px;
-        box-shadow: 0 0 0 6px #090b0e, 0 16px 36px rgba(0,0,0,0.9), inset 0 2px 3px rgba(255,255,255,0.22);
-        padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
-        color: var(--deck-text); transition: all 0.3s ease;
+    html[data-bg="bg-dark"] { --bg-main: #374151; --bg-pattern: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px), radial-gradient(circle at top, #4b5563, #1f2937); --bg-size: 30px 30px, 30px 30px, 100% 100%; }
+    html[data-bg="bg-soft"] { --bg-main: #cbd5e1; --bg-pattern: linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px), radial-gradient(circle at top, #e2e8f0, #94a3b8); --bg-size: 30px 30px, 30px 30px, 100% 100%; }
+    html[data-bg="bg-pitch"] { --bg-main: #000000; --bg-pattern: none; --bg-size: 100% 100%; }
+    html[data-bg="bg-black"] { --bg-main: #0a0e12; --bg-pattern: linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px), radial-gradient(circle at 50% 0%, rgba(255,255,255,0.08) 0%, rgba(0,0,0,0.9) 100%); --bg-size: 30px 30px, 30px 30px, 100% 100%; }
+    html[data-bg="bg-blue"] { --bg-main: #0a0e12; --bg-pattern: linear-gradient(rgba(0,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,255,0.05) 1px, transparent 1px), radial-gradient(circle at 50% 0%, rgba(0,255,255,0.1) 0%, rgba(0,0,0,0.8) 100%); --bg-size: 30px 30px, 30px 30px, 100% 100%; }
+    html[data-bg="bg-green"] { --bg-main: #0a0e12; --bg-pattern: linear-gradient(rgba(57,255,20,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(57,255,20,0.05) 1px, transparent 1px), radial-gradient(circle at 50% 0%, rgba(57,255,20,0.1) 0%, rgba(0,0,0,0.8) 100%); --bg-size: 30px 30px, 30px 30px, 100% 100%; }
+    html[data-bg="bg-amber"] { --bg-main: #050505; --bg-pattern: linear-gradient(rgba(255,176,0,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,176,0,0.05) 1px, transparent 1px), radial-gradient(circle at 50% 0%, rgba(255,176,0,0.08) 0%, rgba(0,0,0,0.95) 100%); --bg-size: 30px 30px, 30px 30px, 100% 100%; }
+    html[data-bg="bg-sand"] { --bg-main: #2b3340; --bg-pattern: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px), radial-gradient(circle at top, #414b5c, #1a202c); --bg-size: 30px 30px, 30px 30px, 100% 100%; }
+
+    #custom-scanner-ui-wrapper {
+        position: fixed; inset: 0; width: 100vw; height: 100dvh;
+        display: flex; align-items: center; justify-content: center; overflow: hidden;
+    }
+    #custom-scanner-ui-wrapper::before {
+        content: ''; position: absolute; inset: 0;
+        background-color: var(--bg-main, #374151); background-image: var(--bg-pattern, none); background-size: var(--bg-size, 100% 100%);
+        z-index: 0;
+    }
+    #device-wrapper {
+        width: 92%; max-width: 500px; height: auto; max-height: calc(100dvh - 32px);
+        display: flex; flex-direction: column; position: relative; z-index: 1;
+    }
+    #device-wrapper::before {
+        content: ''; position: absolute; inset: 0; border-radius: var(--ui-radius, 20px);
+        box-shadow: var(--ui-shadow, 0 0 0 6px #111, 0 16px 32px rgba(0,0,0,0.85)); pointer-events: none; z-index: 1;
+    }
+    #custom-scanner-ui {
+        width: 100%; position: relative; z-index: 2;
+        background: var(--ui-bg, linear-gradient(145deg, #2b3138, #1c2025));
+        border: var(--ui-border, 1px solid rgba(255,255,255,0.08)); border-radius: var(--ui-radius, 20px);
+        padding: 14px 18px; display: flex; flex-direction: column; gap: 6px;
+    }
+    #custom-scanner-ui::after {
+        content: ''; position: absolute; inset: 0; border-radius: var(--ui-radius, 20px);
+        box-shadow: var(--ui-bevel, inset 1px 1px 2px rgba(255,255,255,0.12), inset -1px -1px 2px rgba(0,0,0,0.6));
+        pointer-events: none; z-index: 10;
     }
 
-    html[data-pskin="cassette"] {
-        --deck-bg: linear-gradient(155deg, #2b3036 0%, #181b1f 60%, #101215 100%);
-        --deck-border: 2px solid #525b66; --deck-text: #f1f5f9; --accent: #f59e0b;
-        --well-bg: linear-gradient(145deg, #0e1013, #1e2228);
-        --btn-bg: linear-gradient(180deg, #374151 0%, #1f2937 55%, #111827 100%);
-        --btn-txt: #e2e8f0;
-    }
-    html[data-pskin="cd"] {
-        --deck-bg: linear-gradient(155deg, #1e293b 0%, #0f172a 65%, #070b14 100%);
-        --deck-border: 2px solid #38bdf8; --deck-text: #e0f2fe; --accent: #38bdf8;
-        --well-bg: radial-gradient(circle, #0f172a 0%, #05080f 100%);
-        --btn-bg: linear-gradient(180deg, #1e3a5f 0%, #0f233d 55%, #081324 100%);
-        --btn-txt: #bae6fd;
-    }
-    html[data-pskin="vinyl"] {
-        --deck-bg: linear-gradient(145deg, #5c3418 0%, #3d210d 55%, #261407 100%);
-        --deck-border: 2px solid #d97706; --deck-text: #fef3c7; --accent: #fbbf24;
-        --well-bg: linear-gradient(145deg, #1c1613, #2b231e);
-        --btn-bg: linear-gradient(180deg, #33271e 0%, #1f1712 55%, #120d0a 100%);
-        --btn-txt: #fde68a;
-    }
-    html[data-pskin="hacker"] {
-        --deck-bg: radial-gradient(circle at 50% 10%, #0b2410 0%, #041006 70%, #010502 100%);
-        --deck-border: 2px solid #39ff14; --deck-text: #39ff14; --accent: #39ff14;
-        --well-bg: #020803;
-        --btn-bg: linear-gradient(180deg, #0f360b 0%, #071c05 55%, #030d02 100%);
-        --btn-txt: #39ff14;
-    }
-    html[data-pskin="reel"] {
-        --deck-bg: linear-gradient(150deg, #4b5338 0%, #333926 60%, #1f2417 100%);
-        --deck-border: 2px solid #a3e635; --deck-text: #fef08a; --accent: #facc15;
-        --well-bg: linear-gradient(180deg, #1a1d14, #282c1f);
-        --btn-bg: linear-gradient(180deg, #2b3022 0%, #181b13 55%, #0f110c 100%);
-        --btn-txt: #fef08a;
-    }
+    /* Radio Skins (Synced with Main Radio) */
+    html[data-skin="neumorphic"] { --ui-bg: linear-gradient(145deg, #2b3138, #1c2025); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #13161a, 0 0 0 8px #0a0c0e, 0 14px 28px rgba(0,0,0,0.75); --btn-bg: linear-gradient(180deg, #2e353c, #1a1d22); --btn-color: #8da3b8; --btn-active-color: #55c4ff; --btn-border: 1px solid rgba(255,255,255,0.05); --btn-radius: 7px; --btn-shadow: 2px 2px 5px #13161a, -2px -2px 4px #2e353c; --toggle-color: #8da3b8; --brand-primary: #cbd5e1; --brand-accent: #38bdf8; }
+    html[data-skin="plastic"] { --ui-bg: radial-gradient(circle at 50% 15%, #26292e 0%, #16181b 70%, #0f1012 100%); --ui-radius: 22px; --ui-shadow: 0 0 0 6px #101214, 0 0 0 8px #050607, 0 16px 30px rgba(0,0,0,0.85); --btn-bg: linear-gradient(180deg, #2c3035 0%, #1d2024 100%); --btn-color: #f1f5f9; --btn-active-color: #38bdf8; --btn-border: 1px solid #090a0c; --btn-radius: 7px; --btn-shadow: 0 2px 0 #08090a, 0 3px 4px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1); --toggle-color: #94a3b8; --brand-primary: #f1f5f9; --brand-accent: #ef4444; }
+    html[data-skin="neublackyellow"] { --ui-bg: linear-gradient(145deg, #222, #111); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #0d0d0d, 0 0 0 8px #050505, 0 14px 28px rgba(0,0,0,0.85); --btn-bg: linear-gradient(180deg, #262626, #0a0a0a); --btn-color: #ffd700; --btn-active-color: #fff; --btn-border: 1px solid #333; --btn-radius: 7px; --btn-shadow: 2px 2px 5px #070707, -1px -1px 4px #292929; --toggle-color: #d4b200; --brand-primary: #ffd700; --brand-accent: #ff3333; }
+    html[data-skin="whiteline"] { --ui-bg: radial-gradient(circle at 50% 12%,#26292e 0%,#121417 65%,#070809 100%); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #141414, 0 0 0 8px rgba(255,255,255,0.45), 0 12px 26px rgba(0,0,0,0.85); --btn-bg: linear-gradient(180deg,#2e3238 0%,#181a1e 55%,#0d0e11 100%); --btn-color: #fff; --btn-active-color: #38bdf8; --btn-border: 1px solid rgba(255,255,255,0.75); --btn-radius: 7px; --btn-shadow: 0 3px 0 #94a3b8, 0 4px 6px rgba(0,0,0,0.85), inset 0 1px 1px rgba(255,255,255,0.45); --toggle-color: #fff; --brand-primary: #fff; --brand-accent: #fff; }
+    html[data-skin="tron"] { --ui-bg: radial-gradient(circle at 50% 12%,#0c2e36 0%,#06161a 65%,#02080a 100%); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #03181c, 0 0 0 8px rgba(0,255,255,0.5), 0 12px 26px rgba(0,0,0,0.85); --btn-bg: linear-gradient(180deg,#103c47 0%,#071f26 55%,#031014 100%); --btn-color: #00ffff; --btn-active-color: #fff; --btn-border: 1px solid #00ffff; --btn-radius: 7px; --btn-shadow: 0 3px 0 #008b8b, 0 4px 7px rgba(0,0,0,0.85), inset 0 1px 1px rgba(180,255,255,0.45); --toggle-color: #00ffff; --brand-primary: #00ffff; --brand-accent: #00ffff; }
+    html[data-skin="neongreen"] { --ui-bg: radial-gradient(circle at 50% 12%,#11330d 0%,#081906 65%,#030a02 100%); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #061703, 0 0 0 8px rgba(57,255,20,0.5), 0 12px 26px rgba(0,0,0,0.85); --btn-bg: linear-gradient(180deg,#184212 0%,#0b2108 55%,#051104 100%); --btn-color: #39ff14; --btn-active-color: #fff; --btn-border: 1px solid #39ff14; --btn-radius: 7px; --btn-shadow: 0 3px 0 #1b8a08, 0 4px 7px rgba(0,0,0,0.85), inset 0 1px 1px rgba(190,255,180,0.45); --toggle-color: #39ff14; --brand-primary: #39ff14; --brand-accent: #39ff14; }
+    html[data-skin="amber"] { --ui-bg: radial-gradient(circle at 50% 12%,#332406 0%,#1a1203 65%,#0a0701 100%); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #1a1100, 0 0 0 8px rgba(255,176,0,0.5), 0 12px 26px rgba(0,0,0,0.85); --btn-bg: linear-gradient(180deg,#422f08 0%,#211704 55%,#120c02 100%); --btn-color: #ffb000; --btn-active-color: #fff; --btn-border: 1px solid #ffb000; --btn-radius: 7px; --btn-shadow: 0 3px 0 #996900, 0 4px 7px rgba(0,0,0,0.85), inset 0 1px 1px rgba(255,230,170,0.45); --toggle-color: #ffb000; --brand-primary: #ffb000; --brand-accent: #ffb000; }
+    html[data-skin="ham"] { --ui-bg: linear-gradient(145deg, #363a3f, #1a1c1e); --ui-radius: 16px; --ui-shadow: 0 0 0 6px #17191c, 0 0 0 8px #090a0b, 0 14px 28px rgba(0,0,0,0.8); --btn-bg: linear-gradient(180deg, #c1c5c8 0%, #a2a6a9 40%, #7d8287 100%); --btn-color: #111; --btn-active-color: #000; --btn-border: 1px solid #111; --btn-radius: 6px; --btn-shadow: 0 2px 0 #333, inset 0 1px 1px rgba(255,255,255,0.8); --toggle-color: #d8dee9; --brand-primary: #f8fafc; --brand-accent: #ef4444; }
+    html[data-skin="nokia"] { --ui-bg: linear-gradient(145deg, #3f434a, #242629); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #17191c, 0 0 0 8px #0b0c0e, 0 14px 28px rgba(0,0,0,0.75); --btn-bg: linear-gradient(180deg, #42464d 0%, #2f3238 100%); --btn-color: #e0e0e0; --btn-active-color: #fff; --btn-border: 1px solid #1a1c1e; --btn-radius: 9px; --btn-shadow: 0 2px 0 #111; --toggle-color: #b0b8c4; --brand-primary: #f1f5f9; --brand-accent: #3b82f6; }
+    html[data-skin="retro"] { --ui-bg: linear-gradient(145deg, #dcd6c8, #b8b09f); --ui-radius: 16px; --ui-shadow: 0 0 0 6px #827a6a, 0 0 0 8px #4a443a, 0 14px 28px rgba(0,0,0,0.75); --btn-bg: linear-gradient(180deg, #4a453d 0%, #2e2a25 100%); --btn-color: #f5efe1; --btn-active-color: #fbbf24; --btn-border: 1px solid #1f1c18; --btn-radius: 6px; --btn-shadow: 0 2px 0 #171512; --toggle-color: #3d372e; --brand-primary: #2e2a25; --brand-accent: #b91c1c; }
+    html[data-skin="yellow"] { --ui-bg: linear-gradient(155deg, #fef08a 0%, #fde047 52%, #facc15 100%); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #a38b12, 0 0 0 8px #4d3f05, 0 14px 28px rgba(0,0,0,0.78); --btn-bg: linear-gradient(180deg, #323236 0%, #161618 100%); --btn-color: #fef9c3; --btn-active-color: #fff; --btn-border: 1px solid #09090b; --btn-radius: 7px; --btn-shadow: 0 2px 0 #09090b; --toggle-color: #18181b; --brand-primary: #18181b; --brand-accent: #dc2626; }
+    html[data-skin="blue"] { --ui-bg: linear-gradient(155deg, #60a5fa 0%, #3b82f6 50%, #2563eb 100%); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #112e82, 0 0 0 8px #07133a, 0 14px 28px rgba(0,0,0,0.8); --btn-bg: linear-gradient(180deg, #32363f 0%, #15171c 100%); --btn-color: #e0f2fe; --btn-active-color: #fff; --btn-border: 1px solid #090a0d; --btn-radius: 7px; --btn-shadow: 0 2px 0 #090a0d; --toggle-color: #f8fafc; --brand-primary: #fff; --brand-accent: #facc15; }
+    html[data-skin="green"] { --ui-bg: linear-gradient(155deg, #4ade80 0%, #22c55e 50%, #16a34a 100%); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #0c5d27, 0 0 0 8px #042810, 0 14px 28px rgba(0,0,0,0.8); --btn-bg: linear-gradient(180deg, #323634 0%, #141716 100%); --btn-color: #dcfce7; --btn-active-color: #fff; --btn-border: 1px solid #090b0a; --btn-radius: 7px; --btn-shadow: 0 2px 0 #090b0a; --toggle-color: #052e16; --brand-primary: #052e16; --brand-accent: #dc2626; }
+    html[data-skin="red"] { --ui-bg: linear-gradient(155deg, #f87171 0%, #ef4444 50%, #dc2626 100%); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #7c1212, 0 0 0 8px #380606, 0 14px 28px rgba(0,0,0,0.8); --btn-bg: linear-gradient(180deg, #353234 0%, #161416 100%); --btn-color: #ffe4e6; --btn-active-color: #fff; --btn-border: 1px solid #0b090a; --btn-radius: 7px; --btn-shadow: 0 2px 0 #0b090a; --toggle-color: #fff; --brand-primary: #fff; --brand-accent: #facc15; }
+    html[data-skin="armycamo"], html[data-skin="milspec"] { --ui-bg: linear-gradient(155deg, #4b5338 0%, #3b422b 52%, #2c3220 100%); --ui-radius: 16px; --ui-shadow: 0 0 0 6px #14170e, 0 0 0 8px #070805, 0 16px 32px rgba(0,0,0,0.88); --btn-bg: linear-gradient(180deg, #2b3022 0%, #13160f 100%); --btn-color: #fef08a; --btn-active-color: #a3e635; --btn-border: 1px solid #0a0c08; --btn-radius: 6px; --btn-shadow: 0 2px 0 #080a06; --toggle-color: #fef08a; --brand-primary: #fef08a; --brand-accent: #eab308; }
+    html[data-skin="desertcamo"] { --ui-bg: linear-gradient(150deg, #d8ca9e 0%, #b5a374 100%); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #827351, 0 0 0 8px #4a3b28, 0 14px 28px rgba(0,0,0,0.75); --btn-bg: linear-gradient(180deg, #3b3024 0%, #241d15 100%); --btn-color: #f5ebd6; --btn-active-color: #fbbf24; --btn-border: 1px solid #14100b; --btn-radius: 7px; --btn-shadow: 0 2px 0 #120e0a; --toggle-color: #241d15; --brand-primary: #241d15; --brand-accent: #9e2a2b; }
+    html[data-skin="metal"], html[data-skin="silver"] { --ui-bg: linear-gradient(155deg, #e2e8f0 0%, #cbd5e1 48%, #94a3b8 100%); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #475569, 0 0 0 8px #0f172a, 0 16px 30px rgba(0,0,0,0.82); --btn-bg: linear-gradient(180deg, #2b2e33 0%, #121316 100%); --btn-color: #f8fafc; --btn-active-color: #38bdf8; --btn-border: 1px solid #090a0c; --btn-radius: 7px; --btn-shadow: 0 2px 0 #070809; --toggle-color: #1e293b; --brand-primary: #0f172a; --brand-accent: #dc2626; }
+    html[data-skin="carbon"] { --ui-bg: repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 3px, rgba(0,0,0,0.45) 3px, rgba(0,0,0,0.45) 6px), repeating-linear-gradient(-45deg, #26292e 0px, #26292e 3px, #121417 3px, #121417 6px); --ui-radius: 20px; --ui-shadow: 0 0 0 6px #0e1013, 0 0 0 8px #040506, 0 16px 32px rgba(0,0,0,0.9); --btn-bg: linear-gradient(180deg, #32363d 0%, #131519 100%); --btn-color: #f1f5f9; --btn-active-color: #ef4444; --btn-border: 1px solid #08090b; --btn-radius: 6px; --btn-shadow: 0 2px 0 #050607; --toggle-color: #e2e8f0; --brand-primary: #f8fafc; --brand-accent: #ef4444; }
+    html[data-skin="titanium"] { --ui-bg: linear-gradient(135deg, #4b5563 0%, #6b7280 24%, #9ca3af 38%, #4b5563 58%, #374151 82%, #6b7280 100%); --ui-radius: 16px; --ui-shadow: 0 0 0 6px #1b1f24, 0 0 0 8px #090b0d, 0 16px 32px rgba(0,0,0,0.88); --btn-bg: linear-gradient(180deg, #374151 0%, #111827 100%); --btn-color: #e5e7eb; --btn-active-color: #38bdf8; --btn-border: 1px solid #090d14; --btn-radius: 6px; --btn-shadow: 0 2px 0 #090d14; --toggle-color: #f3f4f6; --brand-primary: #f9fafb; --brand-accent: #38bdf8; }
+    html[data-skin="bakelite"] { --ui-bg: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 0), radial-gradient(circle at 50% 10%, #292524 0%, #171412 65%, #0c0a09 100%); --ui-radius: 22px; --ui-shadow: 0 0 0 6px #0c0a09, 0 0 0 8px #040303, 0 16px 32px rgba(0,0,0,0.9); --btn-bg: linear-gradient(180deg, #38322e 0%, #14110f 100%); --btn-color: #fef3c7; --btn-active-color: #f59e0b; --btn-border: 1px solid #090807; --btn-radius: 6px; --btn-shadow: 0 2px 0 #070605; --toggle-color: #fde68a; --brand-primary: #fef3c7; --brand-accent: #d97706; }
+    html[data-skin="wood"] { --ui-bg: linear-gradient(145deg, #6e3f1d 0%, #4a2810 48%, #381d0a 85%, #593115 100%); --ui-radius: 16px; --ui-shadow: 0 0 0 6px #190d04, 0 0 0 8px #0a0501, 0 16px 32px rgba(0,0,0,0.88); --btn-bg: linear-gradient(180deg, #2b231d 0%, #120e0b 100%); --btn-color: #fde68a; --btn-active-color: #fbbf24; --btn-border: 1px solid #0c0907; --btn-radius: 6px; --btn-shadow: 0 2px 0 #090705; --toggle-color: #fef3c7; --brand-primary: #fde68a; --brand-accent: #f59e0b; }
+    html[data-skin="copper"] { --ui-bg: linear-gradient(135deg, #7c3f23 0%, #b4653b 24%, #d98a5c 36%, #8c4828 54%, #5c2c16 78%, #a35832 100%); --ui-radius: 18px; --ui-shadow: 0 0 0 6px #29130a, 0 0 0 8px #0d0603, 0 16px 32px rgba(0,0,0,0.88); --btn-bg: linear-gradient(180deg, #2e1d15 0%, #140c08 100%); --btn-color: #fed7aa; --btn-active-color: #fbbf24; --btn-border: 1px solid #0c0705; --btn-radius: 6px; --btn-shadow: 0 2px 0 #090503; --toggle-color: #29130a; --brand-primary: #1f0e07; --brand-accent: #b91c1c; }
 
-    .top-bar {
-        display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-shrink: 0;
-    }
-    .deck-title {
-        font-family: 'Orbitron', sans-serif; font-size: 10.5px; font-weight: 800;
-        letter-spacing: 1px; color: var(--accent); text-align: center; flex: 1;
-    }
-    .p-btn {
-        height: 28px; padding: 0 8px; border-radius: 6px; border: 1px solid #090b0e;
-        background: var(--btn-bg); color: var(--btn-txt); font-size: 9.5px; font-weight: 800;
-        box-shadow: 0 2px 0 #050608, inset 0 1px 0 rgba(255,255,255,0.22);
-        cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
-    }
-    .p-btn:active, .p-btn.active {
-        transform: translateY(2px); box-shadow: inset 0 2px 4px rgba(0,0,0,0.85);
-        color: var(--accent); border-color: var(--accent);
-    }
+    /* Display Themes (Synced with Main Radio) */
+    html[data-display="disp-soft"] { --display-bg: #1c2025; --display-border: 2px solid #1a1e23; --display-shadow: inset 6px 6px 12px #121417, inset -6px -6px 12px #262c33; --log-header-text: #9fb3c8; --log-text: #8da3b8; --log-cell-border: #23282e; }
+    html[data-display="disp-lcd"] { --display-bg: #6b8e23; --display-border: 2px solid #111; --display-shadow: inset 0 0 15px rgba(0,0,0,0.6); --log-header-text: #2c3a12; --log-text: #111707; --log-cell-border: rgba(26,31,22,0.35); }
+    html[data-display="disp-green-brt"] { --display-bg: #b2f2bb; --display-border: 2px solid #111; --display-shadow: inset 0 0 15px rgba(0,0,0,0.4); --log-header-text: #1b6633; --log-text: #062b12; --log-cell-border: rgba(8,59,24,0.28); }
+    html[data-display="disp-blue"] { --display-bg: #b3d4ff; --display-border: 2px solid #111; --display-shadow: inset 0 0 15px rgba(0,0,0,0.4); --log-header-text: #2b5085; --log-text: #00153d; --log-cell-border: rgba(0,26,77,0.28); }
+    html[data-display="disp-amber"] { --display-bg: #f4e3b5; --display-border: 2px solid #0f0f0f; --display-shadow: inset 0 0 20px rgba(180,100,0,0.4); --log-header-text: #7a5600; --log-text: #1a1200; --log-cell-border: rgba(40,28,0,0.28); }
+    html[data-display="disp-oled-brt"] { --display-bg: #000; --display-border: 2px solid rgba(57,255,20,0.32); --display-shadow: inset 0 0 16px rgba(57,255,20,0.18); --log-header-text: #25b80e; --log-text: #39ff14; --log-cell-border: rgba(57,255,20,0.25); }
+    html[data-display="disp-term"] { --display-bg: #000; --display-border: 2px solid rgba(255,176,0,0.3); --display-shadow: inset 0 0 15px rgba(255,176,0,0.1); --log-header-text: #cc8d00; --log-text: #ffb000; --log-cell-border: rgba(255,176,0,0.25); }
+    html[data-display="disp-paper"] { --display-bg: #e5e0d3; --display-border: 2px solid #292524; --display-shadow: inset 0 0 16px rgba(0,0,0,0.35); --log-header-text: #78716c; --log-text: #1c1917; --log-cell-border: rgba(28,25,23,0.25); }
 
-    #visual-stage {
-        background: var(--well-bg); border: 2px solid #090a0d; border-radius: 14px;
-        padding: 8px 10px; height: 122px; flex-shrink: 0; position: relative;
-        box-shadow: inset 0 3px 10px rgba(0,0,0,0.95);
-        display: flex; flex-direction: column; justify-content: space-between; overflow: hidden;
+    /* Top Display Screen (Houses Readout, Seek Slider & Compact Recordings Log) */
+    .scanner-display {
+        background: var(--display-bg); border: var(--display-border); box-shadow: var(--display-shadow);
+        border-radius: 12px; padding: 6px 8px 5px; height: 215px; flex-shrink: 0;
+        display: flex; flex-direction: column; position: relative; overflow: hidden;
     }
-    .track-banner {
+    .disp-top-row {
         display: flex; justify-content: space-between; align-items: center;
-        background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.14);
-        border-radius: 6px; padding: 3px 8px; font-family: 'JetBrains Mono', monospace;
-        font-size: 10.5px; font-weight: 800; color: var(--accent); z-index: 5;
+        font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 800; color: var(--log-text);
     }
-    .track-banner span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-    .stage-anim-area {
-        flex: 1; display: flex; align-items: center; justify-content: space-around;
-        position: relative; margin-top: 4px;
+    #track-main-readout {
+        font-family: 'Courier Prime', monospace; font-size: 16px; font-weight: 700;
+        color: var(--log-text); text-align: center; margin: 2px 0 1px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.5px;
     }
-    @keyframes spinCW { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    @keyframes spinCCW { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
-
-    .wheel {
-        width: 56px; height: 56px; border-radius: 50%; border: 3px solid #cbd5e1;
-        background:
-            conic-gradient(from 0deg, transparent 0deg 40deg, rgba(255,255,255,0.75) 40deg 60deg, transparent 60deg 160deg, rgba(255,255,255,0.75) 160deg 180deg, transparent 180deg 280deg, rgba(255,255,255,0.75) 280deg 300deg, transparent 300deg 360deg),
-            radial-gradient(circle, #090b0e 28%, #334155 30%, #1e293b 70%);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.85);
+    .seek-row {
+        display: flex; align-items: center; gap: 6px; padding: 1px 2px 3px;
+        border-bottom: 1px solid var(--log-cell-border); font-family: 'JetBrains Mono', monospace;
+        font-size: 9.5px; font-weight: 800; color: var(--log-text);
     }
-    .playing .wheel { animation: spinCCW 1.8s linear infinite; }
-
-    html[data-pskin="cd"] #wheel-right { display: none; }
-    html[data-pskin="cd"] #wheel-left {
-        width: 72px; height: 72px; border: 2px solid #e0f2fe;
-        background:
-            radial-gradient(circle, #090b0e 16%, #cbd5e1 18%, #94a3b8 26%, transparent 27%),
-            conic-gradient(#38bdf8, #a855f7, #ec4899, #eab308, #22c55e, #38bdf8);
+    #seek-slider {
+        flex: 1; -webkit-appearance: none; appearance: none; height: 5px;
+        background: var(--log-cell-border); border-radius: 3px; cursor: pointer;
     }
-    html[data-pskin="cd"] .playing #wheel-left { animation: spinCW 0.9s linear infinite; }
-
-    html[data-pskin="vinyl"] #wheel-right { display: none; }
-    html[data-pskin="vinyl"] #wheel-left {
-        width: 74px; height: 74px; border: 2px solid #27272a;
-        background:
-            radial-gradient(circle, #000 6%, #f59e0b 7%, #d97706 32%, #111 33%),
-            repeating-radial-gradient(circle, #111 0px, #111 2px, #222 3px, #111 4px);
-    }
-    html[data-pskin="vinyl"] .playing #wheel-left { animation: spinCW 1.4s linear infinite; }
-
-    html[data-pskin="reel"] .wheel {
-        width: 68px; height: 68px; border: 3px solid #d4d4d8;
-        background:
-            conic-gradient(from 0deg, #a1a1aa 0deg 30deg, #18181b 30deg 120deg, #a1a1aa 120deg 150deg, #18181b 150deg 240deg, #a1a1aa 240deg 270deg, #18181b 270deg 360deg);
+    #seek-slider::-webkit-slider-thumb {
+        -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
+        background: var(--log-text); border: 2px solid var(--display-bg); box-shadow: 0 1px 3px rgba(0,0,0,0.6);
     }
 
-    html[data-pskin="hacker"] .wheel {
-        border-color: #39ff14;
-        background:
-            radial-gradient(circle, #020803 30%, transparent 31%),
-            repeating-conic-gradient(from 0deg, rgba(57,255,20,0.6) 0deg 15deg, transparent 15deg 30deg);
+    /* Compact Recordings Log inside the Screen */
+    .screen-log-header {
+        display: grid; grid-template-columns: 62px 52px 58px 34px 1fr; gap: 3px;
+        padding: 3px 4px 2px; font-family: 'JetBrains Mono', monospace; font-size: 8px;
+        font-weight: 800; color: var(--log-header-text); border-bottom: 1px solid var(--log-cell-border);
+        text-align: left;
     }
-
-    .center-telemetry {
-        display: flex; flex-direction: column; align-items: center; gap: 4px; z-index: 4;
-    }
-    #time-counter {
-        font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 800;
-        padding: 2px 8px; border-radius: 5px; background: #050709;
-        border: 1px solid rgba(255,255,255,0.18); color: #39ff14;
-        text-shadow: 0 0 6px rgba(57,255,20,0.6);
-    }
-    .vu-bars {
-        display: flex; gap: 2px; align-items: flex-end; height: 16px;
-    }
-    .vu-bar {
-        width: 4px; height: 3px; background: #22c55e; border-radius: 1px;
-        transition: height 0.08s ease;
-    }
-    .vu-bar:nth-child(7), .vu-bar:nth-child(8) { background: #eab308; }
-    .vu-bar:nth-child(9), .vu-bar:nth-child(10) { background: #ef4444; }
-
-    .transport-grid {
-        display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex-shrink: 0;
-    }
-    .modes-grid {
-        display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex-shrink: 0;
-    }
-    .filter-row {
-        display: grid; grid-template-columns: 115px 1fr 34px; gap: 6px; flex-shrink: 0;
-    }
-    select, input[type="text"] {
-        height: 28px; border-radius: 6px; border: 1px solid #475569;
-        background: #090c10; color: #f8fafc; padding: 0 6px;
-        font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
-    }
-
     #playlist-box {
-        flex: 1; min-height: 0; overflow-y: auto; border-radius: 10px;
-        border: 1px solid rgba(255,255,255,0.14); background: #07090c;
-        scrollbar-width: thin; scrollbar-color: var(--accent) #07090c;
+        flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+        scrollbar-width: thin; scrollbar-color: var(--log-header-text) transparent;
     }
+    #playlist-box::-webkit-scrollbar { width: 4px; }
+    #playlist-box::-webkit-scrollbar-thumb { background: var(--log-header-text); border-radius: 2px; }
     .rec-row {
-        display: grid; grid-template-columns: 54px 58px 66px 36px 1fr; gap: 4px;
-        padding: 6px 7px; border-bottom: 1px solid rgba(255,255,255,0.06);
-        font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #cbd5e1;
-        align-items: center; cursor: pointer;
+        display: grid; grid-template-columns: 62px 52px 58px 34px 1fr; gap: 3px;
+        padding: 3px 4px; border-bottom: 1px solid var(--log-cell-border);
+        font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--log-text);
+        align-items: center; text-align: left; cursor: pointer;
     }
-    .rec-row:active { background: rgba(255,255,255,0.12); }
     .rec-row.playing {
-        background: rgba(57, 255, 20, 0.18); color: #39ff14; font-weight: 800;
+        background: var(--log-text); color: var(--display-bg); font-weight: 800; border-radius: 3px;
     }
     .rec-row span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Middle Status & Brand Bar (Identical to Radio) */
+    .top-controls-container {
+        display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+        width: 100%; height: 24px; flex-shrink: 0;
+    }
+    .brand-henus {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-family: 'Orbitron', sans-serif; letter-spacing: 2px; color: var(--brand-primary, #cbd5e1);
+    }
+    .brand-henus .henus-mark {
+        font-size: 11px; font-style: italic; font-weight: 700; padding: 0 6px;
+        border-left: 2px solid var(--brand-accent, #38bdf8); border-right: 2px solid var(--brand-accent, #38bdf8);
+    }
+    .brand-henus .henus-sub { font-size: 7.5px; font-weight: 700; letter-spacing: 2.5px; }
+
+    /* Lower Recessed Bay (Replaces Keypad with Controls + Large 3D Mechanical Recorder) */
+    .buttons-box {
+        display: flex; flex-direction: column; width: 100%; gap: 7px;
+        border: 1px solid rgba(0,0,0,0.48); border-radius: 12px; padding: 7px;
+        background: rgba(0,0,0,0.22);
+        box-shadow: inset 0 2px 6px rgba(0,0,0,0.75), 0 1px 0 rgba(255,255,255,0.09);
+    }
+    .btn-row-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; height: 28px; }
+    .filter-row { display: grid; grid-template-columns: 98px 1fr 34px 52px; gap: 5px; height: 27px; }
+    .btn {
+        padding: 2px 4px; font-size: 9.5px; font-weight: 800; width: 100%; height: 100%;
+        background: var(--btn-bg); color: var(--btn-color); border: var(--btn-border);
+        border-radius: var(--btn-radius, 7px); box-shadow: var(--btn-shadow);
+        cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;
+    }
+    .btn:active, .btn.active {
+        transform: translateY(2px); color: var(--btn-active-color);
+        box-shadow: inset 0 2px 5px rgba(0,0,0,0.85);
+    }
+    select, input[type="text"] {
+        height: 100%; width: 100%; border-radius: 6px; border: 1px solid #090b0e;
+        background: #0d1014; color: #f1f5f9; padding: 0 6px;
+        font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 700;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.85);
+    }
+/* ========================================================
+       LARGE 3D HYPER-REALISTIC MECHANICAL DECK BAY
+       ======================================================== */
+    #mech-bay {
+        height: 176px; width: 100%; border-radius: 10px; position: relative; overflow: hidden;
+        background: radial-gradient(circle at 50% 20%, #1c2026 0%, #0d0f12 75%, #060709 100%);
+        border: 2px solid #07080a;
+        box-shadow: inset 0 5px 14px rgba(0,0,0,0.95), 0 1px 0 rgba(255,255,255,0.12);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .deck-view { display: none; width: 100%; height: 100%; position: relative; align-items: center; justify-content: center; }
+    html[data-deck="tape"]  #deck-tape  { display: flex; }
+    html[data-deck="cd"]    #deck-cd    { display: flex; }
+    html[data-deck="vinyl"] #deck-vinyl { display: flex; }
+    html[data-deck="reel"]  #deck-reel  { display: flex; }
+    html[data-deck="hack"]  #deck-hack  { display: flex; }
+
+    @keyframes spinCCW { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+    @keyframes spinCW  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes tapeRibbonMove { from { background-position: 0 0; } to { background-position: -24px 0; } }
+
+    /* 1. 3D CASSETTE TAPE DECK (With Wound Magnetic Tape Spools & Moving Tape Path) */
+    .c-body {
+        width: 88%; height: 148px; border-radius: 10px; position: relative;
+        background:
+            repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 3px),
+            linear-gradient(180deg, #2a2e35 0%, #1a1d22 100%);
+        border: 2px solid #090a0c;
+        box-shadow: 0 6px 16px rgba(0,0,0,0.9), inset 0 1px 1px rgba(255,255,255,0.22);
+        padding: 10px 14px; display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .c-screw {
+        width: 7px; height: 7px; border-radius: 50%; position: absolute;
+        background: radial-gradient(circle, #94a3b8 20%, #334155 80%); border: 1px solid #090a0c;
+    }
+    .c-screw.tl { top: 5px; left: 6px; } .c-screw.tr { top: 5px; right: 6px; }
+    .c-screw.bl { bottom: 5px; left: 6px; } .c-screw.br { bottom: 5px; right: 6px; }
+    .c-label {
+        background: linear-gradient(180deg, #fef3c7 0%, #fde68a 68%, #d97706 68%, #b45309 100%);
+        border-radius: 6px; padding: 4px 10px 16px; border: 1px solid #111;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+        display: flex; justify-content: space-between; font-family: 'JetBrains Mono', monospace;
+        font-size: 9.5px; font-weight: 800; color: #111827;
+    }
+    .c-window {
+        position: absolute; top: 32px; left: 16%; right: 16%; height: 74px;
+        background: radial-gradient(circle, #14181f 0%, #07090c 100%);
+        border: 2px solid #3f4652; border-radius: 36px;
+        box-shadow: inset 0 4px 10px rgba(0,0,0,0.95), 0 1px 0 rgba(255,255,255,0.18);
+        display: flex; align-items: center; justify-content: space-between; padding: 0 14px; overflow: hidden;
+    }
+    .c-window::after {
+        content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+        background: linear-gradient(125deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.03) 38%, transparent 39%);
+    }
+    /* Wound brown magnetic tape pack around each reel */
+    .c-spool {
+        border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        background: repeating-radial-gradient(circle, #29150a 0px, #381d0e 2px, #1f1007 4px);
+        border: 1px solid #452310; box-shadow: 0 0 8px rgba(0,0,0,0.95); flex-shrink: 0;
+    }
+    .c-spool.left  { width: 62px; height: 62px; }
+    .c-spool.right { width: 50px; height: 50px; }
+    .c-hub {
+        width: 34px; height: 34px; border-radius: 50%; border: 3px solid #e2e8f0;
+        background:
+            conic-gradient(from 0deg, #e2e8f0 0deg 20deg, transparent 20deg 60deg, #e2e8f0 60deg 80deg, transparent 80deg 120deg, #e2e8f0 120deg 140deg, transparent 140deg 180deg, #e2e8f0 180deg 200deg, transparent 200deg 240deg, #e2e8f0 240deg 260deg, transparent 260deg 300deg, #e2e8f0 300deg 320deg, transparent 320deg 360deg),
+            radial-gradient(circle, #050608 42%, #334155 44%);
+    }
+    .playing .c-hub { animation: spinCCW 1.8s linear infinite; }
+    .c-guide-bridge {
+        position: absolute; bottom: 6px; left: 22%; right: 22%; height: 22px;
+        background: linear-gradient(180deg, #272b33, #15181d);
+        border: 1px solid #090a0c; border-radius: 4px 4px 8px 8px;
+        display: flex; align-items: center; justify-content: space-around; padding: 0 8px;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.85);
+    }
+    /* Moving magnetic tape ribbon along the bottom head gap */
+    .c-tape-ribbon {
+        position: absolute; top: 3px; left: 8px; right: 8px; height: 4px;
+        background: repeating-linear-gradient(90deg, #3b1f0e 0px, #5c3217 6px, #29150a 12px);
+        opacity: 0.9;
+    }
+    .playing .c-tape-ribbon { animation: tapeRibbonMove 0.45s linear infinite; }
+    .c-roller {
+        width: 10px; height: 10px; border-radius: 50%; border: 2px solid #94a3b8; background: #111; z-index: 2;
+    }
+
+    /* 2. 3D OPTICAL CD PLAYER (Iridescent Polycarbonate Disc + Stationary Specular Glint) */
+    .cd-well {
+        width: 152px; height: 152px; border-radius: 50%; position: relative;
+        background: radial-gradient(circle, #080a0d 55%, #1e242d 72%, #0c0e12 100%);
+        border: 3px solid #2e3540; box-shadow: inset 0 6px 16px #000, 0 2px 6px rgba(0,0,0,0.8);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .cd-disc {
+        width: 136px; height: 136px; border-radius: 50%; position: relative;
+        border: 1px solid rgba(255,255,255,0.45);
+        background:
+            radial-gradient(circle, #090b0e 0% 11%, #cbd5e1 12% 16%, rgba(255,255,255,0.25) 17% 25%, transparent 26%),
+            repeating-radial-gradient(circle, rgba(255,255,255,0.04) 0px, transparent 1px, rgba(0,0,0,0.06) 2px),
+            conic-gradient(from 20deg, #94a3b8 0deg, #cbd5e1 35deg, #38bdf8 65deg, #a855f7 95deg, #ec4899 120deg, #facc15 145deg, #4ade80 170deg, #94a3b8 200deg, #cbd5e1 235deg, #38bdf8 265deg, #a855f7 295deg, #ec4899 320deg, #4ade80 345deg, #94a3b8 360deg);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.9);
+    }
+    .playing .cd-disc { animation: spinCW 0.75s linear infinite; }
+    /* Stationary specular light beam reflecting off the spinning CD + red laser pickup glow */
+    .cd-glass-glint {
+        position: absolute; inset: 0; border-radius: 50%; pointer-events: none; z-index: 5;
+        background:
+            radial-gradient(circle at 28% 50%, rgba(239,68,68,0.45) 0%, transparent 14%),
+            linear-gradient(130deg, transparent 30%, rgba(255,255,255,0.38) 46%, rgba(255,255,255,0.08) 52%, transparent 65%);
+    }
+
+    /* 3. 3D VINYL TURNTABLE (Strobe Platter + Grooved LP + Pivoting Chrome Tonearm) */
+    .tt-platter {
+        width: 152px; height: 152px; border-radius: 50%; position: relative; left: -18px;
+        background: repeating-conic-gradient(#d4d4d8 0deg 3deg, #27272a 3deg 6deg);
+        border: 3px solid #52525b; box-shadow: 0 6px 16px rgba(0,0,0,0.95);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .tt-record {
+        width: 140px; height: 140px; border-radius: 50%; position: relative;
+        background:
+            radial-gradient(circle, #d4d4d8 0% 3.5%, #b91c1c 4% 28%, #facc15 28.5% 30%, transparent 30.5%),
+            conic-gradient(from 0deg, rgba(255,255,255,0.16) 0deg, transparent 40deg, transparent 140deg, rgba(255,255,255,0.16) 180deg, transparent 220deg, transparent 320deg, rgba(255,255,255,0.16) 360deg),
+            repeating-radial-gradient(circle, #0f0f12 0px, #1c1c21 1.5px, #09090b 3px);
+        box-shadow: inset 0 0 6px #000;
+    }
+    .playing .tt-record { animation: spinCW 1.5s linear infinite; }
+    /* Strobe pilot lamp */
+    .tt-strobe {
+        position: absolute; bottom: 14px; left: 26px; width: 10px; height: 14px;
+        border-radius: 3px; background: #ff5500; box-shadow: 0 0 10px #ff5500, 0 0 18px #ff2200;
+    }
+    /* 3D Chrome Tonearm Base & Pivoting Arm */
+    .tt-arm-base {
+        position: absolute; top: 16px; right: 24px; width: 34px; height: 34px; border-radius: 50%;
+        background: radial-gradient(circle, #e2e8f0 20%, #64748b 60%, #1e293b 100%);
+        border: 2px solid #090a0c; box-shadow: 0 4px 8px rgba(0,0,0,0.85); z-index: 6;
+    }
+    .tt-tonearm {
+        position: absolute; top: 30px; right: 38px; width: 6px; height: 112px;
+        background: linear-gradient(90deg, #94a3b8, #f8fafc, #475569);
+        border-radius: 3px; transform-origin: top center; transform: rotate(8deg);
+        transition: transform 0.65s cubic-bezier(0.22, 1, 0.36, 1); z-index: 7;
+        box-shadow: -3px 4px 6px rgba(0,0,0,0.75);
+    }
+    .playing .tt-tonearm { transform: rotate(29deg); }
+    .tt-headshell {
+        position: absolute; bottom: -8px; left: -3px; width: 12px; height: 20px;
+        background: linear-gradient(180deg, #334155, #0f172a); border: 1px solid #cbd5e1;
+        border-radius: 2px; transform: rotate(18deg);
+    }
+
+    /* 4. 3D NAGRA OPEN-REEL SPY RECORDER (7-Inch Metal Reels + Threaded Tape Path) */
+    .r2r-stage {
+        width: 92%; height: 158px; position: relative;
+        display: flex; justify-content: space-between; align-items: flex-start; padding: 6px 12px;
+    }
+    .r2r-reel {
+        width: 112px; height: 112px; border-radius: 50%; position: relative; z-index: 4;
+        border: 3px solid #d4d4d8;
+        background:
+            radial-gradient(circle, #18181b 0% 12%, #e4e4e7 13% 24%, transparent 25%),
+            conic-gradient(from 0deg, #d4d4d8 0deg 34deg, transparent 34deg 120deg, #d4d4d8 120deg 154deg, transparent 154deg 240deg, #d4d4d8 240deg 274deg, transparent 274deg 360deg),
+            repeating-radial-gradient(circle, #29150a 0px, #3b1e0e 2px, #1c0e06 4px);
+        box-shadow: 0 6px 14px rgba(0,0,0,0.9), inset 0 0 8px rgba(0,0,0,0.8);
+    }
+    .playing .r2r-reel { animation: spinCCW 2.1s linear infinite; }
+    .r2r-headblock {
+        position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+        width: 84px; height: 32px; border-radius: 6px; z-index: 5;
+        background: linear-gradient(180deg, #d4d4d8 0%, #71717a 50%, #27272a 100%);
+        border: 1px solid #09090b; box-shadow: 0 4px 8px rgba(0,0,0,0.85);
+        display: flex; align-items: center; justify-content: space-around;
+    }
+    .r2r-tape-left, .r2r-tape-right {
+        position: absolute; bottom: 20px; height: 3px; background: #452310; z-index: 2;
+    }
+    .r2r-tape-left  { left: 52px; width: 95px; transform: rotate(22deg); }
+    .r2r-tape-right { right: 52px; width: 95px; transform: rotate(-22deg); }
+
+    /* 5. 3D SIGINT OSCILLOSCOPE & SPECTRUM TERMINAL */
+    #hack-canvas {
+        width: 92%; height: 146px; border-radius: 8px;
+        background:
+            linear-gradient(rgba(57,255,20,0.08) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(57,255,20,0.08) 1px, transparent 1px),
+            #030a04;
+        background-size: 18px 18px;
+        border: 2px solid #22c55e; box-shadow: inset 0 0 18px rgba(57,255,20,0.25);
+    }
 </style>
 </head>
 <body>
-<div id="player-chassis">
-    <div class="top-bar">
-        <button class="p-btn" type="button" id="btn-back-radio">&#9664; RADIO</button>
-        <span class="deck-title" id="deck-skin-title">80s CASSETTE DECK</span>
-        <button class="p-btn" type="button" id="btn-open-gdrive">DRIVE</button>
-        <button class="p-btn" type="button" id="btn-cycle-pskin">SKIN: TAPE</button>
-    </div>
+<div id="custom-scanner-ui-wrapper">
+    <div id="device-wrapper">
+        <div id="custom-scanner-ui">
 
-    <div id="visual-stage">
-        <div class="track-banner">
-            <span id="banner-name">SELECT A RECORDING BELOW</span>
-            <span id="banner-freq">---.----</span>
-        </div>
-        <div class="stage-anim-area" id="anim-stage">
-            <div class="wheel" id="wheel-left"></div>
-            <div class="center-telemetry">
-                <div id="time-counter">00:00</div>
-                <div class="vu-bars" id="vu-meter">
-                    <div class="vu-bar"></div><div class="vu-bar"></div><div class="vu-bar"></div>
-                    <div class="vu-bar"></div><div class="vu-bar"></div><div class="vu-bar"></div>
-                    <div class="vu-bar"></div><div class="vu-bar"></div><div class="vu-bar"></div>
-                    <div class="vu-bar"></div>
+            <!-- TOP SCREEN (Same layout as Radio: 24h Clock, Readout, Seek Slider, Compact Log) -->
+            <div class="scanner-display">
+                <div class="disp-top-row">
+                    <span id="deck-mode-hud">ARCHIVE // 80s TAPE</span>
+                    <span id="player-clock-hud">00:00:00</span>
+                </div>
+                <div id="track-main-readout">SELECT A RECORDING</div>
+                <div class="seek-row">
+                    <span id="time-cur">00:00</span>
+                    <input type="range" id="seek-slider" min="0" max="100" value="0">
+                    <span id="time-tot">00:00</span>
+                </div>
+                <div class="screen-log-header">
+                    <span>DATE</span><span>TIME</span><span>FREQ</span><span>DUR</span><span>NAME (HOLD=DEL)</span>
+                </div>
+                <div id="playlist-box">
+                    <div style="padding:14px;text-align:center;opacity:0.6;font-size:10px;">Syncing Google Drive Recordings...</div>
                 </div>
             </div>
-            <div class="wheel" id="wheel-right"></div>
+
+            <!-- MIDDLE STATUS & BRAND BAR -->
+            <div class="top-controls-container">
+                <div style="font-size:8px;font-weight:900;color:var(--toggle-color);padding-left:4px;" id="rec-count-hud">0 FILES</div>
+                <div id="brand-logo-slot"></div>
+                <div style="justify-self:end;font-size:8px;font-weight:900;color:var(--toggle-color);padding-right:4px;" id="cont-status-hud">CONT: OFF</div>
+            </div>
+
+            <!-- LOWER RECESSED BAY (Controls + Large 3D Mechanical Recorder) -->
+            <div class="buttons-box">
+                <div class="btn-row-4">
+                    <button class="btn" type="button" id="btn-back-radio">&#9664; RADIO</button>
+                    <button class="btn" type="button" id="btn-cycle-deck">DECK: TAPE</button>
+                    <button class="btn" type="button" id="btn-mode-cont">CONT: OFF</button>
+                    <button class="btn" type="button" id="btn-mode-tts">VOICE: OFF</button>
+                </div>
+
+                <!-- 3D MECHANICAL ANIMATION STAGE -->
+                <div id="mech-bay">
+                    <!-- 1. 3D Cassette Deck -->
+                    <div class="deck-view" id="deck-tape">
+                        <div class="c-body">
+                            <div class="c-screw tl"></div><div class="c-screw tr"></div>
+                            <div class="c-screw bl"></div><div class="c-screw br"></div>
+                            <div class="c-label">
+                                <span id="cassette-lbl-left">PROSCAN C-90</span>
+                                <span id="cassette-lbl-right">HI-BIAS CrO2</span>
+                            </div>
+                            <div class="c-window">
+                                <div class="c-spool left"><div class="c-hub"></div></div>
+                                <div class="c-spool right"><div class="c-hub"></div></div>
+                            </div>
+                            <div class="c-guide-bridge">
+                                <div class="c-tape-ribbon"></div>
+                                <div class="c-roller"></div>
+                                <div class="c-roller"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. 3D Optical CD Deck -->
+                    <div class="deck-view" id="deck-cd">
+                        <div class="cd-well">
+                            <div class="cd-disc"></div>
+                            <div class="cd-glass-glint"></div>
+                        </div>
+                    </div>
+
+                    <!-- 3. 3D Vinyl Turntable -->
+                    <div class="deck-view" id="deck-vinyl">
+                        <div class="tt-platter">
+                            <div class="tt-record"></div>
+                        </div>
+                        <div class="tt-strobe"></div>
+                        <div class="tt-arm-base"></div>
+                        <div class="tt-tonearm"><div class="tt-headshell"></div></div>
+                    </div>
+
+                    <!-- 4. 3D Open-Reel Spy Deck -->
+                    <div class="deck-view" id="deck-reel">
+                        <div class="r2r-stage">
+                            <div class="r2r-reel"></div>
+                            <div class="r2r-reel"></div>
+                            <div class="r2r-tape-left"></div>
+                            <div class="r2r-tape-right"></div>
+                            <div class="r2r-headblock">
+                                <div class="c-roller"></div><div class="c-roller"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 5. 3D SIGINT Oscilloscope -->
+                    <div class="deck-view" id="deck-hack">
+                        <canvas id="hack-canvas" width="380" height="140"></canvas>
+                    </div>
+                </div>
+
+                <!-- TRANSPORT KEYS -->
+                <div class="btn-row-4">
+                    <button class="btn" type="button" id="btn-prev">|&lt;&lt; PREV</button>
+                    <button class="btn" type="button" id="btn-play">&#9654; PLAY</button>
+                    <button class="btn" type="button" id="btn-stop">&#9632; STOP</button>
+                    <button class="btn" type="button" id="btn-next">NEXT &gt;&gt;|</button>
+                </div>
+
+                <!-- FILTER & DATE BAR -->
+                <div class="filter-row">
+                    <select id="date-select"><option value="">ALL DATES</option></select>
+                    <input type="text" id="search-box" placeholder="Filter channel / freq..." autocomplete="off">
+                    <button class="btn" type="button" id="btn-refresh" title="Hold to restore deleted">&#8635;</button>
+                    <button class="btn" type="button" id="btn-open-gdrive">DRIVE</button>
+                </div>
+            </div>
+
         </div>
-    </div>
-
-    <div class="transport-grid">
-        <button class="p-btn" type="button" id="btn-prev">|&lt;&lt; PREV</button>
-        <button class="p-btn" type="button" id="btn-play">&#9654; PLAY</button>
-        <button class="p-btn" type="button" id="btn-stop">&#9632; STOP</button>
-        <button class="p-btn" type="button" id="btn-next">NEXT &gt;&gt;|</button>
-    </div>
-
-    <div class="modes-grid">
-        <button class="p-btn active" type="button" id="btn-mode-cont">CONT: ON</button>
-        <button class="p-btn" type="button" id="btn-mode-tts">CAPTION: OFF</button>
-        <button class="p-btn" type="button" id="btn-mode-loop">LOOP: OFF</button>
-        <button class="p-btn" type="button" id="btn-mode-order">NEW &#8594; OLD</button>
-    </div>
-
-    <div class="filter-row">
-        <select id="date-select"><option value="">ALL DATES</option></select>
-        <input type="text" id="search-box" placeholder="Search channel or freq..." autocomplete="off">
-        <button class="p-btn" type="button" id="btn-refresh">&#8635;</button>
-    </div>
-
-    <div id="playlist-box">
-        <div style="padding:20px;text-align:center;opacity:0.6;font-size:11px;">Loading Recording Data.txt...</div>
     </div>
 </div>
 
 <script>
-    var pSkins = [
-        { id: 'cassette', btn: 'SKIN: TAPE', title: '80s CASSETTE DECK' },
-        { id: 'cd',       btn: 'SKIN: CD',   title: '90s OPTICAL CD DECK' },
-        { id: 'vinyl',    btn: 'SKIN: VINYL',title: 'VINYL TURNTABLE' },
-        { id: 'hacker',   btn: 'SKIN: HACK', title: 'SIGINT INTERCEPT DEN' },
-        { id: 'reel',     btn: 'SKIN: REEL', title: 'REEL-TO-REEL ARCHIVE' }
-    ];
-    var pSkinIdx = parseInt(localStorage.getItem('proscan_pskin_idx') || '0', 10) || 0;
+    /* Sync Skin, Display, Background & Brand from Main Radio's localStorage */
+    var skinIds = ['neumorphic','plastic','neublackyellow','whiteline','tron','neongreen','amber','ham','nokia','retro','yellow','blue','green','red','armycamo','desertcamo','metal','silver','carbon','titanium','bakelite','wood','milspec','copper'];
+    var dispIds = ['disp-soft','disp-lcd','disp-green-brt','disp-blue','disp-amber','disp-oled-brt','disp-term','disp-paper'];
+    var bgIds   = ['bg-dark','bg-soft','bg-pitch','bg-black','bg-blue','bg-green','bg-amber','bg-sand'];
 
-    function applyPSkin(idx) {
-        pSkinIdx = ((idx % pSkins.length) + pSkins.length) % pSkins.length;
-        var s = pSkins[pSkinIdx];
-        document.documentElement.setAttribute('data-pskin', s.id);
-        document.getElementById('btn-cycle-pskin').innerText = s.btn;
-        document.getElementById('deck-skin-title').innerText = s.title;
-        localStorage.setItem('proscan_pskin_idx', pSkinIdx);
+    var sIdx = parseInt(localStorage.getItem('proscan_skin_index') || '0', 10) || 0;
+    var dIdx = parseInt(localStorage.getItem('proscan_display_index') || '0', 10) || 0;
+    var bIdx = parseInt(localStorage.getItem('proscan_bg_index') || '0', 10) || 0;
+    document.documentElement.setAttribute('data-skin', skinIds[sIdx % skinIds.length] || 'neumorphic');
+    document.documentElement.setAttribute('data-display', dispIds[dIdx % dispIds.length] || 'disp-soft');
+    document.documentElement.setAttribute('data-bg', bgIds[bIdx % bgIds.length] || 'bg-dark');
+
+    var brand = (localStorage.getItem('proscan_custom_brand_v1') || 'PROSCAN').trim();
+    document.getElementById('brand-logo-slot').innerHTML =
+        '<div class="brand-henus"><span class="henus-mark">' + brand + '</span><span class="henus-sub">ARCHIVE</span></div>';
+
+    /* Live 24-Hour Clock in Top-Right of Screen */
+    function updateClock() {
+        var now = new Date();
+        document.getElementById('player-clock-hud').innerText =
+            String(now.getHours()).padStart(2, '0') + ':' +
+            String(now.getMinutes()).padStart(2, '0') + ':' +
+            String(now.getSeconds()).padStart(2, '0');
     }
-    applyPSkin(pSkinIdx);
+    setInterval(updateClock, 1000);
+    updateClock();
 
-    document.getElementById('btn-cycle-pskin').addEventListener('click', function () {
-        applyPSkin(pSkinIdx + 1);
-    });
-    document.getElementById('btn-back-radio').addEventListener('click', function () {
-        if (window.PlayerBridge) window.PlayerBridge.closePlayer();
-    });
-    document.getElementById('btn-open-gdrive').addEventListener('click', function () {
-        if (window.PlayerBridge && window.PlayerBridge.openGoogleDriveFolder) {
-            window.PlayerBridge.openGoogleDriveFolder();
+    /* 5 Mechanical Deck Styles */
+    var decks = [
+        { id: 'tape',  btn: 'DECK: TAPE',  hud: 'ARCHIVE // 80s TAPE' },
+        { id: 'cd',    btn: 'DECK: CD',    hud: 'ARCHIVE // OPTICAL CD' },
+        { id: 'vinyl', btn: 'DECK: VINYL', hud: 'ARCHIVE // TURNTABLE' },
+        { id: 'reel',  btn: 'DECK: REEL',  hud: 'ARCHIVE // NAGRA REEL' },
+        { id: 'hack',  btn: 'DECK: HACK',  hud: 'SIGINT // INTERCEPT' }
+    ];
+    var deckIdx = parseInt(localStorage.getItem('proscan_deck_idx') || '0', 10) || 0;
+    function applyDeck(i) {
+        deckIdx = ((i % decks.length) + decks.length) % decks.length;
+        var d = decks[deckIdx];
+        document.documentElement.setAttribute('data-deck', d.id);
+        document.getElementById('btn-cycle-deck').innerText = d.btn;
+        document.getElementById('deck-mode-hud').innerText = d.hud;
+        localStorage.setItem('proscan_deck_idx', deckIdx);
+    }
+    applyDeck(deckIdx);
+    document.getElementById('btn-cycle-deck').addEventListener('click', function () { applyDeck(deckIdx + 1); });
+
+    /* Convert US Date MM-DD-YY to UK Date DD-MM-YYYY */
+    function toUkDate(dStr) {
+        if (!dStr) return '';
+        var p = dStr.split('-');
+        if (p.length === 3) {
+            var yr = p[2].length === 2 ? ('20' + p[2]) : p[2];
+            return p[1] + '-' + p[0] + '-' + yr;
         }
-    });
+        return dStr;
+    }
 
-    var audio = new Audio();
-    var allRecs = [];
-    var filteredRecs = [];
-    var curIdx = -1;
-    var isCont = true;
-    var isTtsCaption = false;
-    var isLoop = false;
-    var isOldestFirst = false;
-    var vuTimer = null;
+    var allRecs = [], filteredRecs = [], curIdx = -1;
+    var isCont = false, isTtsCaption = false, isPlayingNow = false;
+    window.__deletedDriveIds = JSON.parse(localStorage.getItem('proscan_deleted_recs_v1') || '{}');
+    window.__activePlayingFileId = '';
+
+    /* Live Canvas Oscilloscope for SIGINT Hacker Deck */
+    var canvas = document.getElementById('hack-canvas');
+    var ctx = canvas ? canvas.getContext('2d') : null;
+    var phase = 0;
+    function drawScope() {
+        requestAnimationFrame(drawScope);
+        if (!ctx || decks[deckIdx].id !== 'hack') return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = '#39ff14';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (var x = 0; x < canvas.width; x += 4) {
+            var amp = isPlayingNow ? (18 + Math.sin(x * 0.09 + phase) * 26 * Math.random()) : 2;
+            var y = 52 + Math.sin(x * 0.05 + phase) * amp;
+            if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(57,255,20,0.75)';
+        for (var b = 0; b < 24; b++) {
+            var bh = isPlayingNow ? Math.max(4, Math.floor(Math.random() * 42)) : 3;
+            ctx.fillRect(10 + b * 15, 134 - bh, 11, bh);
+        }
+        phase += 0.22;
+    }
+    drawScope();
 
     function setPlayingUI(playing) {
-        var stage = document.getElementById('anim-stage');
+        isPlayingNow = playing;
+        document.getElementById('mech-bay').classList.toggle('playing', playing);
         var pBtn = document.getElementById('btn-play');
-        if (stage) stage.classList.toggle('playing', playing);
-        if (pBtn) {
-            pBtn.classList.toggle('active', playing);
-            pBtn.innerHTML = playing ? '|| PAUSE' : '&#9654; PLAY';
-        }
-        clearInterval(vuTimer);
-        var bars = document.querySelectorAll('#vu-meter .vu-bar');
-        if (playing) {
-            vuTimer = setInterval(function () {
-                bars.forEach(function (b, i) {
-                    var h = Math.max(3, Math.round(Math.random() * (16 - Math.abs(4 - i))));
-                    b.style.height = h + 'px';
-                });
-            }, 90);
-        } else {
-            bars.forEach(function (b) { b.style.height = '3px'; });
-        }
+        pBtn.classList.toggle('active', playing);
+        pBtn.innerHTML = playing ? '|| PAUSE' : '&#9654; PLAY';
     }
 
-    audio.addEventListener('timeupdate', function () {
-        var s = Math.floor(audio.currentTime || 0);
-        document.getElementById('time-counter').innerText =
-            String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
-    });
-
-    audio.addEventListener('ended', function () {
-        setPlayingUI(false);
-        if (isLoop && curIdx >= 0) {
-            playIndex(curIdx);
-        } else if (isCont && curIdx + 1 < filteredRecs.length) {
-            playIndex(curIdx + 1);
-        }
-    });
-
-    audio.addEventListener('error', function () {
-        setPlayingUI(false);
-        document.getElementById('banner-name').innerText = 'SYNCING TO G-DRIVE...';
-        if (isCont && curIdx + 1 < filteredRecs.length) {
-            setTimeout(function () { playIndex(curIdx + 1); }, 1000);
-        }
-    });
-
-    function extractDateAndSubfolder(folderPath) {
-        var bs = String.fromCharCode(92);
-        var f = (folderPath || '').split(bs).join('/');
-        var parts = f.split('/').filter(Boolean);
-        var sub = parts.length >= 1 ? parts[parts.length - 1] : 'Scan';
-        var dt = parts.length >= 2 ? parts[parts.length - 2] : '';
-        return { dateFolder: dt, subFolder: sub };
+    function fmtSec(s) {
+        s = Math.max(0, Math.floor(s || 0));
+        return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
     }
 
-    function renderPlaylist() {
+    window.onNativeTimeUpdate = function (sec, totSec) {
+        document.getElementById('time-cur').innerText = fmtSec(sec);
+        var slider = document.getElementById('seek-slider');
+        if (totSec && totSec > 0) {
+            document.getElementById('time-tot').innerText = fmtSec(totSec);
+            slider.max = totSec;
+        }
+        if (!slider.__dragging) slider.value = sec;
+    };
+
+    var seekSlider = document.getElementById('seek-slider');
+    seekSlider.addEventListener('pointerdown', function () { seekSlider.__dragging = true; });
+    seekSlider.addEventListener('change', function () {
+        seekSlider.__dragging = false;
+        if (window.PlayerBridge && window.PlayerBridge.seekToSeconds) {
+            window.PlayerBridge.seekToSeconds(parseInt(seekSlider.value, 10) || 0);
+        }
+    });
+
+    window.renderPlaylist = function () {
         var box = document.getElementById('playlist-box');
         var selDate = document.getElementById('date-select').value;
         var q = (document.getElementById('search-box').value || '').trim().toLowerCase();
+        var prevScroll = box.scrollTop;
 
-        var list = allRecs.filter(function (r) {
-            if (selDate && r.dateStr !== selDate) return false;
+        filteredRecs = allRecs.filter(function (r) {
+            if (window.__deletedDriveIds[r.fileId || r.fileName]) return false;
+            if (selDate && r.ukDate !== selDate) return false;
             if (q && !r.name.toLowerCase().includes(q) && !r.freq.toLowerCase().includes(q) && !r.timeStr.toLowerCase().includes(q)) return false;
             return true;
         });
 
-        if (isOldestFirst) list = list.slice().reverse();
-        filteredRecs = list;
+        document.getElementById('rec-count-hud').innerText = filteredRecs.length + ' FILES';
+
+        if (window.__activePlayingFileId) {
+            var foundIdx = filteredRecs.findIndex(function (r) { return r.fileId === window.__activePlayingFileId; });
+            if (foundIdx !== -1) curIdx = foundIdx;
+        }
 
         if (!filteredRecs.length) {
-            box.innerHTML = '<div style="padding:20px;text-align:center;opacity:0.6;font-size:11px;">No matching recordings found.</div>';
+            box.innerHTML = '<div style="padding:14px;text-align:center;opacity:0.6;font-size:10px;">No recordings found.</div>';
             return;
         }
 
         var html = '';
         for (var i = 0; i < filteredRecs.length; i++) {
             var r = filteredRecs[i];
-            var cls = (i === curIdx && !audio.paused) ? 'playing' : '';
+            var cls = (r.fileId && r.fileId === window.__activePlayingFileId && isPlayingNow) ? 'playing' : '';
             html += '<div class="rec-row ' + cls + '" data-idx="' + i + '">' +
-                '<span>' + r.dateStr + '</span>' +
+                '<span>' + r.ukDate + '</span>' +
                 '<span>' + r.timeStr + '</span>' +
                 '<span>' + r.freq + '</span>' +
                 '<span>' + r.dur + '</span>' +
@@ -369,121 +652,110 @@
             '</div>';
         }
         box.innerHTML = html;
-        box.querySelectorAll('.rec-row').forEach(function (el) {
-            el.addEventListener('click', function () {
-                playIndex(parseInt(el.getAttribute('data-idx'), 10));
-            });
-        });
-    }
+        box.scrollTop = prevScroll;
 
-    /* Callback when PlayerActivity resolves the Google Drive File ID */
-    window.onDriveStreamResolved = function (driveUrl, fileId) {
-        if (!driveUrl || curIdx < 0 || curIdx >= filteredRecs.length) {
-            setPlayingUI(false);
-            document.getElementById('banner-name').innerText = 'NOT YET IN G-DRIVE (TAP DRIVE)';
-            return;
-        }
-        var r = filteredRecs[curIdx];
-        document.getElementById('banner-name').innerText = r.dateStr + ' ' + r.timeStr + ' • ' + r.name;
-        audio.src = driveUrl;
-        audio.play().then(function () {
-            setPlayingUI(true);
-            renderPlaylist();
-        }).catch(function () {
-            /* Fallback Google Drive docs stream URL */
-            audio.src = 'https://docs.google.com/uc?export=open&id=' + fileId;
-            audio.play().then(function () {
-                setPlayingUI(true);
-                renderPlaylist();
-            }).catch(function () {
-                setPlayingUI(false);
+        box.querySelectorAll('.rec-row').forEach(function (el) {
+            var rTimer = null, rLong = false, startY = 0;
+            el.addEventListener('pointerdown', function (ev) {
+                clearTimeout(rTimer); rLong = false; startY = ev.clientY || 0;
+                var idx = parseInt(el.getAttribute('data-idx'), 10);
+                rTimer = setTimeout(function () {
+                    rTimer = null; rLong = true;
+                    if (navigator.vibrate) navigator.vibrate([35, 50, 35]);
+                    var target = filteredRecs[idx];
+                    if (target) {
+                        window.__deletedDriveIds[target.fileId || target.fileName] = true;
+                        localStorage.setItem('proscan_deleted_recs_v1', JSON.stringify(window.__deletedDriveIds));
+                        document.getElementById('track-main-readout').innerText = 'DELETED: ' + target.name;
+                        renderPlaylist();
+                    }
+                }, 550);
             });
+            el.addEventListener('pointermove', function (ev) {
+                if (rTimer && Math.abs((ev.clientY || 0) - startY) > 10) { clearTimeout(rTimer); rTimer = null; }
+            });
+            el.addEventListener('pointerup', function () {
+                var wasTap = rTimer !== null; clearTimeout(rTimer); rTimer = null;
+                if (wasTap && !rLong) playIndex(parseInt(el.getAttribute('data-idx'), 10));
+            });
+            el.addEventListener('pointercancel', function () { clearTimeout(rTimer); rTimer = null; });
         });
     };
-
-    function startAudioResolution(r) {
-        var info = extractDateAndSubfolder(r.folderPath);
-        document.getElementById('banner-name').innerText = 'LOADING FROM G-DRIVE: ' + r.name;
-        if (window.PlayerBridge && window.PlayerBridge.resolveAndPlayOnDrive) {
-            window.PlayerBridge.resolveAndPlayOnDrive(info.dateFolder, info.subFolder, r.fileName);
-        }
-    }
 
     function playIndex(idx) {
         if (idx < 0 || idx >= filteredRecs.length) return;
         curIdx = idx;
         var r = filteredRecs[idx];
-        audio.pause();
-        document.getElementById('banner-name').innerText = r.dateStr + ' ' + r.timeStr + ' • ' + r.name;
-        document.getElementById('banner-freq').innerText = r.freq;
+        window.__activePlayingFileId = r.fileId || '';
+        document.getElementById('track-main-readout').innerText = r.name + ' • ' + r.freq;
+        document.getElementById('cassette-lbl-left').innerText = r.name;
+        document.getElementById('cassette-lbl-right').innerText = r.freq + ' (' + r.timeStr + ')';
+        document.getElementById('time-cur').innerText = '00:00';
+        document.getElementById('time-tot').innerText = r.dur || '00:03';
         renderPlaylist();
 
         if (isTtsCaption && window.PlayerBridge) {
-            var tShort = r.timeStr.slice(0, 5);
-            window.PlayerBridge.speakCaption(tShort + ', ' + r.name);
+            window.PlayerBridge.speakCaption(r.timeStr.slice(0, 5) + ', ' + r.name);
             setTimeout(function () {
-                if (curIdx === idx) startAudioResolution(r);
+                if (curIdx === idx && window.PlayerBridge.playDriveIdDirect) {
+                    window.PlayerBridge.playDriveIdDirect(r.fileId);
+                }
             }, 1800);
-        } else {
-            startAudioResolution(r);
+        } else if (window.PlayerBridge && window.PlayerBridge.playDriveIdDirect) {
+            window.PlayerBridge.playDriveIdDirect(r.fileId);
         }
     }
 
-    window.onRecordingDataLoaded = function (rawText) {
-        var lines = (rawText || '').trim().split(/\r?\n/);
-        var parsed = [];
-        var datesSet = {};
-
-        for (var i = 0; i < lines.length && parsed.length < 300; i++) {
-            var ln = lines[i].trim();
-            if (!ln || ln.indexOf('.mp3') === -1) continue;
-            var p = ln.split(',');
-            if (p.length >= 14) {
-                var dur = (p[5] || '').trim();
-                if (dur.indexOf('00:') === 0) dur = dur.slice(3);
-                var folderPath = (p[10] || '').trim();
-                var info = extractDateAndSubfolder(folderPath);
-                var startRaw = (p[11] || p[8] || '').trim().split(/\s+/);
-                var dateStr = info.dateFolder || startRaw[0] || '';
-                var timeStr = startRaw.length > 1 ? startRaw[startRaw.length - 1] : '';
-                if (dateStr) datesSet[dateStr] = true;
-                parsed.push({
-                    fileName: (p[0] || '').trim(),
-                    freq: (p[3] || '').trim(),
-                    dur: dur,
-                    folderPath: folderPath,
-                    dateStr: dateStr,
-                    timeStr: timeStr,
-                    name: (p[13] || 'Unknown').trim()
-                });
-            }
-        }
-        allRecs = parsed;
-
-        var dSel = document.getElementById('date-select');
-        var curVal = dSel.value;
-        var dHtml = '<option value="">ALL DATES</option>';
-        Object.keys(datesSet).forEach(function (d) {
-            dHtml += '<option value="' + d + '">' + d + '</option>';
-        });
-        dSel.innerHTML = dHtml;
-        dSel.value = curVal;
-
-        renderPlaylist();
+    window.onDriveRecordingsLoaded = function (itemsJson) {
+        try {
+            var arr = JSON.parse(itemsJson);
+            var datesSet = {};
+            arr.forEach(function (r) {
+                r.ukDate = toUkDate(r.dateStr);
+                if (r.ukDate) datesSet[r.ukDate] = true;
+            });
+            allRecs = arr;
+            var dSel = document.getElementById('date-select');
+            var curVal = dSel.value;
+            var dHtml = '<option value="">ALL DATES</option>';
+            Object.keys(datesSet).forEach(function (d) { dHtml += '<option value="' + d + '">' + d + '</option>'; });
+            dSel.innerHTML = dHtml; dSel.value = curVal;
+            renderPlaylist();
+        } catch (e) {}
     };
 
+    window.onNativePlayStarted = function () { setPlayingUI(true); renderPlaylist(); };
+    window.onNativePlayEnded = function () {
+        setPlayingUI(false); renderPlaylist();
+        /* Since list is sorted Newest First, NEXT in time is UP the list (curIdx - 1)! */
+        if (isCont && curIdx > 0) playIndex(curIdx - 1);
+    };
+    window.onNativePlayError = function (msg) {
+        setPlayingUI(false);
+        document.getElementById('track-main-readout').innerText = msg || 'STREAM ERROR';
+    };
+
+    document.getElementById('btn-back-radio').addEventListener('click', function () {
+        if (window.PlayerBridge) window.PlayerBridge.closePlayer();
+    });
+    document.getElementById('btn-open-gdrive').addEventListener('click', function () {
+        if (window.PlayerBridge) window.PlayerBridge.openGoogleDriveFolder();
+    });
     document.getElementById('btn-play').addEventListener('click', function () {
         if (curIdx === -1 && filteredRecs.length > 0) playIndex(0);
-        else if (audio.paused && audio.src) { audio.play(); setPlayingUI(true); }
-        else { audio.pause(); setPlayingUI(false); }
+        else if (window.PlayerBridge && window.PlayerBridge.togglePause) window.PlayerBridge.togglePause();
     });
     document.getElementById('btn-stop').addEventListener('click', function () {
-        audio.pause(); audio.currentTime = 0; setPlayingUI(false); renderPlaylist();
+        setPlayingUI(false);
+        if (window.PlayerBridge && window.PlayerBridge.stopAudio) window.PlayerBridge.stopAudio();
+        renderPlaylist();
     });
-    document.getElementById('btn-prev').addEventListener('click', function () {
+
+    /* Chronological NEXT = UP the list (curIdx - 1, newer), PREV = DOWN the list (curIdx + 1, older) */
+    document.getElementById('btn-next').addEventListener('click', function () {
         if (curIdx > 0) playIndex(curIdx - 1);
     });
-    document.getElementById('btn-next').addEventListener('click', function () {
+    document.getElementById('btn-prev').addEventListener('click', function () {
         if (curIdx + 1 < filteredRecs.length) playIndex(curIdx + 1);
     });
 
@@ -491,31 +763,15 @@
         isCont = !isCont;
         this.classList.toggle('active', isCont);
         this.innerText = isCont ? 'CONT: ON' : 'CONT: OFF';
+        document.getElementById('cont-status-hud').innerText = isCont ? 'CONT: ON' : 'CONT: OFF';
     });
     document.getElementById('btn-mode-tts').addEventListener('click', function () {
         isTtsCaption = !isTtsCaption;
         this.classList.toggle('active', isTtsCaption);
-        this.innerText = isTtsCaption ? 'CAPTION: ON' : 'CAPTION: OFF';
+        this.innerText = isTtsCaption ? 'VOICE: ON' : 'VOICE: OFF';
     });
-    document.getElementById('btn-mode-loop').addEventListener('click', function () {
-        isLoop = !isLoop;
-        this.classList.toggle('active', isLoop);
-        this.innerText = isLoop ? 'LOOP: ON' : 'LOOP: OFF';
-    });
-    document.getElementById('btn-mode-order').addEventListener('click', function () {
-        isOldestFirst = !isOldestFirst;
-        this.classList.toggle('active', isOldestFirst);
-        this.innerHTML = isOldestFirst ? 'OLD &#8594; NEW' : 'NEW &#8594; OLD';
-        curIdx = -1;
-        renderPlaylist();
-    });
-
-    document.getElementById('date-select').addEventListener('change', function () {
-        curIdx = -1; renderPlaylist();
-    });
-    document.getElementById('search-box').addEventListener('input', function () {
-        curIdx = -1; renderPlaylist();
-    });
+    document.getElementById('date-select').addEventListener('change', function () { renderPlaylist(); });
+    document.getElementById('search-box').addEventListener('input', function () { renderPlaylist(); });
     document.getElementById('btn-refresh').addEventListener('click', function () {
         if (window.PlayerBridge) window.PlayerBridge.refreshRecordings();
     });
