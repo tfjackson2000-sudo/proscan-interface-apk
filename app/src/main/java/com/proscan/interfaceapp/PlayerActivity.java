@@ -58,14 +58,14 @@ public class PlayerActivity extends Activity {
             try {
                 if (nativePlayer != null && nativePlayer.isPlaying() && playerWeb != null) {
                     int sec = nativePlayer.getCurrentPosition() / 1000;
-                    playerWeb.evaluateJavascript("if(window.onNativeTimeUpdate)window.onNativeTimeUpdate(" + sec + ");", null);
-                    mainHandler.postDelayed(this, 400);
+                    int tot = Math.max(1, nativePlayer.getDuration() / 1000);
+                    playerWeb.evaluateJavascript("if(window.onNativeTimeUpdate)window.onNativeTimeUpdate(" + sec + "," + tot + ");", null);
+                    mainHandler.postDelayed(this, 350);
                 }
             } catch (Exception ignored) {}
         }
     };
 
-    /* Real-time auto-refresh every 12 seconds while Player is open */
     private final Runnable autoSyncRunnable = new Runnable() {
         @Override
         public void run() {
@@ -113,7 +113,6 @@ public class PlayerActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                injectNativePlayerHooks();
                 loadLiveGoogleDriveRecordings();
                 mainHandler.removeCallbacks(autoSyncRunnable);
                 mainHandler.postDelayed(autoSyncRunnable, 12000);
@@ -122,171 +121,6 @@ public class PlayerActivity extends Activity {
 
         setContentView(playerWeb);
         playerWeb.loadUrl("file:///android_asset/player_ui.html");
-    }
-
-    private void injectNativePlayerHooks() {
-        StringBuilder js = new StringBuilder();
-        js.append("(function(){\n");
-        js.append("  var st=document.createElement('style');\n");
-        js.append("  st.textContent='.rec-row{grid-template-columns:52px 56px 64px 36px 1fr!important;}';\n");
-        js.append("  document.head.appendChild(st);\n");
-
-        /* Set CONT: OFF by default */
-        js.append("  isCont = false;\n");
-        js.append("  var cBtn = document.getElementById('btn-mode-cont');\n");
-        js.append("  if (cBtn) { cBtn.classList.remove('active'); cBtn.innerText = 'CONT: OFF'; }\n");
-
-        /* Track deleted file IDs in localStorage + active playing fileId so auto-refresh never interrupts playback! */
-        js.append("  window.__deletedDriveIds = JSON.parse(localStorage.getItem('proscan_deleted_recs_v1') || '{}');\n");
-        js.append("  window.__activePlayingFileId = '';\n");
-        js.append("  window.__isNativePlaying = false;\n");
-
-        /* Override renderPlaylist to filter out deleted recordings & support Long-Press (0.5s) to Delete! */
-        js.append("  window.renderPlaylist = function() {\n");
-        js.append("    var box = document.getElementById('playlist-box');\n");
-        js.append("    var selDate = document.getElementById('date-select').value;\n");
-        js.append("    var q = (document.getElementById('search-box').value || '').trim().toLowerCase();\n");
-        js.append("    var prevScroll = box.scrollTop;\n");
-        js.append("    var list = allRecs.filter(function(r) {\n");
-        js.append("      if (window.__deletedDriveIds[r.fileId || r.fileName]) return false;\n");
-        js.append("      if (selDate && r.dateStr !== selDate) return false;\n");
-        js.append("      if (q && !r.name.toLowerCase().includes(q) && !r.freq.toLowerCase().includes(q) && !r.timeStr.toLowerCase().includes(q)) return false;\n");
-        js.append("      return true;\n");
-        js.append("    });\n");
-        js.append("    if (isOldestFirst) list = list.slice().reverse();\n");
-        js.append("    filteredRecs = list;\n");
-        js.append("    if (window.__activePlayingFileId) {\n");
-        js.append("      var newActiveIdx = filteredRecs.findIndex(function(r){ return r.fileId === window.__activePlayingFileId; });\n");
-        js.append("      if (newActiveIdx !== -1) curIdx = newActiveIdx;\n");
-        js.append("    }\n");
-        js.append("    if (!filteredRecs.length) {\n");
-        js.append("      box.innerHTML = '<div style=\"padding:20px;text-align:center;opacity:0.6;font-size:11px;\">No matching recordings found.</div>';\n");
-        js.append("      return;\n");
-        js.append("    }\n");
-        js.append("    var html = '';\n");
-        js.append("    for (var i = 0; i < filteredRecs.length; i++) {\n");
-        js.append("      var r = filteredRecs[i];\n");
-        js.append("      var cls = (r.fileId && r.fileId === window.__activePlayingFileId && window.__isNativePlaying) ? 'playing' : '';\n");
-        js.append("      html += '<div class=\"rec-row ' + cls + '\" data-idx=\"' + i + '\">' +\n");
-        js.append("        '<span>' + r.dateStr + '</span>' +\n");
-        js.append("        '<span>' + r.timeStr + '</span>' +\n");
-        js.append("        '<span>' + r.freq + '</span>' +\n");
-        js.append("        '<span>' + r.dur + '</span>' +\n");
-        js.append("        '<span title=\"' + r.name + '\">' + r.name + '</span>' +\n");
-        js.append("      '</div>';\n");
-        js.append("    }\n");
-        js.append("    box.innerHTML = html;\n");
-        js.append("    box.scrollTop = prevScroll;\n");
-        js.append("    box.querySelectorAll('.rec-row').forEach(function(el) {\n");
-        js.append("      var rTimer = null, rLong = false, startY = 0;\n");
-        js.append("      el.addEventListener('pointerdown', function(ev) {\n");
-        js.append("        clearTimeout(rTimer); rLong = false; startY = ev.clientY || 0;\n");
-        js.append("        var idx = parseInt(el.getAttribute('data-idx'), 10);\n");
-        js.append("        rTimer = setTimeout(function() {\n");
-        js.append("          rTimer = null; rLong = true;\n");
-        js.append("          if (navigator.vibrate) navigator.vibrate([35, 50, 35]);\n");
-        js.append("          var target = filteredRecs[idx];\n");
-        js.append("          if (target) {\n");
-        js.append("            window.__deletedDriveIds[target.fileId || target.fileName] = true;\n");
-        js.append("            localStorage.setItem('proscan_deleted_recs_v1', JSON.stringify(window.__deletedDriveIds));\n");
-        js.append("            var b = document.getElementById('banner-name');\n");
-        js.append("            if (b) b.innerText = 'DELETED: ' + target.name + ' (' + target.timeStr + ')';\n");
-        js.append("            renderPlaylist();\n");
-        js.append("          }\n");
-        js.append("        }, 550);\n");
-        js.append("      });\n");
-        js.append("      el.addEventListener('pointermove', function(ev) {\n");
-        js.append("        if (rTimer && Math.abs((ev.clientY || 0) - startY) > 10) { clearTimeout(rTimer); rTimer = null; }\n");
-        js.append("      });\n");
-        js.append("      el.addEventListener('pointerup', function() {\n");
-        js.append("        var wasTap = rTimer !== null; clearTimeout(rTimer); rTimer = null;\n");
-        js.append("        if (wasTap && !rLong) {\n");
-        js.append("          playIndex(parseInt(el.getAttribute('data-idx'), 10));\n");
-        js.append("        }\n");
-        js.append("      });\n");
-        js.append("      el.addEventListener('pointercancel', function() { clearTimeout(rTimer); rTimer = null; });\n");
-        js.append("      el.addEventListener('pointerleave', function() { clearTimeout(rTimer); rTimer = null; });\n");
-        js.append("    });\n");
-        js.append("  };\n");
-
-        /* Long-press Refresh button (0.7s) to restore deleted items if ever needed */
-        js.append("  var refBtn = document.getElementById('btn-refresh');\n");
-        js.append("  if (refBtn) {\n");
-        js.append("    var rfTimer = null;\n");
-        js.append("    refBtn.addEventListener('pointerdown', function() {\n");
-        js.append("      clearTimeout(rfTimer);\n");
-        js.append("      rfTimer = setTimeout(function() {\n");
-        js.append("        if (navigator.vibrate) navigator.vibrate(40);\n");
-        js.append("        window.__deletedDriveIds = {};\n");
-        js.append("        localStorage.removeItem('proscan_deleted_recs_v1');\n");
-        js.append("        var b = document.getElementById('banner-name'); if (b) b.innerText = 'RESTORED HIDDEN RECORDINGS';\n");
-        js.append("        renderPlaylist();\n");
-        js.append("      }, 750);\n");
-        js.append("    });\n");
-        js.append("    refBtn.addEventListener('pointerup', function() { clearTimeout(rfTimer); });\n");
-        js.append("    refBtn.addEventListener('pointerleave', function() { clearTimeout(rfTimer); });\n");
-        js.append("  }\n");
-
-        /* Receive live recordings array from Google Drive crawler */
-        js.append("  window.onDriveRecordingsLoaded=function(itemsJson){\n");
-        js.append("    try {\n");
-        js.append("      var arr = JSON.parse(itemsJson);\n");
-        js.append("      var prevCount = allRecs.length;\n");
-        js.append("      allRecs = arr;\n");
-        js.append("      var datesSet = {};\n");
-        js.append("      arr.forEach(function(r){ if(r.dateStr) datesSet[r.dateStr]=true; });\n");
-        js.append("      var dSel = document.getElementById('date-select');\n");
-        js.append("      var curVal = dSel.value;\n");
-        js.append("      var dHtml = '<option value=\"\">ALL DATES</option>';\n");
-        js.append("      Object.keys(datesSet).forEach(function(d){ dHtml += '<option value=\"'+d+'\">'+d+'</option>'; });\n");
-        js.append("      dSel.innerHTML = dHtml; dSel.value = curVal;\n");
-        js.append("      renderPlaylist();\n");
-        js.append("    } catch(e) {}\n");
-        js.append("  };\n");
-
-        js.append("  window.onNativeTimeUpdate=function(sec){\n");
-        js.append("    var el=document.getElementById('time-counter');\n");
-        js.append("    if(el)el.innerText=String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');\n");
-        js.append("  };\n");
-        js.append("  window.onNativePlayStarted=function(){\n");
-        js.append("    window.__isNativePlaying = true;\n");
-        js.append("    if(curIdx>=0&&curIdx<filteredRecs.length){\n");
-        js.append("      var r=filteredRecs[curIdx];\n");
-        js.append("      var b=document.getElementById('banner-name');\n");
-        js.append("      if(b)b.innerText='PLAYING: '+r.name+' ('+r.timeStr+')';\n");
-        js.append("      var f=document.getElementById('banner-freq');\n");
-        js.append("      if(f)f.innerText=r.freq;\n");
-        js.append("    }\n");
-        js.append("    if(typeof setPlayingUI==='function')setPlayingUI(true);\n");
-        js.append("    if(typeof renderPlaylist==='function')renderPlaylist();\n");
-        js.append("  };\n");
-        js.append("  window.onNativePlayEnded=function(){\n");
-        js.append("    window.__isNativePlaying = false;\n");
-        js.append("    if(typeof setPlayingUI==='function')setPlayingUI(false);\n");
-        js.append("    if(typeof renderPlaylist==='function')renderPlaylist();\n");
-        js.append("    if(typeof isLoop!=='undefined'&&isLoop&&curIdx>=0)playIndex(curIdx);\n");
-        js.append("    else if(typeof isCont!=='undefined'&&isCont&&curIdx+1<filteredRecs.length)playIndex(curIdx+1);\n");
-        js.append("  };\n");
-        js.append("  window.onNativePlayError=function(msg){\n");
-        js.append("    window.__isNativePlaying = false;\n");
-        js.append("    if(typeof setPlayingUI==='function')setPlayingUI(false);\n");
-        js.append("    var b=document.getElementById('banner-name');if(b)b.innerText=msg||'STREAM ERROR';\n");
-        js.append("  };\n");
-        js.append("  window.startAudioResolution=function(r){\n");
-        js.append("    window.__activePlayingFileId = r.fileId || '';\n");
-        js.append("    var b=document.getElementById('banner-name');if(b)b.innerText='LOADING: '+r.name+' ('+r.timeStr+')';\n");
-        js.append("    var f=document.getElementById('banner-freq');if(f)f.innerText=r.freq;\n");
-        js.append("    if(r.fileId&&window.PlayerBridge&&window.PlayerBridge.playDriveIdDirect){\n");
-        js.append("      window.PlayerBridge.playDriveIdDirect(r.fileId);\n");
-        js.append("    }\n");
-        js.append("  };\n");
-        js.append("  var stopB=document.getElementById('btn-stop');\n");
-        js.append("  if(stopB)stopB.addEventListener('click',function(){window.__isNativePlaying=false;if(window.PlayerBridge&&window.PlayerBridge.stopAudio)window.PlayerBridge.stopAudio();renderPlaylist();});\n");
-        js.append("  var playB=document.getElementById('btn-play');\n");
-        js.append("  if(playB)playB.addEventListener('click',function(){if(curIdx!==-1&&window.PlayerBridge&&window.PlayerBridge.togglePause)window.PlayerBridge.togglePause();});\n");
-        js.append("})();");
-
-        if (playerWeb != null) playerWeb.evaluateJavascript(js.toString(), null);
     }
 
     private void stopNativePlayer() {
@@ -361,6 +195,17 @@ public class PlayerActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void seekToSeconds(final int sec) {
+            mainHandler.post(() -> {
+                try {
+                    if (nativePlayer != null) {
+                        nativePlayer.seekTo(sec * 1000);
+                    }
+                } catch (Exception ignored) {}
+            });
+        }
+
+        @JavascriptInterface
         public void stopAudio() {
             mainHandler.post(() -> stopNativePlayer());
         }
@@ -372,10 +217,10 @@ public class PlayerActivity extends Activity {
                     if (nativePlayer != null) {
                         if (nativePlayer.isPlaying()) {
                             nativePlayer.pause();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("window.__isNativePlaying=false;if(typeof setPlayingUI==='function')setPlayingUI(false);renderPlaylist();", null);
+                            if (playerWeb != null) playerWeb.evaluateJavascript("if(typeof setPlayingUI==='function')setPlayingUI(false);renderPlaylist();", null);
                         } else {
                             nativePlayer.start();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("window.__isNativePlaying=true;if(typeof setPlayingUI==='function')setPlayingUI(true);renderPlaylist();", null);
+                            if (playerWeb != null) playerWeb.evaluateJavascript("if(typeof setPlayingUI==='function')setPlayingUI(true);renderPlaylist();", null);
                             mainHandler.post(progressTicker);
                         }
                     }
