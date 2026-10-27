@@ -581,7 +581,6 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
             });
         }
 
-        /* Syncs presets & theme across BOTH Home Wi-Fi and Tailscale IPs automatically! */
         @JavascriptInterface
         public void syncActiveThemeInMemory(final String webStorageJson) {
             try {
@@ -688,7 +687,6 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 super.onPageStarted(view, url, favicon);
-                /* Immediately hide hit badge & sync presets across Wi-Fi / Tailscale IPs at 0ms! */
                 injectEnhancements();
                 mainHandler.postDelayed(() -> injectEnhancements(), 400);
             }
@@ -703,7 +701,8 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 900);
     }
-private void injectEnhancements() {
+
+    private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
 
@@ -711,8 +710,9 @@ private void injectEnhancements() {
         js.append("(function() {\n");
         js.append("  try {\n");
 
-        /* 1. Immediately hide .freq-hit-badge so it never flashes on load! */
-        js.append("    if (document.head && !document.getElementById('proscan-v7-upgrade-css')) {\n");
+        /* 1. Immediately hide .freq-hit-badge AND any x123 hit counter pills inside #mini-log-table! */
+        js.append("    var existingSt = document.getElementById('proscan-v7-upgrade-css');\n");
+        js.append("    if (document.head && !existingSt) {\n");
         js.append("      var st = document.createElement('style');\n");
         js.append("      st.id = 'proscan-v7-upgrade-css';\n");
         js.append("      st.textContent = '' +\n");
@@ -720,7 +720,7 @@ private void injectEnhancements() {
         js.append("        '#device-wrapper{transition:transform 0.38s cubic-bezier(0.4,0,0.2,1)!important;transform-style:preserve-3d!important;}' +\n");
         js.append("        '#device-wrapper.flipping-out{transform:rotateY(90deg) scale(0.95)!important;}' +\n");
         js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:7px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
-        js.append("        '.freq-hit-badge{display:none!important;}' +\n");
+        js.append("        '.freq-hit-badge, #mini-log-table .freq-hit-badge, #mini-log-table td:nth-child(5) .freq-hit-badge, #mini-log-table td:nth-child(5) span[class*=\"hit\"], #mini-log-table td:nth-child(5) span[class*=\"badge\"]{display:none!important;visibility:hidden!important;width:0!important;height:0!important;padding:0!important;margin:0!important;border:none!important;overflow:hidden!important;font-size:0!important;}' +\n");
         js.append("        '#mini-log-table th,#mini-log-table td{padding:3px 2px 3px 4px!important;}' +\n");
         js.append("        '#mini-log-table th:nth-child(1),#mini-log-table td:nth-child(1){width:19%!important;}' +\n");
         js.append("        '#mini-log-table th:nth-child(2),#mini-log-table td:nth-child(2){width:20%!important;}' +\n");
@@ -742,9 +742,28 @@ private void injectEnhancements() {
         js.append("        '#btn-voice-toggle.active #voice-led{border-style:solid!important;border-width:2px!important;animation:voice-led-pulse-green 3.8s ease-in-out infinite!important;}' +\n");
         js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:24px;height:11px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}';\n");
         js.append("      document.head.appendChild(st);\n");
+        js.append("    } else if (existingSt && document.head.lastElementChild !== existingSt) {\n");
+        js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* 2. Cross-IP Preset & Theme Sync (Restores presets when switching between Home Wi-Fi & Tailscale!) */
+        /* Actively strip/hide any ×123 hit badge elements inside the log table while preserving their count for tap-to-view! */
+        js.append("    window.__stripHitBadgesFromLog = function() {\n");
+        js.append("      document.querySelectorAll('#mini-log-data tr').forEach(function(tr) {\n");
+        js.append("        if (tr.children.length < 5) return;\n");
+        js.append("        var nameTd = tr.children[4];\n");
+        js.append("        nameTd.querySelectorAll('*').forEach(function(el) {\n");
+        js.append("          var t = (el.innerText || el.textContent || '').trim();\n");
+        js.append("          if (el.classList.contains('freq-hit-badge') || /^[×xX]\\s*\\d+$/.test(t)) {\n");
+        js.append("            var num = t.replace(/[^0-9]/g, '');\n");
+        js.append("            if (num) nameTd.setAttribute('data-hit-count', num);\n");
+        js.append("            el.style.setProperty('display', 'none', 'important');\n");
+        js.append("          }\n");
+        js.append("        });\n");
+        js.append("      });\n");
+        js.append("    };\n");
+        js.append("    window.__stripHitBadgesFromLog();\n");
+
+        /* 2. Cross-IP Preset & Theme Sync */
         js.append("    if (!window.__crossIpSynced) {\n");
         js.append("      window.__crossIpSynced = true;\n");
         js.append("      var sharedRaw = ").append(safeShared).append(";\n");
@@ -895,6 +914,7 @@ private void injectEnhancements() {
         js.append("      var logBody = document.getElementById('mini-log-data');\n");
         js.append("      if (logBody) {\n");
         js.append("        new MutationObserver(function() {\n");
+        js.append("          if (window.__stripHitBadgesFromLog) window.__stripHitBadgesFromLog();\n");
         js.append("          if (!window.__voiceReadoutEnabled) return;\n");
         js.append("          var newRow = logBody.querySelector('tr.new-log-row');\n");
         js.append("          if (newRow && newRow.children.length >= 5) {\n");
@@ -912,7 +932,7 @@ private void injectEnhancements() {
         js.append("              }, 350);\n");
         js.append("            }\n");
         js.append("          }\n");
-        js.append("        }).observe(logBody, { childList: true });\n");
+        js.append("        }).observe(logBody, { childList: true, subtree: true });\n");
         js.append("      }\n");
         js.append("    }\n");
 
@@ -925,7 +945,7 @@ private void injectEnhancements() {
         js.append("        if (!tr || tr.children.length < 5) return;\n");
         js.append("        var nameTd = tr.children[4];\n");
         js.append("        var badge = nameTd.querySelector('.freq-hit-badge');\n");
-        js.append("        var hitsText = badge ? badge.innerText.replace('×', '') : '1';\n");
+        js.append("        var hitsText = nameTd.getAttribute('data-hit-count') || (badge ? (badge.textContent || '').replace(/[^0-9]/g, '') : '') || '1';\n");
         js.append("        var rawTitle = nameTd.getAttribute('title') || nameTd.innerText || '';\n");
         js.append("        var closeParen = rawTitle.indexOf(')');\n");
         js.append("        var cleanName = (closeParen !== -1 ? rawTitle.slice(closeParen + 1) : rawTitle).trim();\n");
@@ -1019,8 +1039,8 @@ private void injectEnhancements() {
         js.append("          }\n");
         js.append("        }\n");
         js.append("      });\n");
-        js.append("      exitBtn.addEventListener('pointerleave', function() { clearTimeout(exTimer); exTimer = null; });\n");
-        js.append("      exitBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
+        js.append("      exitBtn.addEventListener('pointerleave', function() { clearTimeout(exTimer); aTimer = null; });\n");
+        js.append("      exitBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); aTimer = null; });\n");
         js.append("    }\n");
         js.append("  } catch (e) {}\n");
         js.append("})();");
