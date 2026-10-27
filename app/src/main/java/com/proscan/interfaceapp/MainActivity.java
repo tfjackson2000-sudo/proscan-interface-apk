@@ -6,8 +6,6 @@ import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
-import android.media.AudioAttributes;
-import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -33,12 +31,10 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -46,26 +42,17 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
 
     private static final int REQ_LOAD_JSON = 901;
-    private static final String GDRIVE_ROOT_FOLDER_ID = "1gToQyY6YPOk_3muiQSY5WLy7jTSvXbTv";
 
     private WebView webView;
     private SharedPreferences prefs;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final ExecutorService audioFetchExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private boolean userWakeLockEnabled = false;
@@ -74,10 +61,6 @@ public class MainActivity extends Activity {
     private TextToSpeech tts = null;
     private boolean ttsReady = false;
 
-    private MediaPlayer archivePlayer = null;
-    private boolean isFetchingDrive = false;
-    private float[] currentEnvelope = new float[0];
-
     private final Runnable periodicInjector = new Runnable() {
         @Override
         public void run() {
@@ -85,31 +68,6 @@ public class MainActivity extends Activity {
                 injectEnhancements();
             }
             mainHandler.postDelayed(this, 1800);
-        }
-    };
-
-    private final Runnable archiveProgressTicker = new Runnable() {
-        @Override
-        public void run() {
-            try {
-                if (archivePlayer != null && archivePlayer.isPlaying() && webView != null) {
-                    int posMs = archivePlayer.getCurrentPosition();
-                    int durMs = Math.max(1, archivePlayer.getDuration());
-                    int sec = posMs / 1000;
-                    int tot = Math.max(1, durMs / 1000);
-                    float prog = Math.min(1f, Math.max(0f, (float) posMs / (float) durMs));
-                    float level = 0.25f;
-                    if (currentEnvelope.length > 0) {
-                        int envIdx = Math.min(currentEnvelope.length - 1, (int) (prog * currentEnvelope.length));
-                        level = currentEnvelope[envIdx];
-                    }
-                    webView.evaluateJavascript(
-                            "if(window.onArchiveTelemetry)window.onArchiveTelemetry(" + sec + "," + tot + "," + prog + "," + level + ");",
-                            null
-                    );
-                    mainHandler.postDelayed(this, 60);
-                }
-            } catch (Exception ignored) {}
         }
     };
 
@@ -188,263 +146,7 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
-    private void stopArchivePlayer() {
-        mainHandler.removeCallbacks(archiveProgressTicker);
-        if (archivePlayer != null) {
-            try { if (archivePlayer.isPlaying()) archivePlayer.stop(); } catch (Exception ignored) {}
-            try { archivePlayer.reset(); archivePlayer.release(); } catch (Exception ignored) {}
-            archivePlayer = null;
-        }
-    }
-
-    private float[] extractMp3AmplitudeEnvelope(File mp3File) {
-        int buckets = 240;
-        float[] env = new float[buckets];
-        try {
-            long len = mp3File.length();
-            if (len <= 512) return env;
-            FileInputStream fis = new FileInputStream(mp3File);
-            byte[] data = new byte[(int) Math.min(len, 2 * 1024 * 1024)];
-            int read = fis.read(data);
-            fis.close();
-            if (read <= 256) return env;
-            int startOffset = Math.min(read / 10, 1024);
-            int sliceLen = Math.max(1, (read - startOffset) / buckets);
-            float minVal = Float.MAX_VALUE, maxVal = Float.MIN_VALUE;
-            for (int b = 0; b < buckets; b++) {
-                int s = startOffset + b * sliceLen;
-                int end = Math.min(read - 1, s + sliceLen);
-                long energy = 0;
-                int zeroPad = 0;
-                for (int i = s; i < end; i++) {
-                    int v = data[i] & 0xFF;
-                    if (v == 0x00 || v == 0xFF || v == 0xAA || v == 0x55) zeroPad++;
-                    energy += Math.abs((data[i] & 0xFF) - (data[i + 1] & 0xFF));
-                }
-                int count = Math.max(1, end - s);
-                float padRatio = (float) zeroPad / (float) count;
-                float rawScore = ((float) energy / (float) count) * (1.0f - padRatio * 0.85f);
-                env[b] = rawScore;
-                if (rawScore < minVal) minVal = rawScore;
-                if (rawScore > maxVal) maxVal = rawScore;
-            }
-            float range = Math.max(1f, maxVal - minVal);
-            for (int b = 0; b < buckets; b++) {
-                float norm = (env[b] - minVal) / range;
-                norm = (float) Math.pow(norm, 1.55);
-                env[b] = Math.min(1f, Math.max(0.02f, norm));
-            }
-        } catch (Exception ignored) {}
-        return env;
-    }
-
-    private void playDriveIdInArchive(final String fileId) {
-        stopArchivePlayer();
-        final String urlStr = "https://drive.usercontent.google.com/download?id=" + fileId + "&export=download";
-        audioFetchExecutor.execute(() -> {
-            try {
-                File tempMp3 = new File(getCacheDir(), "archive_track.mp3");
-                URL url = new URL(urlStr);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(9000);
-                conn.setReadTimeout(9000);
-                conn.setInstanceFollowRedirects(true);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                InputStream is = conn.getInputStream();
-                FileOutputStream fos = new FileOutputStream(tempMp3);
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = is.read(buf)) != -1) fos.write(buf, 0, n);
-                fos.close();
-                is.close();
-                conn.disconnect();
-                final float[] env = extractMp3AmplitudeEnvelope(tempMp3);
-                mainHandler.post(() -> {
-                    try {
-                        stopArchivePlayer();
-                        currentEnvelope = env;
-                        archivePlayer = new MediaPlayer();
-                        if (Build.VERSION.SDK_INT >= 21) {
-                            archivePlayer.setAudioAttributes(new AudioAttributes.Builder()
-                                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                    .build());
-                        }
-                        FileInputStream fis = new FileInputStream(tempMp3);
-                        archivePlayer.setDataSource(fis.getFD());
-                        fis.close();
-                        archivePlayer.setOnPreparedListener(mp -> {
-                            mp.start();
-                            if (webView != null) webView.evaluateJavascript("if(window.onArchivePlayStarted)window.onArchivePlayStarted();", null);
-                            mainHandler.post(archiveProgressTicker);
-                        });
-                        archivePlayer.setOnCompletionListener(mp -> {
-                            stopArchivePlayer();
-                            if (webView != null) webView.evaluateJavascript("if(window.onArchivePlayEnded)window.onArchivePlayEnded();", null);
-                        });
-                        archivePlayer.prepareAsync();
-                    } catch (Exception e) {
-                        if (webView != null) webView.evaluateJavascript("if(window.onArchivePlayError)window.onArchivePlayError('PLAY ERROR');", null);
-                    }
-                });
-            } catch (Exception e) {
-                mainHandler.post(() -> {
-                    if (webView != null) webView.evaluateJavascript("if(window.onArchivePlayError)window.onArchivePlayError('STREAM ERROR');", null);
-                });
-            }
-        });
-    }
-
-    private String fetchUrlText(String urlStr) {
-        try {
-            String sep = urlStr.contains("?") ? "&" : "?";
-            URL url = new URL(urlStr + sep + "_t=" + System.currentTimeMillis());
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(9000);
-            conn.setReadTimeout(9000);
-            conn.setUseCaches(false);
-            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) sb.append(line).append("\n");
-            reader.close();
-            conn.disconnect();
-            return sb.toString();
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    private Map<String, String> parseDriveFolderAllItems(String folderId) {
-        Map<String, String> map = new LinkedHashMap<>();
-        if (folderId == null || folderId.isEmpty()) return map;
-        String html1 = fetchUrlText("https://drive.google.com/embeddedfolderview?id=" + folderId);
-        if (!html1.isEmpty()) {
-            Pattern p1 = Pattern.compile("id=\"entry-([A-Za-z0-9_-]{15,})\"[\\s\\S]*?<div class=\"flip-entry-title\">([^<]+)</div>");
-            Matcher m1 = p1.matcher(html1);
-            while (m1.find()) {
-                map.put(m1.group(2).trim().replace("&amp;", "&").replace("&#39;", "'").replace("&quot;", "\""), m1.group(1).trim());
-            }
-        }
-        String html2 = fetchUrlText("https://drive.google.com/drive/folders/" + folderId);
-        if (!html2.isEmpty()) {
-            String unescaped = html2.replace("\\u0022", "\"").replace("\\\"", "\"");
-            Pattern p2 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"([^\"]+\\.mp3)\"");
-            Matcher m2 = p2.matcher(unescaped);
-            while (m2.find()) map.put(m2.group(2).trim().replace("&amp;", "&").replace("&#39;", "'"), m2.group(1).trim());
-            Pattern p3 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"(\\d{2}-\\d{2}-\\d{2}|Scan)\"");
-            Matcher m3 = p3.matcher(unescaped);
-            while (m3.find()) map.put(m3.group(2).trim(), m3.group(1).trim());
-        }
-        return map;
-    }
-
-    private static class RecItem implements Comparable<RecItem> {
-        String fileId, fileName, dateStr, timeStr, freq, dur, name, sortKey;
-        @Override
-        public int compareTo(RecItem o) { return o.sortKey.compareTo(this.sortKey); }
-    }
-
-    private RecItem parseMp3Filename(String dateFolder, String fileName, String fileId) {
-        String base = fileName.endsWith(".mp3") ? fileName.substring(0, fileName.length() - 4) : fileName;
-        Pattern pat = Pattern.compile("^(.*?)\\s+-\\s+(\\d+\\.\\d+)\\s+-\\s+(\\d{2})-(\\d{2})-(\\d{2})(?:.*?TO\\s+(\\d{2})-(\\d{2})-(\\d{2}))?");
-        Matcher m = pat.matcher(base);
-        RecItem item = new RecItem();
-        item.fileId = fileId;
-        item.fileName = fileName;
-        item.dateStr = dateFolder;
-        if (m.find()) {
-            item.name = m.group(1).trim();
-            item.freq = m.group(2).trim();
-            String h1 = m.group(3), m1 = m.group(4), s1 = m.group(5);
-            item.timeStr = h1 + ":" + m1 + ":" + s1;
-            item.dur = "00:03";
-            if (m.group(6) != null) {
-                try {
-                    int t1 = Integer.parseInt(h1) * 3600 + Integer.parseInt(m1) * 60 + Integer.parseInt(s1);
-                    int t2 = Integer.parseInt(m.group(6)) * 3600 + Integer.parseInt(m.group(7)) * 60 + Integer.parseInt(m.group(8));
-                    int diff = t2 - t1;
-                    if (diff < 0) diff += 86400;
-                    item.dur = String.format(Locale.US, "%02d:%02d", diff / 60, diff % 60);
-                } catch (Exception ignored) {}
-            }
-        } else {
-            String[] parts = base.split(" - ");
-            item.name = parts.length > 0 ? parts[0].trim() : base;
-            item.freq = parts.length > 1 ? parts[1].trim() : "---.----";
-            item.timeStr = parts.length > 2 ? parts[2].replace('-', ':').trim() : "00:00:00";
-            item.dur = "--:--";
-        }
-        String[] dp = dateFolder.split("-");
-        String isoDate = dp.length == 3 ? (dp[2] + "-" + dp[0] + "-" + dp[1]) : dateFolder;
-        item.sortKey = isoDate + " " + item.timeStr + " " + fileName;
-        return item;
-    }
-
-    private void loadLiveGoogleDriveRecordings() {
-        if (isFetchingDrive) return;
-        isFetchingDrive = true;
-        executor.execute(() -> {
-            try {
-                Map<String, String> rootItems = parseDriveFolderAllItems(GDRIVE_ROOT_FOLDER_ID);
-                List<String> dateFolders = new ArrayList<>();
-                for (String title : rootItems.keySet()) {
-                    if (title.matches("\\d{2}-\\d{2}-\\d{2}")) dateFolders.add(title);
-                }
-                Collections.sort(dateFolders, (a, b) -> {
-                    String[] pa = a.split("-"), pb = b.split("-");
-                    String ka = pa.length == 3 ? (pa[2] + pa[0] + pa[1]) : a;
-                    String kb = pb.length == 3 ? (pb[2] + pb[0] + pb[1]) : b;
-                    return kb.compareTo(ka);
-                });
-                List<RecItem> allItems = new ArrayList<>();
-                int maxDates = Math.min(dateFolders.size(), 3);
-                for (int i = 0; i < maxDates; i++) {
-                    String dFolder = dateFolders.get(i);
-                    String dId = rootItems.get(dFolder);
-                    if (dId == null) continue;
-                    Map<String, String> dateChildren = parseDriveFolderAllItems(dId);
-                    for (Map.Entry<String, String> e : dateChildren.entrySet()) {
-                        if (e.getKey().toLowerCase().endsWith(".mp3")) {
-                            allItems.add(parseMp3Filename(dFolder, e.getKey(), e.getValue()));
-                        } else {
-                            Map<String, String> subChildren = parseDriveFolderAllItems(e.getValue());
-                            for (Map.Entry<String, String> se : subChildren.entrySet()) {
-                                if (se.getKey().toLowerCase().endsWith(".mp3")) {
-                                    allItems.add(parseMp3Filename(dFolder, se.getKey(), se.getValue()));
-                                }
-                            }
-                        }
-                    }
-                }
-                Collections.sort(allItems);
-                JSONArray arr = new JSONArray();
-                for (RecItem it : allItems) {
-                    JSONObject o = new JSONObject();
-                    o.put("fileId", it.fileId);
-                    o.put("fileName", it.fileName);
-                    o.put("dateStr", it.dateStr);
-                    o.put("timeStr", it.timeStr);
-                    o.put("freq", it.freq);
-                    o.put("dur", it.dur);
-                    o.put("name", it.name);
-                    arr.put(o);
-                }
-                final String escapedJson = JSONObject.quote(arr.toString());
-                mainHandler.post(() -> {
-                    isFetchingDrive = false;
-                    if (webView != null) {
-                        webView.evaluateJavascript("if(window.onDriveRecordingsLoaded)window.onDriveRecordingsLoaded(" + escapedJson + ");", null);
-                    }
-                });
-            } catch (Exception ignored) {
-                isFetchingDrive = false;
-            }
-        });
-    }
-private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast) {
+    private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast) {
         try {
             JSONObject root = new JSONObject();
             root.put("local_url", prefs.getString("local_url", ""));
@@ -638,7 +340,6 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
 
     private void closeAndExitApp() {
         setBgServiceRunning(false);
-        stopArchivePlayer();
         try {
             if (tts != null) {
                 tts.stop();
@@ -710,7 +411,6 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
         js.append("(function() {\n");
         js.append("  try {\n");
 
-        /* 1. Smooth Fade-to-Black Transition + Hide Hit Counter Badges on Main Radio Screen */
         js.append("    var existingSt = document.getElementById('proscan-v7-upgrade-css');\n");
         js.append("    if (document.head && !existingSt) {\n");
         js.append("      var st = document.createElement('style');\n");
@@ -745,7 +445,6 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Actively strip/hide any ×123 hit badge elements inside the log table while preserving their count for tap-to-view! */
         js.append("    window.__stripHitBadgesFromLog = function() {\n");
         js.append("      document.querySelectorAll('#mini-log-data tr').forEach(function(tr) {\n");
         js.append("        if (tr.children.length < 5) return;\n");
@@ -762,7 +461,6 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
         js.append("    };\n");
         js.append("    window.__stripHitBadgesFromLog();\n");
 
-        /* 2. Cross-IP Preset & Theme Sync */
         js.append("    if (!window.__crossIpSynced) {\n");
         js.append("      window.__crossIpSynced = true;\n");
         js.append("      var sharedRaw = ").append(safeShared).append(";\n");
@@ -837,7 +535,6 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
         js.append("      }\n");
         js.append("    }\n");
 
-        /* Merge LOG IN / LOG OUT into 1 Smart Button & Convert 2nd Button to PLAYER with Smooth Fade-to-Black! */
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
@@ -882,7 +579,6 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
         js.append("      });\n");
         js.append("    }\n");
 
-        /* Add VOICE Switch + LED next to WAKE */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
         js.append("      window.__voiceReadoutEnabled = false;\n");
@@ -935,7 +631,6 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
         js.append("      }\n");
         js.append("    }\n");
 
-        /* Tap Log Row to Flash Full Name + Hit Count on HUD */
         js.append("    var logTb = document.getElementById('mini-log-data');\n");
         js.append("    if (logTb && !logTb.__hitHudHooked) {\n");
         js.append("      logTb.__hitHudHooked = true;\n");
@@ -955,7 +650,6 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
         js.append("      });\n");
         js.append("    }\n");
 
-        /* Single AUDIO button */
         js.append("    var oldAudioBtn = document.getElementById('btn-audio-toggle');\n");
         js.append("    if (oldAudioBtn && !oldAudioBtn.__vlcUnifiedHooked) {\n");
         js.append("      var aBtn = oldAudioBtn.cloneNode(true);\n");
@@ -1003,7 +697,6 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
         js.append("      aBtn.addEventListener('pointercancel', function() { clearTimeout(aTimer); aTimer = null; });\n");
         js.append("    }\n");
 
-        /* Hardware EXIT button */
         js.append("    var ledsRight = document.querySelector('.top-leds-right');\n");
         js.append("    if (ledsRight && !document.getElementById('btn-hardware-exit')) {\n");
         js.append("      var exitBtn = document.createElement('button');\n");
