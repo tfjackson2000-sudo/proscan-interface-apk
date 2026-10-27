@@ -170,7 +170,6 @@ public class PlayerActivity extends Activity {
         js.append("    }\n");
         js.append("  } catch(e) {}\n");
 
-        /* Fix Smooth Touch Scrolling on #playlist-box + Remove (HOLD=DEL) header text */
         js.append("  var nameHdr = document.querySelector('.screen-log-header span:last-child');\n");
         js.append("  if (nameHdr) nameHdr.innerText = 'NAME';\n");
 
@@ -187,61 +186,35 @@ public class PlayerActivity extends Activity {
         js.append("    '.unread-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--log-text,#39ff14);margin-right:4px;vertical-align:middle;}' +\n");
         js.append("    '.top-row-5{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:28px!important;}' +\n");
         js.append("    '.filter-row-5{display:grid!important;grid-template-columns:88px 1fr 62px 32px 46px!important;gap:5px!important;height:27px!important;}' +\n");
-        js.append("    '.tt-platter{left:-34px!important;width:164px!important;height:164px!important;}.tt-record{width:152px!important;height:152px!important;}' +\n");
-        js.append("    '.tt-arm-base{top:18px!important;right:44px!important;}.tt-tonearm{top:34px!important;right:58px!important;height:126px!important;transform-origin:top center!important;transform:rotate(4deg);transition:transform 0.2s linear!important;}' +\n");
-        js.append("    '.deck-track-badge{position:absolute;top:7px;left:10px;right:10px;z-index:14;display:flex;justify-content:space-between;padding:2px 8px;border-radius:4px;background:rgba(0,0,0,0.72);border:1px solid rgba(255,255,255,0.16);font-family:monospace;font-size:9.5px;font-weight:800;color:#38bdf8;pointer-events:none;}' +\n");
-        js.append("    '.hw-side-panel{position:absolute;z-index:6;display:flex;flex-direction:column;gap:6px;align-items:center;}' +\n");
-        js.append("    '.hw-pill{padding:2px 6px;border-radius:3px;background:linear-gradient(180deg,#2e343d,#15181c);border:1px solid #08090b;font-family:monospace;font-size:7.5px;font-weight:800;color:#94a3b8;box-shadow:0 1px 2px #000;}' +\n");
-        js.append("    '.hw-fader-track{width:10px;height:86px;border-radius:3px;background:#080a0c;border:1px solid #334155;position:relative;box-shadow:inset 0 2px 4px #000;}' +\n");
-        js.append("    '.hw-fader-knob{position:absolute;top:36px;left:-3px;width:14px;height:10px;border-radius:2px;background:linear-gradient(180deg,#e2e8f0,#64748b);border:1px solid #000;}' +\n");
-        js.append("    '.hw-vu-dial{width:46px;height:28px;border-radius:6px 6px 2px 2px;background:radial-gradient(circle at 50% 90%,#fef08a,#ca8a04);border:2px solid #18181b;position:relative;overflow:hidden;box-shadow:inset 0 2px 4px rgba(0,0,0,0.6);}' +\n");
-        js.append("    '.hw-vu-needle{position:absolute;bottom:-2px;left:21px;width:2px;height:24px;background:#b91c1c;transform-origin:bottom center;transform:rotate(-35deg);transition:transform 0.06s ease;}' +\n");
+        /* Upgraded Vinyl Turntable Layout (Zero Overlap with Start/Stop or Top Badge) */
+        js.append("    '#deck-vinyl{background:radial-gradient(circle at 42% 54%,#1e2229 0%,#0c0e12 85%)!important;}' +\n");
+        js.append("    '.tt-platter{position:absolute!important;left:64px!important;top:36px!important;width:150px!important;height:150px!important;box-shadow:0 8px 20px rgba(0,0,0,0.95),0 0 0 3px #18181b!important;}' +\n");
+        js.append("    '.tt-record{width:138px!important;height:138px!important;}' +\n");
+        js.append("    '.tt-strobe{position:absolute!important;left:50px!important;bottom:48px!important;width:11px!important;height:16px!important;border-radius:3px!important;background:linear-gradient(180deg,#ff6600,#cc2200)!important;border:1px solid #ffb380!important;box-shadow:0 0 12px #ff4400,0 0 20px #ff1100!important;z-index:8!important;}' +\n");
+        js.append("    '.tt-arm-base{top:34px!important;right:54px!important;width:38px!important;height:38px!important;box-shadow:0 4px 10px #000,inset 0 1px 2px rgba(255,255,255,0.6)!important;z-index:9!important;}' +\n");
+        js.append("    '.tt-tonearm{top:50px!important;right:70px!important;height:118px!important;transform-origin:top center!important;transform:rotate(6deg);transition:transform 0.2s linear!important;z-index:10!important;}' +\n");
+        /* Upgraded Nagra Reel-to-Reel Layout (Reels High & Clear, Dedicated Brushed-Metal VU Bridge Below) */
+        js.append("    '.r2r-stage{width:94%!important;height:100%!important;padding:30px 18px 0!important;display:flex!important;justify-content:space-between!important;align-items:flex-start!important;}' +\n");
+        js.append("    '.r2r-reel{width:110px!important;height:110px!important;margin-top:0!important;box-shadow:0 6px 14px rgba(0,0,0,0.95)!important;}' +\n");
+        js.append("    '.r2r-tape-left{bottom:62px!important;left:56px!important;width:96px!important;transform:rotate(24deg)!important;}' +\n");
+        js.append("    '.r2r-tape-right{bottom:62px!important;right:56px!important;width:96px!important;transform:rotate(-24deg)!important;}' +\n");
+        js.append("    '.r2r-headblock{bottom:42px!important;width:92px!important;height:28px!important;background:linear-gradient(180deg,#e4e4e7 0%,#71717a 48%,#27272a 100%)!important;border:1px solid #09090b!important;box-shadow:0 4px 10px #000!important;}' +\n");
+        js.append("    '.r2r-lower-bridge{position:absolute;bottom:28px;left:12px;right:12px;height:40px;border-radius:6px;background:linear-gradient(180deg,#272b32 0%,#14171c 100%);border:1px solid rgba(255,255,255,0.12);box-shadow:inset 0 2px 5px rgba(0,0,0,0.85),0 2px 6px #000;display:flex;justify-content:space-between;align-items:center;padding:0 10px;z-index:8;pointer-events:none;}' +\n");
+        /* Upgraded SIGINT Hacker Canvas Layout */
+        js.append("    '#hack-canvas{width:95%!important;height:152px!important;margin-top:6px!important;border-radius:8px!important;border:1px solid rgba(57,255,20,0.45)!important;box-shadow:inset 0 0 24px rgba(57,255,20,0.22),0 0 12px rgba(0,0,0,0.9)!important;}' +\n");
+        js.append("    '.deck-track-badge{position:absolute;top:6px;left:10px;right:10px;z-index:14;display:flex;justify-content:space-between;padding:2px 8px;border-radius:4px;background:rgba(0,0,0,0.78);border:1px solid rgba(255,255,255,0.16);font-family:monospace;font-size:9.5px;font-weight:800;color:#38bdf8;pointer-events:none;}' +\n");
+        js.append("    '.hw-side-panel{position:absolute;z-index:11;display:flex;flex-direction:column;gap:5px;align-items:center;}' +\n");
+        js.append("    '.hw-pill{padding:2px 6px;border-radius:3px;background:linear-gradient(180deg,#2e343d,#15181c);border:1px solid #08090b;font-family:monospace;font-size:7.5px;font-weight:800;color:#94a3b8;box-shadow:0 1px 2px #000;letter-spacing:0.4px;}' +\n");
+        js.append("    '.hw-fader-track{width:12px;height:86px;border-radius:3px;background:repeating-linear-gradient(180deg,#1e293b 0px,#1e293b 1px,#080a0c 1px,#080a0c 7px);border:1px solid #334155;position:relative;box-shadow:inset 0 2px 4px #000;}' +\n");
+        js.append("    '.hw-fader-knob{position:absolute;top:36px;left:-3px;width:16px;height:11px;border-radius:2px;background:linear-gradient(180deg,#f8fafc,#94a3b8 45%,#334155 55%,#cbd5e1);border:1px solid #000;box-shadow:0 2px 4px rgba(0,0,0,0.85);}' +\n");
+        js.append("    '.hw-vu-dial{width:54px;height:30px;border-radius:5px;background:radial-gradient(circle at 50% 95%,#fef9c3 0%,#fde047 55%,#ca8a04 100%);border:2px solid #090a0c;position:relative;overflow:hidden;box-shadow:inset 0 2px 5px rgba(0,0,0,0.65),0 1px 0 rgba(255,255,255,0.15);}' +\n");
+        js.append("    '.hw-vu-dial::before{content:\"dB  -20 -10  0  +3\";position:absolute;top:3px;left:3px;right:3px;font-family:monospace;font-size:5px;font-weight:900;color:#1e293b;text-align:center;letter-spacing:-0.3px;}' +\n");
+        js.append("    '.hw-vu-needle{position:absolute;bottom:-2px;left:25px;width:1.8px;height:25px;background:#dc2626;transform-origin:bottom center;transform:rotate(-35deg);transition:transform 0.06s ease;box-shadow:0 0 2px rgba(0,0,0,0.5);}' +\n");
         js.append("    '#cd-laser-sled{position:absolute;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle,#ff2222 20%,rgba(255,0,0,0.7) 55%,transparent 100%);box-shadow:0 0 10px #ff0000;z-index:2;pointer-events:none;transition:transform 0.2s linear;}' +\n");
-        js.append("    '#reactive-vu-strip{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);display:flex;gap:3px;z-index:12;background:rgba(0,0,0,0.7);padding:3px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);}' +\n");
+        js.append("    '#reactive-vu-strip{position:absolute;bottom:5px;left:50%;transform:translateX(-50%);display:flex;gap:3px;z-index:12;background:rgba(0,0,0,0.78);padding:3px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);}' +\n");
         js.append("    '.rvu-seg{width:6px;height:5px;border-radius:1px;background:#1e293b;}';\n");
         js.append("  document.head.appendChild(st);\n");
-
-        /* Clear 3D transform after flip-in finishes + add guaranteed touch-scroll handler on #playlist-box */
-        js.append("  setTimeout(function() {\n");
-        js.append("    var dw = document.getElementById('device-wrapper');\n");
-        js.append("    if (dw && !dw.classList.contains('flipping-back')) {\n");
-        js.append("      dw.style.animation = 'none';\n");
-        js.append("      dw.style.transform = 'none';\n");
-        js.append("      dw.style.transformStyle = 'flat';\n");
-        js.append("    }\n");
-        js.append("  }, 400);\n");
-
-        js.append("  (function() {\n");
-        js.append("    var pBox = document.getElementById('playlist-box');\n");
-        js.append("    if (!pBox) return;\n");
-        js.append("    var startY = 0, startScroll = 0, isDragging = false;\n");
-        js.append("    pBox.addEventListener('touchstart', function(e) {\n");
-        js.append("      if (e.touches && e.touches.length === 1) {\n");
-        js.append("        startY = e.touches[0].clientY;\n");
-        js.append("        startScroll = pBox.scrollTop;\n");
-        js.append("        isDragging = false;\n");
-        js.append("      }\n");
-        js.append("    }, {passive: true});\n");
-        js.append("    pBox.addEventListener('touchmove', function(e) {\n");
-        js.append("      if (e.touches && e.touches.length === 1) {\n");
-        js.append("        var dy = startY - e.touches[0].clientY;\n");
-        js.append("        if (Math.abs(dy) > 5) {\n");
-        js.append("          isDragging = true;\n");
-        js.append("          window.__isTouchScrollingPlaylist = true;\n");
-        js.append("          pBox.scrollTop = startScroll + dy;\n");
-        js.append("        }\n");
-        js.append("      }\n");
-        js.append("    }, {passive: true});\n");
-        js.append("    pBox.addEventListener('touchend', function() {\n");
-        js.append("      if (isDragging) {\n");
-        js.append("        setTimeout(function(){ window.__isTouchScrollingPlaylist = false; }, 80);\n");
-        js.append("      } else {\n");
-        js.append("        window.__isTouchScrollingPlaylist = false;\n");
-        js.append("      }\n");
-        js.append("    }, {passive: true});\n");
-        js.append("  })();\n");
-
-        /* Add LOOP button to top row + 3-Way Filter Button (ALL -> NEW [Since Last Visit] -> UNPLAYED) */
+/* Add LOOP button to top row + 3-Way Filter Button (ALL -> NEW [Since Last Visit] -> UNPLAYED) */
         js.append("  var topRow = document.getElementById('btn-back-radio').parentNode;\n");
         js.append("  if (topRow && !document.getElementById('btn-mode-loop2')) {\n");
         js.append("    topRow.className = 'top-row-5';\n");
@@ -277,7 +250,7 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
-        /* Add Track Name Badge + Turntable/CDJ/Nagra Hardware Controls (WITHOUT the ugly Cassette SVG line!) */
+        /* Add Track Name Badge + Upgraded Turntable / CDJ / Nagra IV-S / SIGINT Hardware Controls */
         js.append("  var mb = document.getElementById('mech-bay');\n");
         js.append("  if (mb && !document.getElementById('deck-global-badge')) {\n");
         js.append("    var bdg = document.createElement('div'); bdg.id = 'deck-global-badge'; bdg.className = 'deck-track-badge';\n");
@@ -287,36 +260,48 @@ public class PlayerActivity extends Activity {
         js.append("    var segs = ''; for (var s=0; s<14; s++) segs += '<div class=\"rvu-seg\"></div>';\n");
         js.append("    vu.innerHTML = segs; mb.appendChild(vu);\n");
 
+        /* CDJ Optical Deck Hardware */
         js.append("    var cdWell = document.querySelector('.cd-well');\n");
         js.append("    if (cdWell) {\n");
         js.append("      var sled = document.createElement('div'); sled.id = 'cd-laser-sled';\n");
         js.append("      cdWell.appendChild(sled);\n");
         js.append("      var dCd = document.getElementById('deck-cd');\n");
-        js.append("      var leftWing = document.createElement('div'); leftWing.className = 'hw-side-panel'; leftWing.style.left = '14px';\n");
-        js.append("      leftWing.innerHTML = '<div class=\"hw-pill\">MASTER TEMPO</div><div class=\"hw-pill\">JOG: VINYL</div><div class=\"hw-pill\">CUE / LOOP</div><div class=\"hw-vu-dial\"><div class=\"hw-vu-needle\" id=\"cd-vu-l\"></div></div>';\n");
-        js.append("      var rightWing = document.createElement('div'); rightWing.className = 'hw-side-panel'; rightWing.style.right = '16px';\n");
+        js.append("      var leftWing = document.createElement('div'); leftWing.className = 'hw-side-panel'; leftWing.style.cssText = 'left:12px;top:36px;';\n");
+        js.append("      leftWing.innerHTML = '<div class=\"hw-pill\" style=\"color:#38bdf8;\">MASTER TEMPO</div><div class=\"hw-pill\">JOG: VINYL</div><div class=\"hw-pill\">CUE / LOOP</div><div class=\"hw-vu-dial\"><div class=\"hw-vu-needle\" id=\"cd-vu-l\"></div></div>';\n");
+        js.append("      var rightWing = document.createElement('div'); rightWing.className = 'hw-side-panel'; rightWing.style.cssText = 'right:14px;top:36px;';\n");
         js.append("      rightWing.innerHTML = '<div class=\"hw-pill\">TEMPO ±8%</div><div class=\"hw-fader-track\"><div class=\"hw-fader-knob\"></div></div>';\n");
         js.append("      dCd.appendChild(leftWing); dCd.appendChild(rightWing);\n");
         js.append("    }\n");
 
+        /* Technics SL-1200 Vinyl Deck Hardware (Spaced cleanly on left & right chassis rails!) */
         js.append("    var dVinyl = document.getElementById('deck-vinyl');\n");
         js.append("    if (dVinyl) {\n");
-        js.append("      var ttLeft = document.createElement('div'); ttLeft.className = 'hw-side-panel'; ttLeft.style.cssText = 'left:12px;bottom:14px;';\n");
-        js.append("      ttLeft.innerHTML = '<div class=\"hw-pill\">START/STOP</div><div style=\"display:flex;gap:3px;\"><div class=\"hw-pill\" style=\"color:#38bdf8;\">33</div><div class=\"hw-pill\">45</div></div>';\n");
-        js.append("      var ttRight = document.createElement('div'); ttRight.className = 'hw-side-panel'; ttRight.style.cssText = 'right:12px;bottom:16px;';\n");
-        js.append("      ttRight.innerHTML = '<div class=\"hw-pill\">PITCH</div><div class=\"hw-fader-track\" style=\"height:72px;\"><div class=\"hw-fader-knob\" style=\"top:30px;\"></div></div>';\n");
-        js.append("      dVinyl.appendChild(ttLeft); dVinyl.appendChild(ttRight);\n");
+        js.append("      var ttTopLeft = document.createElement('div'); ttTopLeft.className = 'hw-side-panel'; ttTopLeft.style.cssText = 'left:10px;top:36px;align-items:flex-start;';\n");
+        js.append("      ttTopLeft.innerHTML = '<div class=\"hw-pill\" style=\"font-size:6.5px;color:#cbd5e1;\">QUARTZ SL-1200</div><div style=\"display:flex;align-items:center;gap:4px;font-family:monospace;font-size:7px;color:#22c55e;font-weight:800;\"><span style=\"width:6px;height:6px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px #22c55e;display:inline-block;\"></span>LOCK</div>';\n");
+        js.append("      var ttLeft = document.createElement('div'); ttLeft.className = 'hw-side-panel'; ttLeft.style.cssText = 'left:8px;bottom:26px;align-items:flex-start;background:rgba(0,0,0,0.55);padding:5px 6px;border-radius:5px;border:1px solid rgba(255,255,255,0.1);';\n");
+        js.append("      ttLeft.innerHTML = '<div class=\"hw-pill\" style=\"border-color:#38bdf8;color:#f8fafc;padding:3px 6px;\">START/STOP</div><div style=\"display:flex;gap:4px;\"><div class=\"hw-pill\" style=\"color:#ef4444;border-color:#ef4444;\">33</div><div class=\"hw-pill\">45</div></div>';\n");
+        js.append("      var ttRight = document.createElement('div'); ttRight.className = 'hw-side-panel'; ttRight.style.cssText = 'right:10px;bottom:26px;';\n");
+        js.append("      ttRight.innerHTML = '<div class=\"hw-pill\">PITCH ±8</div><div class=\"hw-fader-track\" style=\"height:84px;\"><div class=\"hw-fader-knob\" style=\"top:36px;\"></div></div>';\n");
+        js.append("      dVinyl.appendChild(ttTopLeft); dVinyl.appendChild(ttLeft); dVinyl.appendChild(ttRight);\n");
         js.append("    }\n");
 
+        /* Nagra IV-S Open-Reel Spy Deck (Dedicated Lower Meter Bridge - Never Overlaps Reels!) */
         js.append("    var rStage = document.querySelector('.r2r-stage');\n");
         js.append("    if (rStage) {\n");
-        js.append("      rStage.style.paddingTop = '26px';\n");
         js.append("      var reels = rStage.querySelectorAll('.r2r-reel');\n");
         js.append("      if (reels.length >= 2) { reels[0].id = 'r2r-reel-left'; reels[1].id = 'r2r-reel-right'; }\n");
-        js.append("      var meters = document.createElement('div');\n");
-        js.append("      meters.style.cssText = 'position:absolute;bottom:12px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center;pointer-events:none;z-index:8;';\n");
-        js.append("      meters.innerHTML = '<div class=\"hw-vu-dial\"><div class=\"hw-vu-needle\" id=\"r2r-vu-l\"></div></div><div class=\"hw-vu-dial\"><div class=\"hw-vu-needle\" id=\"r2r-vu-r\"></div></div>';\n");
-        js.append("      rStage.appendChild(meters);\n");
+        js.append("      var bridge = document.createElement('div'); bridge.className = 'r2r-lower-bridge';\n");
+        js.append("      bridge.innerHTML = '' +\n");
+        js.append("        '<div style=\"display:flex;align-items:center;gap:6px;\">' +\n");
+        js.append("          '<div class=\"hw-vu-dial\"><div class=\"hw-vu-needle\" id=\"r2r-vu-l\"></div></div>' +\n");
+        js.append("          '<div style=\"font-family:monospace;font-size:7px;font-weight:800;color:#94a3b8;line-height:1.2;\">CH 1<br><span style=\"color:#22c55e;\">BIAS</span></div>' +\n");
+        js.append("        '</div>' +\n");
+        js.append("        '<div style=\"font-family:monospace;font-size:7.5px;font-weight:900;color:#e2e8f0;letter-spacing:1px;text-align:center;\">NAGRA IV-S<br><span style=\"font-size:6.5px;color:#38bdf8;\">15 IPS // MASTER</span></div>' +\n");
+        js.append("        '<div style=\"display:flex;align-items:center;gap:6px;\">' +\n");
+        js.append("          '<div style=\"font-family:monospace;font-size:7px;font-weight:800;color:#94a3b8;line-height:1.2;text-align:right;\">CH 2<br><span style=\"color:#facc15;\">PEAK</span></div>' +\n");
+        js.append("          '<div class=\"hw-vu-dial\"><div class=\"hw-vu-needle\" id=\"r2r-vu-r\"></div></div>' +\n");
+        js.append("        '</div>';\n");
+        js.append("      rStage.appendChild(bridge);\n");
         js.append("    }\n");
         js.append("  }\n");
 
@@ -329,9 +314,8 @@ public class PlayerActivity extends Activity {
         js.append("    if (typeof window.onNativeTimeUpdate === 'function') window.onNativeTimeUpdate(sec, totSec);\n");
 
         js.append("    var arm = document.querySelector('.tt-tonearm');\n");
-        js.append("    if (arm) arm.style.transform = 'rotate(' + (26 + window.__audioProgress * 19).toFixed(2) + 'deg)';\n");
+        js.append("    if (arm) arm.style.transform = 'rotate(' + (20 + window.__audioProgress * 18).toFixed(2) + 'deg)';\n");
 
-        /* Cassette Spools Shrink/Grow cleanly without the ugly line */
         js.append("    var spL = document.querySelector('.c-spool.left'), spR = document.querySelector('.c-spool.right');\n");
         js.append("    if (spL && spR) {\n");
         js.append("      var szL = 64 - (window.__audioProgress * 22), szR = 42 + (window.__audioProgress * 22);\n");
@@ -342,13 +326,13 @@ public class PlayerActivity extends Activity {
         js.append("    var rrL = document.getElementById('r2r-reel-left'), rrR = document.getElementById('r2r-reel-right');\n");
         js.append("    if (rrL && rrR) {\n");
         js.append("      var pL = Math.round(72 - window.__audioProgress * 32), pR = Math.round(40 + window.__audioProgress * 32);\n");
-        js.append("      rrL.style.boxShadow = 'inset 0 0 0 ' + (30 - pL/3) + 'px #18181b, 0 6px 14px rgba(0,0,0,0.9)';\n");
-        js.append("      rrR.style.boxShadow = 'inset 0 0 0 ' + (30 - pR/3) + 'px #18181b, 0 6px 14px rgba(0,0,0,0.9)';\n");
+        js.append("      rrL.style.boxShadow = 'inset 0 0 0 ' + (28 - pL/3) + 'px #18181b, 0 6px 14px rgba(0,0,0,0.9)';\n");
+        js.append("      rrR.style.boxShadow = 'inset 0 0 0 ' + (28 - pR/3) + 'px #18181b, 0 6px 14px rgba(0,0,0,0.9)';\n");
         js.append("    }\n");
-        js.append("    var deg = -38 + (window.__audioLevel * 76);\n");
+        js.append("    var deg = -36 + (window.__audioLevel * 72);\n");
         js.append("    ['cd-vu-l','r2r-vu-l','r2r-vu-r'].forEach(function(id, i){\n");
         js.append("      var ndl = document.getElementById(id);\n");
-        js.append("      if (ndl) ndl.style.transform = 'rotate(' + (deg + (i%2===0?2:-2)).toFixed(1) + 'deg)';\n");
+        js.append("      if (ndl) ndl.style.transform = 'rotate(' + (deg + (i%2===0?3:-3)).toFixed(1) + 'deg)';\n");
         js.append("    });\n");
 
         js.append("    var sled = document.getElementById('cd-laser-sled');\n");
@@ -368,30 +352,75 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  };\n");
 
-        /* Full-Height Oscilloscope Without Bottom Bar Graph for Hacker Deck */
+        /* UPGRADED SIGINT HACKER DECK: Dual-Trace Phosphor Scope + 28-Band Peak-Hold FFT Spectrum + Telemetry HUD */
         js.append("  var hCanvas = document.getElementById('hack-canvas');\n");
         js.append("  if (hCanvas) {\n");
         js.append("    var hCtx = hCanvas.getContext('2d'), hPhase = 0;\n");
-        js.append("    function drawCleanScope() {\n");
-        js.append("      requestAnimationFrame(drawCleanScope);\n");
+        js.append("    var peaks = []; for (var p=0; p<28; p++) peaks.push(4);\n");
+        js.append("    function drawProSigintScope() {\n");
+        js.append("      requestAnimationFrame(drawProSigintScope);\n");
         js.append("      if (document.documentElement.getAttribute('data-deck') !== 'hack') return;\n");
-        js.append("      hCtx.clearRect(0, 0, hCanvas.width, hCanvas.height);\n");
-        js.append("      var lvl = isPlayingNow ? window.__audioLevel : 0;\n");
-        js.append("      hCtx.strokeStyle = 'rgba(57,255,20,0.28)'; hCtx.lineWidth = 1;\n");
-        js.append("      hCtx.beginPath(); hCtx.moveTo(0, 75); hCtx.lineTo(hCanvas.width, 75); hCtx.stroke();\n");
-        js.append("      hCtx.strokeStyle = '#39ff14'; hCtx.lineWidth = 2.4;\n");
+        js.append("      var W = hCanvas.width, H = hCanvas.height;\n");
+        js.append("      hCtx.fillStyle = 'rgba(3, 10, 5, 0.42)';\n");
+        js.append("      hCtx.fillRect(0, 0, W, H);\n");
+        js.append("      var lvl = isPlayingNow ? Math.max(0.08, window.__audioLevel) : 0.015;\n");
+
+        /* Graticule Grid + Target Crosshairs */
+        js.append("      hCtx.strokeStyle = 'rgba(57,255,20,0.12)'; hCtx.lineWidth = 1;\n");
         js.append("      hCtx.beginPath();\n");
-        js.append("      for (var x = 0; x < hCanvas.width; x += 2) {\n");
-        js.append("        var env = Math.sin((x / hCanvas.width) * Math.PI);\n");
-        js.append("        var w1 = Math.sin(x * 0.09 + hPhase) * Math.cos(x * 0.035 - hPhase * 0.8);\n");
-        js.append("        var w2 = Math.sin(x * 0.22 - hPhase * 1.4) * 0.35;\n");
-        js.append("        var y = 75 + ((w1 + w2) * env * (lvl * 56));\n");
+        js.append("      for (var gx = 0; gx < W; gx += 38) { hCtx.moveTo(gx, 0); hCtx.lineTo(gx, H); }\n");
+        js.append("      for (var gy = 0; gy < H; gy += 28) { hCtx.moveTo(0, gy); hCtx.lineTo(W, gy); }\n");
+        js.append("      hCtx.stroke();\n");
+
+        /* Top Telemetry Readout inside SIGINT Screen */
+        js.append("      hCtx.fillStyle = '#38bdf8'; hCtx.font = 'bold 8.5px monospace';\n");
+        js.append("      var dbm = isPlayingNow ? (-48 + Math.round(lvl * 42)) : -98;\n");
+        js.append("      hCtx.fillText('RF: ' + dbm + ' dBm  //  BW: 12.5kHz  //  DEMOD: NFM', 8, 12);\n");
+        js.append("      hCtx.fillStyle = isPlayingNow ? '#39ff14' : '#64748b';\n");
+        js.append("      hCtx.fillText(isPlayingNow ? 'CARRIER: LOCKED' : 'CARRIER: STANDBY', W - 96, 12);\n");
+
+        /* Secondary Ghost Cyan Harmonic Trace */
+        js.append("      hCtx.strokeStyle = 'rgba(56,189,248,0.45)'; hCtx.lineWidth = 1.3;\n");
+        js.append("      hCtx.beginPath();\n");
+        js.append("      for (var x2 = 0; x2 < W; x2 += 3) {\n");
+        js.append("        var env2 = Math.sin((x2 / W) * Math.PI);\n");
+        js.append("        var y2 = 52 + Math.cos(x2 * 0.14 - hPhase * 1.3) * env2 * (lvl * 34);\n");
+        js.append("        if (x2 === 0) hCtx.moveTo(x2, y2); else hCtx.lineTo(x2, y2);\n");
+        js.append("      }\n");
+        js.append("      hCtx.stroke();\n");
+
+        /* Primary Phosphor Green Oscilloscope Trace */
+        js.append("      hCtx.strokeStyle = '#39ff14'; hCtx.lineWidth = 2.2;\n");
+        js.append("      hCtx.shadowColor = '#39ff14'; hCtx.shadowBlur = 6;\n");
+        js.append("      hCtx.beginPath();\n");
+        js.append("      for (var x = 0; x < W; x += 2) {\n");
+        js.append("        var env = Math.sin((x / W) * Math.PI);\n");
+        js.append("        var w1 = Math.sin(x * 0.08 + hPhase) * Math.cos(x * 0.035 - hPhase * 0.7);\n");
+        js.append("        var w2 = Math.sin(x * 0.24 - hPhase * 1.6) * 0.4;\n");
+        js.append("        var y = 52 + ((w1 + w2) * env * (lvl * 44));\n");
         js.append("        if (x === 0) hCtx.moveTo(x, y); else hCtx.lineTo(x, y);\n");
         js.append("      }\n");
         js.append("      hCtx.stroke();\n");
-        js.append("      hPhase += 0.26 + (lvl * 0.4);\n");
+        js.append("      hCtx.shadowBlur = 0;\n");
+
+        /* 28-Band FFT Spectrum Analyzer + Floating Peak-Hold Caps at Bottom */
+        js.append("      var barW = 10, gap = 3, startX = 10, baseY = H - 6;\n");
+        js.append("      for (var b = 0; b < 28; b++) {\n");
+        js.append("        var wave = Math.abs(Math.sin(b * 0.35 + hPhase * 0.7) * Math.cos(b * 0.19 - hPhase * 0.4));\n");
+        js.append("        var targetH = isPlayingNow ? Math.max(4, Math.min(48, Math.round((wave * 0.75 + 0.25) * lvl * 54))) : 3;\n");
+        js.append("        if (targetH >= peaks[b]) peaks[b] = targetH;\n");
+        js.append("        else peaks[b] = Math.max(3, peaks[b] - 0.45);\n");
+        js.append("        var bx = startX + b * (barW + gap);\n");
+        js.append("        var grad = hCtx.createLinearGradient(0, baseY - 48, 0, baseY);\n");
+        js.append("        grad.addColorStop(0, '#ef4444'); grad.addColorStop(0.35, '#facc15'); grad.addColorStop(1, '#22c55e');\n");
+        js.append("        hCtx.fillStyle = grad;\n");
+        js.append("        hCtx.fillRect(bx, baseY - targetH, barW, targetH);\n");
+        js.append("        hCtx.fillStyle = '#38bdf8';\n");
+        js.append("        hCtx.fillRect(bx, baseY - Math.round(peaks[b]) - 2, barW, 1.5);\n");
+        js.append("      }\n");
+        js.append("      hPhase += 0.24 + (lvl * 0.38);\n");
         js.append("    }\n");
-        js.append("    drawCleanScope();\n");
+        js.append("    drawProSigintScope();\n");
         js.append("  }\n");
 
         /* Tap to Select/Highlight Only + Smooth Scrolling + 'NEW Since Last Visit' Filter */
@@ -410,7 +439,6 @@ public class PlayerActivity extends Activity {
         js.append("    document.querySelectorAll('.rec-row').forEach(function(el, i){ el.classList.toggle('selected', i === idx); });\n");
         js.append("  };\n");
 
-        /* Save all current IDs as 'seen' when leaving the player so next visit only marks newer arrivals as NEW! */
         js.append("  window.markCurrentListAsVisited = function() {\n");
         js.append("    try {\n");
         js.append("      allRecs.forEach(function(r){ window.__seenOnPrevVisit[r.fileId || r.fileName] = true; });\n");
@@ -425,7 +453,6 @@ public class PlayerActivity extends Activity {
         js.append("    var prevScroll = box.scrollTop;\n");
         js.append("    var hasPrevVisitData = Object.keys(window.__seenOnPrevVisit).length > 0;\n");
         js.append("    if (!hasPrevVisitData && allRecs.length > 0) {\n");
-        js.append("      /* First time ever opening: mark older items as seen so only the newest 10 show as NEW */ \n");
         js.append("      for (var k = 10; k < allRecs.length; k++) {\n");
         js.append("        window.__seenOnPrevVisit[allRecs[k].fileId || allRecs[k].fileName] = true;\n");
         js.append("      }\n");
@@ -458,7 +485,7 @@ public class PlayerActivity extends Activity {
         js.append("    box.innerHTML = html; box.scrollTop = prevScroll;\n");
         js.append("    box.querySelectorAll('.rec-row').forEach(function(el) {\n");
         js.append("      el.addEventListener('click', function() {\n");
-        js.append("        if (window.__isTouchScrollingPlaylist) return;\n");
+        js.append("        if (window.__playlistIsDragging) return;\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(15);\n");
         js.append("        window.selectIndexOnly(parseInt(el.getAttribute('data-idx'), 10));\n");
         js.append("      });\n");
@@ -511,10 +538,7 @@ public class PlayerActivity extends Activity {
         js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
         js.append("      if (window.markCurrentListAsVisited) window.markCurrentListAsVisited();\n");
         js.append("      var dw = document.getElementById('device-wrapper');\n");
-        js.append("      if (dw) {\n");
-        js.append("        dw.style.transformStyle = 'preserve-3d';\n");
-        js.append("        dw.classList.add('flipping-back');\n");
-        js.append("      }\n");
+        js.append("      if (dw) dw.classList.add('flipping-back');\n");
         js.append("      setTimeout(function() { if (window.PlayerBridge) window.PlayerBridge.closePlayer(); }, 260);\n");
         js.append("    });\n");
         js.append("  }\n");
