@@ -710,15 +710,14 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
         js.append("(function() {\n");
         js.append("  try {\n");
 
-        /* 1. Immediately hide .freq-hit-badge AND any x123 hit counter pills inside #mini-log-table! */
+        /* 1. Smooth Fade-to-Black Transition + Hide Hit Counter Badges on Main Radio Screen */
         js.append("    var existingSt = document.getElementById('proscan-v7-upgrade-css');\n");
         js.append("    if (document.head && !existingSt) {\n");
         js.append("      var st = document.createElement('style');\n");
         js.append("      st.id = 'proscan-v7-upgrade-css';\n");
         js.append("      st.textContent = '' +\n");
-        js.append("        '#custom-scanner-ui-wrapper{perspective:1400px!important;}' +\n");
-        js.append("        '#device-wrapper{transition:transform 0.38s cubic-bezier(0.4,0,0.2,1)!important;transform-style:preserve-3d!important;}' +\n");
-        js.append("        '#device-wrapper.flipping-out{transform:rotateY(90deg) scale(0.95)!important;}' +\n");
+        js.append("        '#device-wrapper{transition:opacity 0.18s ease!important;}' +\n");
+        js.append("        '#device-wrapper.flipping-out{opacity:0!important;}' +\n");
         js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:7px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
         js.append("        '.freq-hit-badge, #mini-log-table .freq-hit-badge, #mini-log-table td:nth-child(5) .freq-hit-badge, #mini-log-table td:nth-child(5) span[class*=\"hit\"], #mini-log-table td:nth-child(5) span[class*=\"badge\"]{display:none!important;visibility:hidden!important;width:0!important;height:0!important;padding:0!important;margin:0!important;border:none!important;overflow:hidden!important;font-size:0!important;}' +\n");
         js.append("        '#mini-log-table th,#mini-log-table td{padding:3px 2px 3px 4px!important;}' +\n");
@@ -838,7 +837,7 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
         js.append("      }\n");
         js.append("    }\n");
 
-        /* Merge LOG IN / LOG OUT into 1 Smart Button & Convert 2nd Button to PLAYER with 3D Flip Animation! */
+        /* Merge LOG IN / LOG OUT into 1 Smart Button & Convert 2nd Button to PLAYER with Smooth Fade-to-Black! */
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
@@ -879,7 +878,7 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
         js.append("          if (window.AndroidApp && window.AndroidApp.openArchivePlayer) {\n");
         js.append("            window.AndroidApp.openArchivePlayer();\n");
         js.append("          }\n");
-        js.append("        }, 280);\n");
+        js.append("        }, 160);\n");
         js.append("      });\n");
         js.append("    }\n");
 
@@ -1039,8 +1038,8 @@ private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast)
         js.append("          }\n");
         js.append("        }\n");
         js.append("      });\n");
-        js.append("      exitBtn.addEventListener('pointerleave', function() { clearTimeout(exTimer); aTimer = null; });\n");
-        js.append("      exitBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); aTimer = null; });\n");
+        js.append("      exitBtn.addEventListener('pointerleave', function() { clearTimeout(exTimer); exTimer = null; });\n");
+        js.append("      exitBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
         js.append("    }\n");
         js.append("  } catch (e) {}\n");
         js.append("})();");
