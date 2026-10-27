@@ -200,7 +200,48 @@ public class PlayerActivity extends Activity {
         js.append("    '#reactive-vu-strip{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);display:flex;gap:3px;z-index:12;background:rgba(0,0,0,0.7);padding:3px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);}' +\n");
         js.append("    '.rvu-seg{width:6px;height:5px;border-radius:1px;background:#1e293b;}';\n");
         js.append("  document.head.appendChild(st);\n");
-/* Add LOOP button to top row + 3-Way Filter Button (ALL -> NEW [Since Last Visit] -> UNPLAYED) */
+
+        /* Clear 3D transform after flip-in finishes + add guaranteed touch-scroll handler on #playlist-box */
+        js.append("  setTimeout(function() {\n");
+        js.append("    var dw = document.getElementById('device-wrapper');\n");
+        js.append("    if (dw && !dw.classList.contains('flipping-back')) {\n");
+        js.append("      dw.style.animation = 'none';\n");
+        js.append("      dw.style.transform = 'none';\n");
+        js.append("      dw.style.transformStyle = 'flat';\n");
+        js.append("    }\n");
+        js.append("  }, 400);\n");
+
+        js.append("  (function() {\n");
+        js.append("    var pBox = document.getElementById('playlist-box');\n");
+        js.append("    if (!pBox) return;\n");
+        js.append("    var startY = 0, startScroll = 0, isDragging = false;\n");
+        js.append("    pBox.addEventListener('touchstart', function(e) {\n");
+        js.append("      if (e.touches && e.touches.length === 1) {\n");
+        js.append("        startY = e.touches[0].clientY;\n");
+        js.append("        startScroll = pBox.scrollTop;\n");
+        js.append("        isDragging = false;\n");
+        js.append("      }\n");
+        js.append("    }, {passive: true});\n");
+        js.append("    pBox.addEventListener('touchmove', function(e) {\n");
+        js.append("      if (e.touches && e.touches.length === 1) {\n");
+        js.append("        var dy = startY - e.touches[0].clientY;\n");
+        js.append("        if (Math.abs(dy) > 5) {\n");
+        js.append("          isDragging = true;\n");
+        js.append("          window.__isTouchScrollingPlaylist = true;\n");
+        js.append("          pBox.scrollTop = startScroll + dy;\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("    }, {passive: true});\n");
+        js.append("    pBox.addEventListener('touchend', function() {\n");
+        js.append("      if (isDragging) {\n");
+        js.append("        setTimeout(function(){ window.__isTouchScrollingPlaylist = false; }, 80);\n");
+        js.append("      } else {\n");
+        js.append("        window.__isTouchScrollingPlaylist = false;\n");
+        js.append("      }\n");
+        js.append("    }, {passive: true});\n");
+        js.append("  })();\n");
+
+        /* Add LOOP button to top row + 3-Way Filter Button (ALL -> NEW [Since Last Visit] -> UNPLAYED) */
         js.append("  var topRow = document.getElementById('btn-back-radio').parentNode;\n");
         js.append("  if (topRow && !document.getElementById('btn-mode-loop2')) {\n");
         js.append("    topRow.className = 'top-row-5';\n");
@@ -417,6 +458,7 @@ public class PlayerActivity extends Activity {
         js.append("    box.innerHTML = html; box.scrollTop = prevScroll;\n");
         js.append("    box.querySelectorAll('.rec-row').forEach(function(el) {\n");
         js.append("      el.addEventListener('click', function() {\n");
+        js.append("        if (window.__isTouchScrollingPlaylist) return;\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(15);\n");
         js.append("        window.selectIndexOnly(parseInt(el.getAttribute('data-idx'), 10));\n");
         js.append("      });\n");
@@ -469,7 +511,10 @@ public class PlayerActivity extends Activity {
         js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
         js.append("      if (window.markCurrentListAsVisited) window.markCurrentListAsVisited();\n");
         js.append("      var dw = document.getElementById('device-wrapper');\n");
-        js.append("      if (dw) dw.classList.add('flipping-back');\n");
+        js.append("      if (dw) {\n");
+        js.append("        dw.style.transformStyle = 'preserve-3d';\n");
+        js.append("        dw.classList.add('flipping-back');\n");
+        js.append("      }\n");
         js.append("      setTimeout(function() { if (window.PlayerBridge) window.PlayerBridge.closePlayer(); }, 260);\n");
         js.append("    });\n");
         js.append("  }\n");
