@@ -186,11 +186,11 @@ public class PlayerActivity extends Activity {
         js.append("    '.unread-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--log-text,#39ff14);margin-right:4px;vertical-align:middle;}' +\n");
         js.append("    '.top-row-5{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:28px!important;}' +\n");
         js.append("    '.filter-row-5{display:grid!important;grid-template-columns:88px 1fr 62px 32px 46px!important;gap:5px!important;height:27px!important;}' +\n");
-        /* Upgraded Vinyl Turntable Layout (Zero Overlap with Start/Stop or Top Badge) */
-        js.append("    '#deck-vinyl{background:radial-gradient(circle at 42% 54%,#1e2229 0%,#0c0e12 85%)!important;}' +\n");
-        js.append("    '.tt-platter{position:absolute!important;left:64px!important;top:36px!important;width:150px!important;height:150px!important;box-shadow:0 8px 20px rgba(0,0,0,0.95),0 0 0 3px #18181b!important;}' +\n");
-        js.append("    '.tt-record{width:138px!important;height:138px!important;}' +\n");
-        js.append("    '.tt-strobe{position:absolute!important;left:50px!important;bottom:48px!important;width:11px!important;height:16px!important;border-radius:3px!important;background:linear-gradient(180deg,#ff6600,#cc2200)!important;border:1px solid #ffb380!important;box-shadow:0 0 12px #ff4400,0 0 20px #ff1100!important;z-index:8!important;}' +\n");
+        /* Upgraded Vinyl Turntable Layout (Platter shifted right to 90px so Start/Stop has plenty of room!) */
+        js.append("    '#deck-vinyl{background:radial-gradient(circle at 46% 54%,#1e2229 0%,#0c0e12 85%)!important;}' +\n");
+        js.append("    '.tt-platter{position:absolute!important;left:90px!important;top:38px!important;width:140px!important;height:140px!important;box-shadow:0 8px 20px rgba(0,0,0,0.95),0 0 0 3px #18181b!important;}' +\n");
+        js.append("    '.tt-record{width:128px!important;height:128px!important;}' +\n");
+        js.append("    '.tt-strobe{position:absolute!important;left:76px!important;bottom:52px!important;width:9px!important;height:14px!important;border-radius:3px!important;background:linear-gradient(180deg,#ff6600,#cc2200)!important;border:1px solid #ffb380!important;box-shadow:0 0 12px #ff4400,0 0 20px #ff1100!important;z-index:8!important;}' +\n");
         js.append("    '.tt-arm-base{top:34px!important;right:54px!important;width:38px!important;height:38px!important;box-shadow:0 4px 10px #000,inset 0 1px 2px rgba(255,255,255,0.6)!important;z-index:9!important;}' +\n");
         js.append("    '.tt-tonearm{top:50px!important;right:70px!important;height:118px!important;transform-origin:top center!important;transform:rotate(6deg);transition:transform 0.2s linear!important;z-index:10!important;}' +\n");
         /* Upgraded Nagra Reel-to-Reel Layout (Reels High & Clear, Dedicated Brushed-Metal VU Bridge Below) */
@@ -273,13 +273,13 @@ public class PlayerActivity extends Activity {
         js.append("      dCd.appendChild(leftWing); dCd.appendChild(rightWing);\n");
         js.append("    }\n");
 
-        /* Technics SL-1200 Vinyl Deck Hardware (Spaced cleanly on left & right chassis rails!) */
+        /* Technics SL-1200 Vinyl Deck Hardware (Spaced cleanly on left & right chassis rails — zero overlap!) */
         js.append("    var dVinyl = document.getElementById('deck-vinyl');\n");
         js.append("    if (dVinyl) {\n");
-        js.append("      var ttTopLeft = document.createElement('div'); ttTopLeft.className = 'hw-side-panel'; ttTopLeft.style.cssText = 'left:10px;top:36px;align-items:flex-start;';\n");
-        js.append("      ttTopLeft.innerHTML = '<div class=\"hw-pill\" style=\"font-size:6.5px;color:#cbd5e1;\">QUARTZ SL-1200</div><div style=\"display:flex;align-items:center;gap:4px;font-family:monospace;font-size:7px;color:#22c55e;font-weight:800;\"><span style=\"width:6px;height:6px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px #22c55e;display:inline-block;\"></span>LOCK</div>';\n");
-        js.append("      var ttLeft = document.createElement('div'); ttLeft.className = 'hw-side-panel'; ttLeft.style.cssText = 'left:8px;bottom:26px;align-items:flex-start;background:rgba(0,0,0,0.55);padding:5px 6px;border-radius:5px;border:1px solid rgba(255,255,255,0.1);';\n");
-        js.append("      ttLeft.innerHTML = '<div class=\"hw-pill\" style=\"border-color:#38bdf8;color:#f8fafc;padding:3px 6px;\">START/STOP</div><div style=\"display:flex;gap:4px;\"><div class=\"hw-pill\" style=\"color:#ef4444;border-color:#ef4444;\">33</div><div class=\"hw-pill\">45</div></div>';\n");
+        js.append("      var ttTopLeft = document.createElement('div'); ttTopLeft.className = 'hw-side-panel'; ttTopLeft.style.cssText = 'left:8px;top:36px;align-items:flex-start;';\n");
+        js.append("      ttTopLeft.innerHTML = '<div class=\"hw-pill\" style=\"font-size:6.5px;color:#cbd5e1;padding:2px 5px;\">SL-1200MK2</div><div style=\"display:flex;align-items:center;gap:4px;font-family:monospace;font-size:7px;color:#22c55e;font-weight:800;\"><span style=\"width:6px;height:6px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px #22c55e;display:inline-block;\"></span>QUARTZ</div>';\n");
+        js.append("      var ttLeft = document.createElement('div'); ttLeft.className = 'hw-side-panel'; ttLeft.style.cssText = 'left:8px;bottom:24px;align-items:flex-start;background:rgba(0,0,0,0.55);padding:4px 5px;border-radius:5px;border:1px solid rgba(255,255,255,0.1);';\n");
+        js.append("      ttLeft.innerHTML = '<div class=\"hw-pill\" style=\"border-color:#38bdf8;color:#f8fafc;padding:2px 4px;font-size:6.5px;\">START/STOP</div><div style=\"display:flex;gap:3px;\"><div class=\"hw-pill\" style=\"color:#ef4444;border-color:#ef4444;font-size:6.5px;padding:1px 4px;\">33</div><div class=\"hw-pill\" style=\"font-size:6.5px;padding:1px 4px;\">45</div></div>';\n");
         js.append("      var ttRight = document.createElement('div'); ttRight.className = 'hw-side-panel'; ttRight.style.cssText = 'right:10px;bottom:26px;';\n");
         js.append("      ttRight.innerHTML = '<div class=\"hw-pill\">PITCH ±8</div><div class=\"hw-fader-track\" style=\"height:84px;\"><div class=\"hw-fader-knob\" style=\"top:36px;\"></div></div>';\n");
         js.append("      dVinyl.appendChild(ttTopLeft); dVinyl.appendChild(ttLeft); dVinyl.appendChild(ttRight);\n");
