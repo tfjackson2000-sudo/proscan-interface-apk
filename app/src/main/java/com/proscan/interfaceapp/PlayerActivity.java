@@ -170,7 +170,10 @@ public class PlayerActivity extends Activity {
         js.append("    }\n");
         js.append("  } catch(e) {}\n");
 
-        /* 3D Flip-In Animation + Detailed Deck Hardware CSS */
+        /* Fix Smooth Touch Scrolling on #playlist-box + Remove (HOLD=DEL) header text */
+        js.append("  var nameHdr = document.querySelector('.screen-log-header span:last-child');\n");
+        js.append("  if (nameHdr) nameHdr.innerText = 'NAME';\n");
+
         js.append("  var st = document.createElement('style');\n");
         js.append("  st.textContent = '' +\n");
         js.append("    '#custom-scanner-ui-wrapper{perspective:1400px!important;}' +\n");
@@ -178,10 +181,12 @@ public class PlayerActivity extends Activity {
         js.append("    '#device-wrapper{animation:flipInFromRadio 0.36s cubic-bezier(0.22,1,0.36,1) forwards;transition:transform 0.32s ease!important;transform-style:preserve-3d!important;}' +\n");
         js.append("    '#device-wrapper.flipping-back{transform:rotateY(-90deg) scale(0.95)!important;}' +\n");
         js.append("    '.scanner-display{height:245px!important;}.top-controls-container{height:26px!important;}.buttons-box{gap:8px!important;}#mech-bay{height:224px!important;}' +\n");
+        js.append("    '#playlist-box{overflow-y:scroll!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior:contain!important;}' +\n");
+        js.append("    '.rec-row{touch-action:pan-y!important;}' +\n");
         js.append("    '.rec-row.selected{outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(255,255,255,0.14)!important;font-weight:800!important;}' +\n");
         js.append("    '.unread-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--log-text,#39ff14);margin-right:4px;vertical-align:middle;}' +\n");
         js.append("    '.top-row-5{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:28px!important;}' +\n");
-        js.append("    '.filter-row-5{display:grid!important;grid-template-columns:92px 1fr 48px 32px 48px!important;gap:5px!important;height:27px!important;}' +\n");
+        js.append("    '.filter-row-5{display:grid!important;grid-template-columns:88px 1fr 62px 32px 46px!important;gap:5px!important;height:27px!important;}' +\n");
         js.append("    '.tt-platter{left:-34px!important;width:164px!important;height:164px!important;}.tt-record{width:152px!important;height:152px!important;}' +\n");
         js.append("    '.tt-arm-base{top:18px!important;right:44px!important;}.tt-tonearm{top:34px!important;right:58px!important;height:126px!important;transform-origin:top center!important;transform:rotate(4deg);transition:transform 0.2s linear!important;}' +\n");
         js.append("    '.deck-track-badge{position:absolute;top:7px;left:10px;right:10px;z-index:14;display:flex;justify-content:space-between;padding:2px 8px;border-radius:4px;background:rgba(0,0,0,0.72);border:1px solid rgba(255,255,255,0.16);font-family:monospace;font-size:9.5px;font-weight:800;color:#38bdf8;pointer-events:none;}' +\n");
@@ -195,7 +200,7 @@ public class PlayerActivity extends Activity {
         js.append("    '#reactive-vu-strip{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);display:flex;gap:3px;z-index:12;background:rgba(0,0,0,0.7);padding:3px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);}' +\n");
         js.append("    '.rvu-seg{width:6px;height:5px;border-radius:1px;background:#1e293b;}';\n");
         js.append("  document.head.appendChild(st);\n");
-/* Add LOOP button to top row + NEW (Unread) Filter button to bottom row */
+/* Add LOOP button to top row + 3-Way Filter Button (ALL -> NEW [Since Last Visit] -> UNPLAYED) */
         js.append("  var topRow = document.getElementById('btn-back-radio').parentNode;\n");
         js.append("  if (topRow && !document.getElementById('btn-mode-loop2')) {\n");
         js.append("    topRow.className = 'top-row-5';\n");
@@ -211,6 +216,11 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
+        /* Track Seen Recordings from Previous Visits so 'NEW' only shows recordings since your last visit! */
+        js.append("  window.__seenOnPrevVisit = JSON.parse(localStorage.getItem('proscan_seen_visit_ids_v1') || '{}');\n");
+        js.append("  window.__playedDriveIds = JSON.parse(localStorage.getItem('proscan_played_recs_v1') || '{}');\n");
+        js.append("  window.__filterMode = 0;\n"); /* 0 = ALL, 1 = NEW (Since Last Visit), 2 = UNPLAYED */
+
         js.append("  var fRow = document.getElementById('date-select').parentNode;\n");
         js.append("  if (fRow && !document.getElementById('btn-filter-unread')) {\n");
         js.append("    fRow.className = 'filter-row-5';\n");
@@ -218,16 +228,15 @@ public class PlayerActivity extends Activity {
         js.append("    uBtn.id = 'btn-filter-unread'; uBtn.className = 'btn'; uBtn.type = 'button';\n");
         js.append("    uBtn.innerText = 'ALL';\n");
         js.append("    fRow.insertBefore(uBtn, document.getElementById('btn-refresh'));\n");
-        js.append("    window.__unreadOnly = false;\n");
         js.append("    uBtn.addEventListener('click', function() {\n");
-        js.append("      window.__unreadOnly = !window.__unreadOnly;\n");
-        js.append("      uBtn.classList.toggle('active', window.__unreadOnly);\n");
-        js.append("      uBtn.innerText = window.__unreadOnly ? 'NEW' : 'ALL';\n");
+        js.append("      window.__filterMode = (window.__filterMode + 1) % 3;\n");
+        js.append("      uBtn.classList.toggle('active', window.__filterMode !== 0);\n");
+        js.append("      uBtn.innerText = window.__filterMode === 0 ? 'ALL' : (window.__filterMode === 1 ? 'NEW' : 'UNPLAY');\n");
         js.append("      window.renderPlaylist();\n");
         js.append("    });\n");
         js.append("  }\n");
 
-        /* Add Track Name Badge + Connected SVG Tape Paths + Turntable/CDJ/Nagra Hardware Controls */
+        /* Add Track Name Badge + Turntable/CDJ/Nagra Hardware Controls (WITHOUT the ugly Cassette SVG line!) */
         js.append("  var mb = document.getElementById('mech-bay');\n");
         js.append("  if (mb && !document.getElementById('deck-global-badge')) {\n");
         js.append("    var bdg = document.createElement('div'); bdg.id = 'deck-global-badge'; bdg.className = 'deck-track-badge';\n");
@@ -237,17 +246,6 @@ public class PlayerActivity extends Activity {
         js.append("    var segs = ''; for (var s=0; s<14; s++) segs += '<div class=\"rvu-seg\"></div>';\n");
         js.append("    vu.innerHTML = segs; mb.appendChild(vu);\n");
 
-        /* Connected SVG Tape Ribbon inside Cassette Window */
-        js.append("    var cWin = document.querySelector('.c-window');\n");
-        js.append("    if (cWin) {\n");
-        js.append("      var svgT = document.createElementNS('http://www.w3.org/2000/svg','svg');\n");
-        js.append("      svgT.setAttribute('viewBox','0 0 220 74');\n");
-        js.append("      svgT.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;';\n");
-        js.append("      svgT.innerHTML = '<path id=\"cassette-svg-tape\" d=\"M 45 64 L 90 71 L 130 71 L 175 60\" stroke=\"#5c3217\" stroke-width=\"3\" fill=\"none\"/>';\n");
-        js.append("      cWin.insertBefore(svgT, cWin.firstChild);\n");
-        js.append("    }\n");
-
-        /* Moving Red Laser Sled + CDJ Side Controls on CD Deck */
         js.append("    var cdWell = document.querySelector('.cd-well');\n");
         js.append("    if (cdWell) {\n");
         js.append("      var sled = document.createElement('div'); sled.id = 'cd-laser-sled';\n");
@@ -260,7 +258,6 @@ public class PlayerActivity extends Activity {
         js.append("      dCd.appendChild(leftWing); dCd.appendChild(rightWing);\n");
         js.append("    }\n");
 
-        /* Technics Turntable Controls (Pitch Fader, 33/45 RPM, Start/Stop) */
         js.append("    var dVinyl = document.getElementById('deck-vinyl');\n");
         js.append("    if (dVinyl) {\n");
         js.append("      var ttLeft = document.createElement('div'); ttLeft.className = 'hw-side-panel'; ttLeft.style.cssText = 'left:12px;bottom:14px;';\n");
@@ -270,7 +267,6 @@ public class PlayerActivity extends Activity {
         js.append("      dVinyl.appendChild(ttLeft); dVinyl.appendChild(ttRight);\n");
         js.append("    }\n");
 
-        /* Nagra Reel-to-Reel Connected SVG Tape + Twin Analog Modulometer VU Gauges */
         js.append("    var rStage = document.querySelector('.r2r-stage');\n");
         js.append("    if (rStage) {\n");
         js.append("      rStage.style.paddingTop = '26px';\n");
@@ -285,31 +281,23 @@ public class PlayerActivity extends Activity {
 
         js.append("  window.__audioLevel = 0;\n");
         js.append("  window.__audioProgress = 0;\n");
-        js.append("  window.__playedDriveIds = JSON.parse(localStorage.getItem('proscan_played_recs_v1') || '{}');\n");
 
         js.append("  window.onNativeTelemetry = function(sec, totSec, prog, level) {\n");
         js.append("    window.__audioProgress = prog || 0;\n");
         js.append("    window.__audioLevel = level || 0;\n");
         js.append("    if (typeof window.onNativeTimeUpdate === 'function') window.onNativeTimeUpdate(sec, totSec);\n");
 
-        /* 1. Vinyl Tonearm: Tracks across record grooves from 26deg (outer) to 45deg (inner) */
         js.append("    var arm = document.querySelector('.tt-tonearm');\n");
         js.append("    if (arm) arm.style.transform = 'rotate(' + (26 + window.__audioProgress * 19).toFixed(2) + 'deg)';\n");
 
-        /* 2. Cassette Spools + Connected SVG Tape Path */
+        /* Cassette Spools Shrink/Grow cleanly without the ugly line */
         js.append("    var spL = document.querySelector('.c-spool.left'), spR = document.querySelector('.c-spool.right');\n");
         js.append("    if (spL && spR) {\n");
         js.append("      var szL = 64 - (window.__audioProgress * 22), szR = 42 + (window.__audioProgress * 22);\n");
         js.append("      spL.style.width = szL + 'px'; spL.style.height = szL + 'px';\n");
         js.append("      spR.style.width = szR + 'px'; spR.style.height = szR + 'px';\n");
-        js.append("      var svgP = document.getElementById('cassette-svg-tape');\n");
-        js.append("      if (svgP) {\n");
-        js.append("        var yL = Math.round(37 + szL * 0.45), yR = Math.round(37 + szR * 0.45);\n");
-        js.append("        svgP.setAttribute('d', 'M 42 ' + yL + ' L 88 71 L 132 71 L 178 ' + yR);\n");
-        js.append("      }\n");
         js.append("    }\n");
 
-        /* 3. Reel-to-Reel Spools Shrink/Grow + Analog VU Needles Bounce */
         js.append("    var rrL = document.getElementById('r2r-reel-left'), rrR = document.getElementById('r2r-reel-right');\n");
         js.append("    if (rrL && rrR) {\n");
         js.append("      var pL = Math.round(72 - window.__audioProgress * 32), pR = Math.round(40 + window.__audioProgress * 32);\n");
@@ -322,14 +310,12 @@ public class PlayerActivity extends Activity {
         js.append("      if (ndl) ndl.style.transform = 'rotate(' + (deg + (i%2===0?2:-2)).toFixed(1) + 'deg)';\n");
         js.append("    });\n");
 
-        /* 4. CD Red Laser Sled Moves Outward from Hub (18px) to Rim (58px) */
         js.append("    var sled = document.getElementById('cd-laser-sled');\n");
         js.append("    if (sled) {\n");
         js.append("      var dist = -22 - (window.__audioProgress * 36);\n");
         js.append("      sled.style.transform = 'translateX(' + dist.toFixed(1) + 'px) scale(' + (0.9 + window.__audioLevel*0.5).toFixed(2) + ')';\n");
         js.append("    }\n");
 
-        /* 5. 14-Segment LED VU Meter */
         js.append("    var activeSegs = Math.round(window.__audioLevel * 14);\n");
         js.append("    document.querySelectorAll('#reactive-vu-strip .rvu-seg').forEach(function(seg, idx) {\n");
         js.append("      if (idx < activeSegs) {\n");
@@ -367,7 +353,7 @@ public class PlayerActivity extends Activity {
         js.append("    drawCleanScope();\n");
         js.append("  }\n");
 
-        /* Tap to Select/Highlight Only (No Long-Press Delete) + Unread Dot & Filter */
+        /* Tap to Select/Highlight Only + Smooth Scrolling + 'NEW Since Last Visit' Filter */
         js.append("  window.selectIndexOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= filteredRecs.length) return;\n");
         js.append("    curIdx = idx;\n");
@@ -383,19 +369,36 @@ public class PlayerActivity extends Activity {
         js.append("    document.querySelectorAll('.rec-row').forEach(function(el, i){ el.classList.toggle('selected', i === idx); });\n");
         js.append("  };\n");
 
+        /* Save all current IDs as 'seen' when leaving the player so next visit only marks newer arrivals as NEW! */
+        js.append("  window.markCurrentListAsVisited = function() {\n");
+        js.append("    try {\n");
+        js.append("      allRecs.forEach(function(r){ window.__seenOnPrevVisit[r.fileId || r.fileName] = true; });\n");
+        js.append("      localStorage.setItem('proscan_seen_visit_ids_v1', JSON.stringify(window.__seenOnPrevVisit));\n");
+        js.append("    } catch(e) {}\n");
+        js.append("  };\n");
+
         js.append("  window.renderPlaylist = function() {\n");
         js.append("    var box = document.getElementById('playlist-box');\n");
         js.append("    var selDate = document.getElementById('date-select').value;\n");
         js.append("    var q = (document.getElementById('search-box').value || '').trim().toLowerCase();\n");
         js.append("    var prevScroll = box.scrollTop;\n");
+        js.append("    var hasPrevVisitData = Object.keys(window.__seenOnPrevVisit).length > 0;\n");
+        js.append("    if (!hasPrevVisitData && allRecs.length > 0) {\n");
+        js.append("      /* First time ever opening: mark older items as seen so only the newest 10 show as NEW */ \n");
+        js.append("      for (var k = 10; k < allRecs.length; k++) {\n");
+        js.append("        window.__seenOnPrevVisit[allRecs[k].fileId || allRecs[k].fileName] = true;\n");
+        js.append("      }\n");
+        js.append("    }\n");
         js.append("    filteredRecs = allRecs.filter(function(r) {\n");
-        js.append("      if (window.__unreadOnly && window.__playedDriveIds[r.fileId || r.fileName]) return false;\n");
+        js.append("      var id = r.fileId || r.fileName;\n");
+        js.append("      if (window.__filterMode === 1 && window.__seenOnPrevVisit[id]) return false;\n");
+        js.append("      if (window.__filterMode === 2 && window.__playedDriveIds[id]) return false;\n");
         js.append("      if (selDate && r.ukDate !== selDate) return false;\n");
         js.append("      if (q && !r.name.toLowerCase().includes(q) && !r.freq.toLowerCase().includes(q) && !r.timeStr.toLowerCase().includes(q)) return false;\n");
         js.append("      return true;\n");
         js.append("    });\n");
-        js.append("    var unreadCount = allRecs.filter(function(r){ return !window.__playedDriveIds[r.fileId || r.fileName]; }).length;\n");
-        js.append("    document.getElementById('rec-count-hud').innerText = filteredRecs.length + ' (' + unreadCount + ' NEW)';\n");
+        js.append("    var newSinceVisit = allRecs.filter(function(r){ return !window.__seenOnPrevVisit[r.fileId || r.fileName]; }).length;\n");
+        js.append("    document.getElementById('rec-count-hud').innerText = filteredRecs.length + ' (' + newSinceVisit + ' NEW)';\n");
         js.append("    if (!filteredRecs.length) {\n");
         js.append("      box.innerHTML = '<div style=\"padding:14px;text-align:center;opacity:0.6;font-size:10px;\">No matching recordings.</div>';\n");
         js.append("      return;\n");
@@ -403,8 +406,9 @@ public class PlayerActivity extends Activity {
         js.append("    var html = '';\n");
         js.append("    for (var i = 0; i < filteredRecs.length; i++) {\n");
         js.append("      var r = filteredRecs[i];\n");
-        js.append("      var isUnread = !window.__playedDriveIds[r.fileId || r.fileName];\n");
-        js.append("      var dot = isUnread ? '<span class=\"unread-dot\"></span>' : '';\n");
+        js.append("      var id = r.fileId || r.fileName;\n");
+        js.append("      var isNewArrival = !window.__seenOnPrevVisit[id] && !window.__playedDriveIds[id];\n");
+        js.append("      var dot = isNewArrival ? '<span class=\"unread-dot\"></span>' : '';\n");
         js.append("      var cls = ((r.fileId && r.fileId === window.__activePlayingFileId && isPlayingNow) ? 'playing ' : '') + (i === curIdx ? 'selected' : '');\n");
         js.append("      html += '<div class=\"rec-row ' + cls + '\" data-idx=\"' + i + '\">' +\n");
         js.append("        '<span>' + r.ukDate + '</span><span>' + r.timeStr + '</span><span>' + r.freq + '</span><span>' + r.dur + '</span>' +\n");
@@ -423,8 +427,11 @@ public class PlayerActivity extends Activity {
         js.append("  window.playIndex = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= filteredRecs.length) return;\n");
         js.append("    var r = filteredRecs[idx];\n");
-        js.append("    window.__playedDriveIds[r.fileId || r.fileName] = true;\n");
+        js.append("    var id = r.fileId || r.fileName;\n");
+        js.append("    window.__playedDriveIds[id] = true;\n");
+        js.append("    window.__seenOnPrevVisit[id] = true;\n");
         js.append("    localStorage.setItem('proscan_played_recs_v1', JSON.stringify(window.__playedDriveIds));\n");
+        js.append("    localStorage.setItem('proscan_seen_visit_ids_v1', JSON.stringify(window.__seenOnPrevVisit));\n");
         js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
         js.append("    if (bCh) bCh.innerText = 'PLAYING: ' + r.name + ' (' + r.timeStr + ')';\n");
         js.append("    if (bFr) bFr.innerText = r.freq;\n");
@@ -454,13 +461,13 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
-        /* 3D Flip Back to Radio when tapping RADIO button */
         js.append("  var backBtn = document.getElementById('btn-back-radio');\n");
         js.append("  if (backBtn) {\n");
         js.append("    var newBack = backBtn.cloneNode(true);\n");
         js.append("    backBtn.parentNode.replaceChild(newBack, backBtn);\n");
         js.append("    newBack.addEventListener('click', function() {\n");
         js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("      if (window.markCurrentListAsVisited) window.markCurrentListAsVisited();\n");
         js.append("      var dw = document.getElementById('device-wrapper');\n");
         js.append("      if (dw) dw.classList.add('flipping-back');\n");
         js.append("      setTimeout(function() { if (window.PlayerBridge) window.PlayerBridge.closePlayer(); }, 260);\n");
@@ -665,6 +672,7 @@ public class PlayerActivity extends Activity {
             conn.setReadTimeout(9000);
             conn.setUseCaches(false);
             conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
+            conn.setRequestProperty("Pragma", "no-cache");
             conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
             BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
@@ -815,6 +823,14 @@ public class PlayerActivity extends Activity {
                         | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                         | View.SYSTEM_UI_FLAG_FULLSCREEN
         );
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (playerWeb != null) {
+            playerWeb.evaluateJavascript("if(window.markCurrentListAsVisited)window.markCurrentListAsVisited();", null);
+        }
     }
 
     @Override
