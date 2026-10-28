@@ -16,6 +16,7 @@ import android.speech.tts.TextToSpeech;
 import android.text.InputType;
 import android.view.View;
 import android.view.Window;
+import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -54,6 +55,8 @@ public class PlayerActivity extends Activity {
 
     private static final String GDRIVE_ROOT_FOLDER_ID = "1gToQyY6YPOk_3muiQSY5WLy7jTSvXbTv";
     private WebView playerWeb;
+    private SharedPreferences prefs;
+    private boolean wakeLockOn = true;
     private String serverBaseUrl = "";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ExecutorService audioFetchExecutor = Executors.newSingleThreadExecutor();
@@ -111,6 +114,9 @@ public class PlayerActivity extends Activity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         hideSystemUI();
 
+        prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
+        wakeLockOn = prefs.getBoolean("wake_lock_on", true);
+
         serverBaseUrl = getIntent().getStringExtra("server_url");
         if (serverBaseUrl == null) serverBaseUrl = "";
         serverBaseUrl = serverBaseUrl.replaceAll("/+$", "");
@@ -125,8 +131,14 @@ public class PlayerActivity extends Activity {
             });
         } catch (Exception ignored) {}
 
-        playerWeb = new WebView(this);
+        playerWeb = new WebView(this) {
+            @Override
+            public void setKeepScreenOn(boolean keepScreenOn) {
+                super.setKeepScreenOn(wakeLockOn);
+            }
+        };
         playerWeb.setBackgroundColor(Color.BLACK);
+        applyPlayerWakeLock(wakeLockOn);
 
         WebSettings s = playerWeb.getSettings();
         s.setJavaScriptEnabled(true);
@@ -155,10 +167,22 @@ public class PlayerActivity extends Activity {
         playerWeb.loadUrl("file:///android_asset/player_ui.html");
     }
 
+    private void applyPlayerWakeLock(boolean keepOn) {
+        wakeLockOn = keepOn;
+        if (prefs != null) prefs.edit().putBoolean("wake_lock_on", keepOn).apply();
+        if (keepOn) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (playerWeb != null) playerWeb.setKeepScreenOn(true);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (playerWeb != null) playerWeb.setKeepScreenOn(false);
+        }
+    }
+
     private void injectReactiveDecksAndTheme() {
-        SharedPreferences prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
         String backupJson = prefs.getString("last_backup_json", "");
         String safeBackup = JSONObject.quote(backupJson);
+        boolean wakePref = prefs.getBoolean("wake_lock_on", true);
 
         StringBuilder js = new StringBuilder();
         js.append("(function(){\n");
@@ -223,8 +247,34 @@ public class PlayerActivity extends Activity {
         js.append("    '.hw-vu-needle{position:absolute;bottom:-2px;left:25px;width:1.8px;height:25px;background:#dc2626;transform-origin:bottom center;transform:rotate(-35deg);transition:transform 0.06s ease;box-shadow:0 0 2px rgba(0,0,0,0.5);}' +\n");
         js.append("    '#cd-laser-sled{position:absolute;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle,#ff2222 20%,rgba(255,0,0,0.7) 55%,transparent 100%);box-shadow:0 0 10px #ff0000;z-index:2;pointer-events:none;transition:transform 0.2s linear;}' +\n");
         js.append("    '#reactive-vu-strip{position:absolute;bottom:5px;left:50%;transform:translateX(-50%);display:flex;gap:3px;z-index:12;background:rgba(0,0,0,0.78);padding:3px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);}' +\n");
-        js.append("    '.rvu-seg{width:6px;height:5px;border-radius:1px;background:#1e293b;}';\n");
+        js.append("    '.rvu-seg{width:6px;height:5px;border-radius:1px;background:#1e293b;}' +\n");
+        js.append("    '#player-wake-pill{display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:1px 5px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:6px;}' +\n");
+        js.append("    '#player-wake-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
+        js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}';\n");
         js.append("  document.head.appendChild(st);\n");
+        // === END OF PART 1 ===
+/* Add WAKE indicator/toggle in middle status bar so Wake Lock is visible & controllable in Archive and Radio too! */
+        js.append("  var recHud = document.getElementById('rec-count-hud');\n");
+        js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
+        js.append("    var wWrap = document.createElement('div');\n");
+        js.append("    wWrap.style.cssText = 'display:flex;align-items:center;padding-left:2px;';\n");
+        js.append("    var wPill = document.createElement('button');\n");
+        js.append("    wPill.id = 'player-wake-pill'; wPill.type = 'button';\n");
+        js.append("    wPill.className = ").append(wakePref ? "'active'" : "''").append(";\n");
+        js.append("    wPill.innerHTML = '<span id=\"player-wake-dot\"></span><span style=\"font-size:7.5px;font-weight:900;color:var(--toggle-color);\">WAKE</span>';\n");
+        js.append("    recHud.parentNode.insertBefore(wWrap, recHud);\n");
+        js.append("    wWrap.appendChild(wPill);\n");
+        js.append("    wWrap.appendChild(recHud);\n");
+        js.append("    window.__playerWakeActive = ").append(wakePref).append(";\n");
+        js.append("    wPill.addEventListener('click', function() {\n");
+        js.append("      window.__playerWakeActive = !window.__playerWakeActive;\n");
+        js.append("      wPill.classList.toggle('active', window.__playerWakeActive);\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.setWakeLock) {\n");
+        js.append("        window.PlayerBridge.setWakeLock(window.__playerWakeActive);\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("  }\n");
 
         js.append("  var topRow = document.getElementById('btn-back-radio').parentNode;\n");
         js.append("  if (topRow && !document.getElementById('btn-mode-loop2')) {\n");
@@ -241,7 +291,6 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
-        /* Default Preloaded UK Broadcast Radio Stations (BBC Radio 5 Live, 5 Sports Extra, talkSPORT, talkSPORT 2, BBC Radio 1/2/3/4/6, World Service) */
         js.append("  var defaultStations = [\n");
         js.append("    { name: 'BBC Radio 5 Live', freq: '909 AM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_five_live&bitrate=128000' },\n");
         js.append("    { name: 'BBC Radio 5 Sports Extra', freq: 'DAB+', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_five_live_sports_extra&bitrate=128000' },\n");
@@ -284,7 +333,6 @@ public class PlayerActivity extends Activity {
         js.append("      window.renderPlaylist();\n");
         js.append("    });\n");
 
-        /* Add Broadcast Radio Station Manager Bar (+ ADD / EDIT / DEL / ARCHIVE) right next to fRow */
         js.append("    var rBar = document.createElement('div');\n");
         js.append("    rBar.id = 'radio-crud-row'; rBar.className = 'radio-crud-bar';\n");
         js.append("    rBar.innerHTML = '<button class=\"btn\" type=\"button\" id=\"btn-rad-add\">+ ADD</button><button class=\"btn\" type=\"button\" id=\"btn-rad-edit\">EDIT</button><button class=\"btn\" type=\"button\" id=\"btn-rad-del\">DEL</button><button class=\"btn\" type=\"button\" id=\"btn-rad-archive\">ARCHIVE</button>';\n");
@@ -524,7 +572,6 @@ public class PlayerActivity extends Activity {
         js.append("    }\n");
         js.append("  };\n");
 
-        /* Switch cleanly between ARCHIVE mode and BROADCAST RADIO mode with fade effect */
         js.append("  window.setAppMode = function(radioMode) {\n");
         js.append("    var dw = document.getElementById('device-wrapper');\n");
         js.append("    if (dw) dw.classList.add('fading-out');\n");
@@ -710,7 +757,6 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
-        /* Hook NEXT / PREV buttons to also step through Radio Stations when in Broadcast Radio mode */
         js.append("  var oldNextBtn = document.getElementById('btn-next');\n");
         js.append("  if (oldNextBtn) {\n");
         js.append("    var newNextBtn = oldNextBtn.cloneNode(true);\n");
@@ -743,7 +789,6 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
-        /* 3-Way Mode Button: ARCHIVE -> RADIO -> SCANNER */
         js.append("  var backBtn = document.getElementById('btn-back-radio');\n");
         js.append("  if (backBtn) {\n");
         js.append("    var newBack = backBtn.cloneNode(true);\n");
@@ -955,6 +1000,14 @@ public class PlayerActivity extends Activity {
     public class PlayerBridge {
         @JavascriptInterface
         public String getServerUrl() { return serverBaseUrl; }
+
+        @JavascriptInterface
+        public void setWakeLock(final boolean keepOn) {
+            mainHandler.post(() -> {
+                applyPlayerWakeLock(keepOn);
+                Toast.makeText(PlayerActivity.this, keepOn ? "Screen Wake: ON (All Modes)" : "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
+            });
+        }
 
         @JavascriptInterface
         public void refreshRecordings() {
