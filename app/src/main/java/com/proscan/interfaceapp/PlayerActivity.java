@@ -58,6 +58,7 @@ public class PlayerActivity extends Activity {
     private SharedPreferences prefs;
     private boolean wakeLockOn = true;
     private String serverBaseUrl = "";
+    private String initialStartMode = "archive";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ExecutorService audioFetchExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -121,6 +122,9 @@ public class PlayerActivity extends Activity {
         if (serverBaseUrl == null) serverBaseUrl = "";
         serverBaseUrl = serverBaseUrl.replaceAll("/+$", "");
 
+        initialStartMode = getIntent().getStringExtra("start_mode");
+        if (initialStartMode == null) initialStartMode = "archive";
+
         try {
             tts = new TextToSpeech(getApplicationContext(), status -> {
                 if (status == TextToSpeech.SUCCESS && tts != null) {
@@ -183,6 +187,7 @@ public class PlayerActivity extends Activity {
         String backupJson = prefs.getString("last_backup_json", "");
         String safeBackup = JSONObject.quote(backupJson);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
+        boolean openInRadio = "radio".equalsIgnoreCase(initialStartMode);
 
         StringBuilder js = new StringBuilder();
         js.append("(function(){\n");
@@ -252,9 +257,8 @@ public class PlayerActivity extends Activity {
         js.append("    '#player-wake-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
         js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}';\n");
         js.append("  document.head.appendChild(st);\n");
-        // === END OF PART 1 ===
-/* Add WAKE indicator/toggle in middle status bar so Wake Lock is visible & controllable in Archive and Radio too! */
-        js.append("  var recHud = document.getElementById('rec-count-hud');\n");
+        // === PASTE PLAYER PART 2 BELOW THIS LINE ===
+js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
         js.append("    var wWrap = document.createElement('div');\n");
         js.append("    wWrap.style.cssText = 'display:flex;align-items:center;padding-left:2px;';\n");
@@ -276,19 +280,50 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
-        js.append("  var topRow = document.getElementById('btn-back-radio').parentNode;\n");
-        js.append("  if (topRow && !document.getElementById('btn-mode-loop2')) {\n");
+        /* Top Row 1-Click Direct Buttons: [ ◀ SCANNER ] [ RADIO ▶ / ARCHIVE ] [ DECK ] [ CONT/LOOP ] [ VOICE ] */
+        js.append("  var backBtn = document.getElementById('btn-back-radio');\n");
+        js.append("  var topRow = backBtn ? backBtn.parentNode : null;\n");
+        js.append("  if (topRow && !document.getElementById('btn-switch-radio-archive')) {\n");
         js.append("    topRow.className = 'top-row-5';\n");
-        js.append("    var lpBtn = document.createElement('button');\n");
-        js.append("    lpBtn.id = 'btn-mode-loop2'; lpBtn.className = 'btn'; lpBtn.type = 'button';\n");
-        js.append("    lpBtn.innerText = 'LOOP: OFF';\n");
-        js.append("    topRow.appendChild(lpBtn);\n");
-        js.append("    window.__isLoopMode = false;\n");
-        js.append("    lpBtn.addEventListener('click', function() {\n");
-        js.append("      window.__isLoopMode = !window.__isLoopMode;\n");
-        js.append("      lpBtn.classList.toggle('active', window.__isLoopMode);\n");
-        js.append("      lpBtn.innerText = window.__isLoopMode ? 'LOOP: ON' : 'LOOP: OFF';\n");
+        js.append("    var newScannerBtn = backBtn.cloneNode(true);\n");
+        js.append("    newScannerBtn.innerHTML = '&#9664; SCANNER';\n");
+        js.append("    topRow.replaceChild(newScannerBtn, backBtn);\n");
+        js.append("    newScannerBtn.addEventListener('click', function() {\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("      if (window.markCurrentListAsVisited) window.markCurrentListAsVisited();\n");
+        js.append("      var dw = document.getElementById('device-wrapper');\n");
+        js.append("      if (dw) dw.classList.add('fading-out');\n");
+        js.append("      setTimeout(function() { if (window.PlayerBridge) window.PlayerBridge.closePlayer(); }, 180);\n");
         js.append("    });\n");
+
+        js.append("    var modeSwitchBtn = document.createElement('button');\n");
+        js.append("    modeSwitchBtn.id = 'btn-switch-radio-archive';\n");
+        js.append("    modeSwitchBtn.className = 'btn';\n");
+        js.append("    modeSwitchBtn.type = 'button';\n");
+        js.append("    modeSwitchBtn.innerHTML = 'RADIO &#9654;';\n");
+        js.append("    topRow.insertBefore(modeSwitchBtn, newScannerBtn.nextSibling);\n");
+        js.append("    modeSwitchBtn.addEventListener('click', function() {\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("      window.setAppMode(!window.__isBroadcastRadioMode);\n");
+        js.append("    });\n");
+
+        /* Upgrade CONT button to 3-way (CONT: OFF -> CONT: ON -> LOOP: 1) */
+        js.append("    var oldContBtn = document.getElementById('btn-mode-cont');\n");
+        js.append("    if (oldContBtn) {\n");
+        js.append("      var cBtn = oldContBtn.cloneNode(true);\n");
+        js.append("      oldContBtn.parentNode.replaceChild(cBtn, oldContBtn);\n");
+        js.append("      window.__playModeState = 0;\n");
+        js.append("      window.__isLoopMode = false;\n");
+        js.append("      cBtn.addEventListener('click', function() {\n");
+        js.append("        window.__playModeState = (window.__playModeState + 1) % 3;\n");
+        js.append("        isCont = (window.__playModeState === 1);\n");
+        js.append("        window.__isLoopMode = (window.__playModeState === 2);\n");
+        js.append("        cBtn.classList.toggle('active', window.__playModeState !== 0);\n");
+        js.append("        var lbl = window.__playModeState === 0 ? 'CONT: OFF' : (window.__playModeState === 1 ? 'CONT: ON' : 'LOOP: 1');\n");
+        js.append("        cBtn.innerText = lbl;\n");
+        js.append("        document.getElementById('cont-status-hud').innerText = lbl;\n");
+        js.append("      });\n");
+        js.append("    }\n");
         js.append("  }\n");
 
         js.append("  var defaultStations = [\n");
@@ -572,20 +607,20 @@ public class PlayerActivity extends Activity {
         js.append("    }\n");
         js.append("  };\n");
 
-        js.append("  window.setAppMode = function(radioMode) {\n");
+        js.append("  window.setAppMode = function(radioMode, skipAnim) {\n");
         js.append("    var dw = document.getElementById('device-wrapper');\n");
-        js.append("    if (dw) dw.classList.add('fading-out');\n");
+        js.append("    if (dw && !skipAnim) dw.classList.add('fading-out');\n");
         js.append("    setTimeout(function() {\n");
         js.append("      window.__isBroadcastRadioMode = Boolean(radioMode);\n");
         js.append("      if (window.PlayerBridge && window.PlayerBridge.stopAudio) window.PlayerBridge.stopAudio();\n");
         js.append("      setPlayingUI(false);\n");
-        js.append("      var modeBtn = document.getElementById('btn-back-radio');\n");
+        js.append("      var swBtn = document.getElementById('btn-switch-radio-archive');\n");
         js.append("      var subBrand = document.getElementById('brand-sub-mode');\n");
         js.append("      var hdr = document.querySelector('.screen-log-header');\n");
         js.append("      var fRowEl = document.getElementById('date-select').parentNode;\n");
         js.append("      var cRowEl = document.getElementById('radio-crud-row');\n");
         js.append("      if (window.__isBroadcastRadioMode) {\n");
-        js.append("        if (modeBtn) modeBtn.innerHTML = '&#9664; SCANNER';\n");
+        js.append("        if (swBtn) swBtn.innerHTML = 'ARCHIVE';\n");
         js.append("        if (subBrand) subBrand.innerText = 'TUNER';\n");
         js.append("        document.getElementById('deck-mode-hud').innerText = 'BROADCAST // DAB+ FM TUNER';\n");
         js.append("        if (hdr) {\n");
@@ -597,7 +632,7 @@ public class PlayerActivity extends Activity {
         js.append("        window.renderPlaylist();\n");
         js.append("        window.selectRadioStationOnly(window.__radioIdx || 0);\n");
         js.append("      } else {\n");
-        js.append("        if (modeBtn) modeBtn.innerHTML = 'RADIO &#9654;';\n");
+        js.append("        if (swBtn) swBtn.innerHTML = 'RADIO &#9654;';\n");
         js.append("        if (subBrand) subBrand.innerText = 'ARCHIVE';\n");
         js.append("        if (typeof applyDeck === 'function') applyDeck(deckIdx);\n");
         js.append("        if (hdr) {\n");
@@ -609,7 +644,7 @@ public class PlayerActivity extends Activity {
         js.append("        window.renderPlaylist();\n");
         js.append("      }\n");
         js.append("      if (dw) dw.classList.remove('fading-out');\n");
-        js.append("    }, 150);\n");
+        js.append("    }, skipAnim ? 0 : 150);\n");
         js.append("  };\n");
 
         js.append("  window.selectIndexOnly = function(idx) {\n");
@@ -789,23 +824,10 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
-        js.append("  var backBtn = document.getElementById('btn-back-radio');\n");
-        js.append("  if (backBtn) {\n");
-        js.append("    var newBack = backBtn.cloneNode(true);\n");
-        js.append("    newBack.innerHTML = 'RADIO &#9654;';\n");
-        js.append("    backBtn.parentNode.replaceChild(newBack, backBtn);\n");
-        js.append("    newBack.addEventListener('click', function() {\n");
-        js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
-        js.append("      if (!window.__isBroadcastRadioMode) {\n");
-        js.append("        window.setAppMode(true);\n");
-        js.append("      } else {\n");
-        js.append("        if (window.markCurrentListAsVisited) window.markCurrentListAsVisited();\n");
-        js.append("        var dw = document.getElementById('device-wrapper');\n");
-        js.append("        if (dw) dw.classList.add('fading-out');\n");
-        js.append("        setTimeout(function() { if (window.PlayerBridge) window.PlayerBridge.closePlayer(); }, 180);\n");
-        js.append("      }\n");
-        js.append("    });\n");
-        js.append("  }\n");
+        /* If opened via the RADIO button on the Scanner, start directly in Broadcast Radio mode! */
+        if (openInRadio) {
+            js.append("  window.setAppMode(true, true);\n");
+        }
         js.append("})();");
 
         if (playerWeb != null) playerWeb.evaluateJavascript(js.toString(), null);
