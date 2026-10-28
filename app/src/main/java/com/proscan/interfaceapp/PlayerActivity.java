@@ -1,6 +1,7 @@
 package com.proscan.interfaceapp;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -12,6 +13,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.speech.tts.TextToSpeech;
+import android.text.InputType;
 import android.view.View;
 import android.view.Window;
 import android.webkit.CookieManager;
@@ -20,6 +22,9 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import org.json.JSONArray;
@@ -57,6 +62,7 @@ public class PlayerActivity extends Activity {
     private boolean ttsReady = false;
     private MediaPlayer nativePlayer = null;
     private boolean isFetchingDrive = false;
+    private boolean isLiveRadioStream = false;
     private float[] currentEnvelope = new float[0];
 
     private final Runnable progressTicker = new Runnable() {
@@ -64,15 +70,25 @@ public class PlayerActivity extends Activity {
         public void run() {
             try {
                 if (nativePlayer != null && nativePlayer.isPlaying() && playerWeb != null) {
-                    int posMs = nativePlayer.getCurrentPosition();
-                    int durMs = Math.max(1, nativePlayer.getDuration());
-                    int sec = posMs / 1000;
-                    int tot = Math.max(1, durMs / 1000);
-                    float prog = Math.min(1f, Math.max(0f, (float) posMs / (float) durMs));
-                    float level = 0.25f;
-                    if (currentEnvelope.length > 0) {
-                        int envIdx = Math.min(currentEnvelope.length - 1, (int) (prog * currentEnvelope.length));
-                        level = currentEnvelope[envIdx];
+                    int sec = 0, tot = 0;
+                    float prog = 0.5f, level = 0.35f;
+                    if (isLiveRadioStream) {
+                        sec = (int) ((System.currentTimeMillis() / 1000) % 3600);
+                        tot = 3600;
+                        prog = (sec % 60) / 60f;
+                        double t = System.currentTimeMillis() / 140.0;
+                        level = (float) (0.32 + 0.24 * Math.sin(t) * Math.cos(t * 0.43) + 0.15 * Math.sin(t * 2.1));
+                        level = Math.min(0.95f, Math.max(0.12f, level));
+                    } else {
+                        int posMs = nativePlayer.getCurrentPosition();
+                        int durMs = Math.max(1, nativePlayer.getDuration());
+                        sec = posMs / 1000;
+                        tot = Math.max(1, durMs / 1000);
+                        prog = Math.min(1f, Math.max(0f, (float) posMs / (float) durMs));
+                        if (currentEnvelope.length > 0) {
+                            int envIdx = Math.min(currentEnvelope.length - 1, (int) (prog * currentEnvelope.length));
+                            level = currentEnvelope[envIdx];
+                        }
                     }
                     playerWeb.evaluateJavascript("if(window.onNativeTelemetry)window.onNativeTelemetry(" + sec + "," + tot + "," + prog + "," + level + ");", null);
                     mainHandler.postDelayed(this, 60);
@@ -160,7 +176,7 @@ public class PlayerActivity extends Activity {
         js.append("        if (typeof bgIds !== 'undefined') document.documentElement.setAttribute('data-bg', bgIds[bIdx % bgIds.length]);\n");
         js.append("        var br = (localStorage.getItem('proscan_custom_brand_v1')||'PROSCAN').trim();\n");
         js.append("        var bs = document.getElementById('brand-logo-slot');\n");
-        js.append("        if (bs) bs.innerHTML = '<div class=\"brand-henus\"><span class=\"henus-mark\">'+br+'</span><span class=\"henus-sub\">ARCHIVE</span></div>';\n");
+        js.append("        if (bs) bs.innerHTML = '<div class=\"brand-henus\"><span class=\"henus-mark\">'+br+'</span><span class=\"henus-sub\" id=\"brand-sub-mode\">ARCHIVE</span></div>';\n");
         js.append("      }\n");
         js.append("    }\n");
         js.append("  } catch(e) {}\n");
@@ -171,15 +187,19 @@ public class PlayerActivity extends Activity {
         js.append("  var st = document.createElement('style');\n");
         js.append("  st.textContent = '' +\n");
         js.append("    '@keyframes smoothFadeIn{0%{opacity:0;}100%{opacity:1;}}' +\n");
-        js.append("    '#device-wrapper{animation:smoothFadeIn 0.25s ease-out forwards;transition:opacity 0.22s ease!important;}' +\n");
+        js.append("    '#device-wrapper{animation:smoothFadeIn 0.25s ease-out forwards;transition:opacity 0.2s ease!important;}' +\n");
         js.append("    '#device-wrapper.fading-out{opacity:0!important;}' +\n");
         js.append("    '.scanner-display{height:245px!important;}.top-controls-container{height:26px!important;}.buttons-box{gap:8px!important;}#mech-bay{height:224px!important;}' +\n");
         js.append("    '#playlist-box{overflow-y:scroll!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior:contain!important;}' +\n");
         js.append("    '.rec-row{touch-action:pan-y!important;}' +\n");
         js.append("    '.rec-row.selected{outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(255,255,255,0.14)!important;font-weight:800!important;}' +\n");
+        js.append("    '.radio-row{display:grid!important;grid-template-columns:36px 68px 48px 1fr!important;gap:4px!important;padding:4px 6px!important;border-bottom:1px solid var(--log-cell-border)!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10px!important;color:var(--log-text)!important;align-items:center!important;text-align:left!important;cursor:pointer!important;touch-action:pan-y!important;}' +\n");
+        js.append("    '.radio-row.playing{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;}' +\n");
+        js.append("    '.radio-row.selected{outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(255,255,255,0.14)!important;font-weight:800!important;}' +\n");
         js.append("    '.unread-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--log-text,#39ff14);margin-right:4px;vertical-align:middle;}' +\n");
         js.append("    '.top-row-5{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:28px!important;}' +\n");
         js.append("    '.filter-row-5{display:grid!important;grid-template-columns:88px 1fr 62px 32px 46px!important;gap:5px!important;height:27px!important;}' +\n");
+        js.append("    '.radio-crud-bar{display:none;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px;height:27px;}' +\n");
         js.append("    '#deck-vinyl{background:radial-gradient(circle at 46% 54%,#1e2229 0%,#0c0e12 85%)!important;}' +\n");
         js.append("    '.tt-platter{position:absolute!important;left:90px!important;top:38px!important;width:140px!important;height:140px!important;box-shadow:0 8px 20px rgba(0,0,0,0.95),0 0 0 3px #18181b!important;}' +\n");
         js.append("    '.tt-record{width:128px!important;height:128px!important;}' +\n");
@@ -221,6 +241,31 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
+        /* Default Preloaded UK Broadcast Radio Stations (BBC Radio 5 Live, 5 Sports Extra, talkSPORT, talkSPORT 2, BBC Radio 1/2/3/4/6, World Service) */
+        js.append("  var defaultStations = [\n");
+        js.append("    { name: 'BBC Radio 5 Live', freq: '909 AM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_five_live&bitrate=128000' },\n");
+        js.append("    { name: 'BBC Radio 5 Sports Extra', freq: 'DAB+', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_five_live_sports_extra&bitrate=128000' },\n");
+        js.append("    { name: 'talkSPORT', freq: '1089 AM', band: 'SPORT', url: 'https://radio.talksport.com/stream' },\n");
+        js.append("    { name: 'talkSPORT 2', freq: 'DAB+', band: 'SPORT', url: 'https://radio.talksport.com/stream2' },\n");
+        js.append("    { name: 'BBC Radio 1', freq: '97.9 FM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_one&bitrate=128000' },\n");
+        js.append("    { name: 'BBC Radio 2', freq: '88.8 FM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_two&bitrate=128000' },\n");
+        js.append("    { name: 'BBC Radio 3', freq: '90.9 FM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_three&bitrate=320000' },\n");
+        js.append("    { name: 'BBC Radio 4', freq: '93.5 FM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_fourfm&bitrate=128000' },\n");
+        js.append("    { name: 'BBC Radio 6 Music', freq: 'DAB+', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_6music&bitrate=128000' },\n");
+        js.append("    { name: 'BBC World Service', freq: '198 LW', band: 'WORLD', url: 'https://stream.live.vc.bbcmedia.co.uk/bbc_world_service' },\n");
+        js.append("    { name: 'BBC Radio Wales', freq: '882 AM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_wales_fm&bitrate=128000' }\n");
+        js.append("  ];\n");
+        js.append("  try {\n");
+        js.append("    var savedSt = JSON.parse(localStorage.getItem('proscan_radio_stations_v1') || 'null');\n");
+        js.append("    window.__radioStations = (Array.isArray(savedSt) && savedSt.length > 0) ? savedSt : defaultStations.slice();\n");
+        js.append("  } catch(e) { window.__radioStations = defaultStations.slice(); }\n");
+        js.append("  window.__saveRadioStations = function() {\n");
+        js.append("    try { localStorage.setItem('proscan_radio_stations_v1', JSON.stringify(window.__radioStations)); } catch(e) {}\n");
+        js.append("  };\n");
+        js.append("  window.__isBroadcastRadioMode = false;\n");
+        js.append("  window.__radioIdx = 0;\n");
+        js.append("  window.__activeRadioUrl = '';\n");
+
         js.append("  window.__seenOnPrevVisit = JSON.parse(localStorage.getItem('proscan_seen_visit_ids_v1') || '{}');\n");
         js.append("  window.__playedDriveIds = JSON.parse(localStorage.getItem('proscan_played_recs_v1') || '{}');\n");
         js.append("  window.__filterMode = 0;\n");
@@ -238,7 +283,50 @@ public class PlayerActivity extends Activity {
         js.append("      uBtn.innerText = window.__filterMode === 0 ? 'ALL' : (window.__filterMode === 1 ? 'NEW' : 'UNPLAY');\n");
         js.append("      window.renderPlaylist();\n");
         js.append("    });\n");
+
+        /* Add Broadcast Radio Station Manager Bar (+ ADD / EDIT / DEL / ARCHIVE) right next to fRow */
+        js.append("    var rBar = document.createElement('div');\n");
+        js.append("    rBar.id = 'radio-crud-row'; rBar.className = 'radio-crud-bar';\n");
+        js.append("    rBar.innerHTML = '<button class=\"btn\" type=\"button\" id=\"btn-rad-add\">+ ADD</button><button class=\"btn\" type=\"button\" id=\"btn-rad-edit\">EDIT</button><button class=\"btn\" type=\"button\" id=\"btn-rad-del\">DEL</button><button class=\"btn\" type=\"button\" id=\"btn-rad-archive\">ARCHIVE</button>';\n");
+        js.append("    fRow.parentNode.appendChild(rBar);\n");
+
+        js.append("    document.getElementById('btn-rad-add').addEventListener('click', function() {\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.showStationDialog) window.PlayerBridge.showStationDialog(-1, '', '', '');\n");
+        js.append("    });\n");
+        js.append("    document.getElementById('btn-rad-edit').addEventListener('click', function() {\n");
+        js.append("      var stObj = window.__radioStations[window.__radioIdx];\n");
+        js.append("      if (!stObj) return;\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.showStationDialog) {\n");
+        js.append("        window.PlayerBridge.showStationDialog(window.__radioIdx, stObj.name || '', stObj.freq || '', stObj.url || '');\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("    document.getElementById('btn-rad-del').addEventListener('click', function() {\n");
+        js.append("      if (window.__radioStations.length <= 1) return;\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("      window.__radioStations.splice(window.__radioIdx, 1);\n");
+        js.append("      if (window.__radioIdx >= window.__radioStations.length) window.__radioIdx = window.__radioStations.length - 1;\n");
+        js.append("      window.__saveRadioStations();\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("    });\n");
+        js.append("    document.getElementById('btn-rad-archive').addEventListener('click', function() {\n");
+        js.append("      window.setAppMode(false);\n");
+        js.append("    });\n");
         js.append("  }\n");
+
+        js.append("  window.onNativeStationSaved = function(editIdx, name, freq, url) {\n");
+        js.append("    if (!name || !url) return;\n");
+        js.append("    var item = { name: name.trim(), freq: (freq || 'LIVE').trim(), band: 'USER', url: url.trim() };\n");
+        js.append("    if (editIdx >= 0 && editIdx < window.__radioStations.length) {\n");
+        js.append("      window.__radioStations[editIdx] = item;\n");
+        js.append("      window.__radioIdx = editIdx;\n");
+        js.append("    } else {\n");
+        js.append("      window.__radioStations.unshift(item);\n");
+        js.append("      window.__radioIdx = 0;\n");
+        js.append("    }\n");
+        js.append("    window.__saveRadioStations();\n");
+        js.append("    window.renderPlaylist();\n");
+        js.append("    window.selectRadioStationOnly(window.__radioIdx);\n");
+        js.append("  };\n");
 
         js.append("  var mb = document.getElementById('mech-bay');\n");
         js.append("  if (mb && !document.getElementById('deck-global-badge')) {\n");
@@ -297,7 +385,11 @@ public class PlayerActivity extends Activity {
         js.append("  window.onNativeTelemetry = function(sec, totSec, prog, level) {\n");
         js.append("    window.__audioProgress = prog || 0;\n");
         js.append("    window.__audioLevel = level || 0;\n");
-        js.append("    if (typeof window.onNativeTimeUpdate === 'function') window.onNativeTimeUpdate(sec, totSec);\n");
+        js.append("    if (!window.__isBroadcastRadioMode && typeof window.onNativeTimeUpdate === 'function') window.onNativeTimeUpdate(sec, totSec);\n");
+        js.append("    if (window.__isBroadcastRadioMode) {\n");
+        js.append("      document.getElementById('time-cur').innerText = fmtSec(sec);\n");
+        js.append("      document.getElementById('time-tot').innerText = 'LIVE';\n");
+        js.append("    }\n");
         js.append("    var arm = document.querySelector('.tt-tonearm');\n");
         js.append("    if (arm) arm.style.transform = 'rotate(' + (20 + window.__audioProgress * 18).toFixed(2) + 'deg)';\n");
         js.append("    var spL = document.querySelector('.c-spool.left'), spR = document.querySelector('.c-spool.right');\n");
@@ -397,6 +489,82 @@ public class PlayerActivity extends Activity {
         js.append("    drawProSigintScope();\n");
         js.append("  }\n");
 
+        js.append("  window.selectRadioStationOnly = function(idx) {\n");
+        js.append("    if (idx < 0 || idx >= window.__radioStations.length) return;\n");
+        js.append("    window.__radioIdx = idx;\n");
+        js.append("    var stObj = window.__radioStations[idx];\n");
+        js.append("    document.getElementById('track-main-readout').innerText = 'TUNED: ' + stObj.name + ' • ' + stObj.freq;\n");
+        js.append("    document.getElementById('cassette-lbl-left').innerText = stObj.name;\n");
+        js.append("    document.getElementById('cassette-lbl-right').innerText = stObj.freq + ' (LIVE)';\n");
+        js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
+        js.append("    if (bCh) bCh.innerText = 'TUNER // ' + stObj.name;\n");
+        js.append("    if (bFr) bFr.innerText = stObj.freq;\n");
+        js.append("    document.querySelectorAll('.radio-row').forEach(function(el, i){ el.classList.toggle('selected', i === idx); });\n");
+        js.append("  };\n");
+
+        js.append("  window.playRadioStationIndex = function(idx) {\n");
+        js.append("    if (idx < 0 || idx >= window.__radioStations.length) return;\n");
+        js.append("    window.__radioIdx = idx;\n");
+        js.append("    var stObj = window.__radioStations[idx];\n");
+        js.append("    window.__activeRadioUrl = stObj.url;\n");
+        js.append("    document.getElementById('track-main-readout').innerText = 'LIVE: ' + stObj.name + ' • ' + stObj.freq;\n");
+        js.append("    document.getElementById('cassette-lbl-left').innerText = stObj.name;\n");
+        js.append("    document.getElementById('cassette-lbl-right').innerText = stObj.freq + ' (ON AIR)';\n");
+        js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
+        js.append("    if (bCh) bCh.innerText = 'ON AIR: ' + stObj.name;\n");
+        js.append("    if (bFr) bFr.innerText = stObj.freq;\n");
+        js.append("    window.renderPlaylist();\n");
+        js.append("    if (isTtsCaption && window.PlayerBridge) {\n");
+        js.append("      window.PlayerBridge.speakCaption(stObj.name);\n");
+        js.append("      setTimeout(function() {\n");
+        js.append("        if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) window.PlayerBridge.playLiveStreamUrl(stObj.url);\n");
+        js.append("      }, 1300);\n");
+        js.append("    } else if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) {\n");
+        js.append("      window.PlayerBridge.playLiveStreamUrl(stObj.url);\n");
+        js.append("    }\n");
+        js.append("  };\n");
+
+        /* Switch cleanly between ARCHIVE mode and BROADCAST RADIO mode with fade effect */
+        js.append("  window.setAppMode = function(radioMode) {\n");
+        js.append("    var dw = document.getElementById('device-wrapper');\n");
+        js.append("    if (dw) dw.classList.add('fading-out');\n");
+        js.append("    setTimeout(function() {\n");
+        js.append("      window.__isBroadcastRadioMode = Boolean(radioMode);\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.stopAudio) window.PlayerBridge.stopAudio();\n");
+        js.append("      setPlayingUI(false);\n");
+        js.append("      var modeBtn = document.getElementById('btn-back-radio');\n");
+        js.append("      var subBrand = document.getElementById('brand-sub-mode');\n");
+        js.append("      var hdr = document.querySelector('.screen-log-header');\n");
+        js.append("      var fRowEl = document.getElementById('date-select').parentNode;\n");
+        js.append("      var cRowEl = document.getElementById('radio-crud-row');\n");
+        js.append("      if (window.__isBroadcastRadioMode) {\n");
+        js.append("        if (modeBtn) modeBtn.innerHTML = '&#9664; SCANNER';\n");
+        js.append("        if (subBrand) subBrand.innerText = 'TUNER';\n");
+        js.append("        document.getElementById('deck-mode-hud').innerText = 'BROADCAST // DAB+ FM TUNER';\n");
+        js.append("        if (hdr) {\n");
+        js.append("          hdr.style.gridTemplateColumns = '36px 68px 48px 1fr';\n");
+        js.append("          hdr.innerHTML = '<span>CH</span><span>BAND</span><span>MODE</span><span>STATION NAME</span>';\n");
+        js.append("        }\n");
+        js.append("        if (fRowEl) fRowEl.style.display = 'none';\n");
+        js.append("        if (cRowEl) cRowEl.style.display = 'grid';\n");
+        js.append("        window.renderPlaylist();\n");
+        js.append("        window.selectRadioStationOnly(window.__radioIdx || 0);\n");
+        js.append("      } else {\n");
+        js.append("        if (modeBtn) modeBtn.innerHTML = 'RADIO &#9654;';\n");
+        js.append("        if (subBrand) subBrand.innerText = 'ARCHIVE';\n");
+        js.append("        if (typeof applyDeck === 'function') applyDeck(deckIdx);\n");
+        js.append("        if (hdr) {\n");
+        js.append("          hdr.style.gridTemplateColumns = '62px 52px 58px 34px 1fr';\n");
+        js.append("          hdr.innerHTML = '<span>DATE</span><span>TIME</span><span>FREQ</span><span>DUR</span><span>NAME</span>';\n");
+        js.append("        }\n");
+        js.append("        if (fRowEl) fRowEl.style.display = 'grid';\n");
+        js.append("        if (cRowEl) cRowEl.style.display = 'none';\n");
+        js.append("        window.renderPlaylist();\n");
+        js.append("      }\n");
+        js.append("      if (dw) dw.classList.remove('fading-out');\n");
+        js.append("    }, 150);\n");
+        js.append("  };\n");
+
         js.append("  window.selectIndexOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= filteredRecs.length) return;\n");
         js.append("    curIdx = idx;\n");
@@ -421,9 +589,37 @@ public class PlayerActivity extends Activity {
 
         js.append("  window.renderPlaylist = function() {\n");
         js.append("    var box = document.getElementById('playlist-box');\n");
+        js.append("    var prevScroll = box.scrollTop;\n");
+        js.append("    if (window.__isBroadcastRadioMode) {\n");
+        js.append("      document.getElementById('rec-count-hud').innerText = window.__radioStations.length + ' STATIONS';\n");
+        js.append("      var rHtml = '';\n");
+        js.append("      for (var j = 0; j < window.__radioStations.length; j++) {\n");
+        js.append("        var st = window.__radioStations[j];\n");
+        js.append("        var isPl = (st.url === window.__activeRadioUrl && isPlayingNow);\n");
+        js.append("        var rCls = (isPl ? 'playing ' : '') + (j === window.__radioIdx ? 'selected' : '');\n");
+        js.append("        var chNum = 'P' + String(j + 1).padStart(2, '0');\n");
+        js.append("        rHtml += '<div class=\"radio-row ' + rCls + '\" data-ridx=\"' + j + '\">' +\n");
+        js.append("          '<span>' + chNum + '</span><span>' + (st.freq || 'DAB+') + '</span><span>LIVE</span>' +\n");
+        js.append("          '<span title=\"' + st.name + '\">' + st.name + '</span></div>';\n");
+        js.append("      }\n");
+        js.append("      box.innerHTML = rHtml; box.scrollTop = prevScroll;\n");
+        js.append("      box.querySelectorAll('.radio-row').forEach(function(el) {\n");
+        js.append("        el.addEventListener('click', function() {\n");
+        js.append("          if (window.__playlistIsDragging) return;\n");
+        js.append("          if (navigator.vibrate) navigator.vibrate(15);\n");
+        js.append("          var idx = parseInt(el.getAttribute('data-ridx'), 10);\n");
+        js.append("          if (window.__radioIdx === idx && (!isPlayingNow || window.__activeRadioUrl !== window.__radioStations[idx].url)) {\n");
+        js.append("            window.playRadioStationIndex(idx);\n");
+        js.append("          } else {\n");
+        js.append("            window.selectRadioStationOnly(idx);\n");
+        js.append("          }\n");
+        js.append("        });\n");
+        js.append("      });\n");
+        js.append("      return;\n");
+        js.append("    }\n");
+
         js.append("    var selDate = document.getElementById('date-select').value;\n");
         js.append("    var q = (document.getElementById('search-box').value || '').trim().toLowerCase();\n");
-        js.append("    var prevScroll = box.scrollTop;\n");
         js.append("    var hasPrevVisitData = Object.keys(window.__seenOnPrevVisit).length > 0;\n");
         js.append("    if (!hasPrevVisitData && allRecs.length > 0) {\n");
         js.append("      for (var k = 10; k < allRecs.length; k++) {\n");
@@ -482,6 +678,7 @@ public class PlayerActivity extends Activity {
 
         js.append("  window.onNativePlayEnded = function() {\n");
         js.append("    setPlayingUI(false); renderPlaylist();\n");
+        js.append("    if (window.__isBroadcastRadioMode) return;\n");
         js.append("    if (window.__isLoopMode && curIdx >= 0) playIndex(curIdx);\n");
         js.append("    else if (isCont && curIdx > 0) playIndex(curIdx - 1);\n");
         js.append("  };\n");
@@ -491,6 +688,16 @@ public class PlayerActivity extends Activity {
         js.append("    var newPlayBtn = oldPlayBtn.cloneNode(true);\n");
         js.append("    oldPlayBtn.parentNode.replaceChild(newPlayBtn, oldPlayBtn);\n");
         js.append("    newPlayBtn.addEventListener('click', function() {\n");
+        js.append("      if (window.__isBroadcastRadioMode) {\n");
+        js.append("        var stObj = window.__radioStations[window.__radioIdx];\n");
+        js.append("        if (!stObj) return;\n");
+        js.append("        if (window.__activeRadioUrl === stObj.url && isPlayingNow) {\n");
+        js.append("          if (window.PlayerBridge) window.PlayerBridge.togglePause();\n");
+        js.append("        } else {\n");
+        js.append("          window.playRadioStationIndex(window.__radioIdx);\n");
+        js.append("        }\n");
+        js.append("        return;\n");
+        js.append("      }\n");
         js.append("      if (curIdx === -1 && filteredRecs.length > 0) curIdx = 0;\n");
         js.append("      if (curIdx >= 0 && curIdx < filteredRecs.length) {\n");
         js.append("        var r = filteredRecs[curIdx];\n");
@@ -503,16 +710,55 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
+        /* Hook NEXT / PREV buttons to also step through Radio Stations when in Broadcast Radio mode */
+        js.append("  var oldNextBtn = document.getElementById('btn-next');\n");
+        js.append("  if (oldNextBtn) {\n");
+        js.append("    var newNextBtn = oldNextBtn.cloneNode(true);\n");
+        js.append("    oldNextBtn.parentNode.replaceChild(newNextBtn, oldNextBtn);\n");
+        js.append("    newNextBtn.addEventListener('click', function() {\n");
+        js.append("      if (window.__isBroadcastRadioMode) {\n");
+        js.append("        if (window.__radioStations.length > 0) {\n");
+        js.append("          var nIdx = (window.__radioIdx + 1) % window.__radioStations.length;\n");
+        js.append("          window.playRadioStationIndex(nIdx);\n");
+        js.append("        }\n");
+        js.append("      } else if (curIdx > 0) {\n");
+        js.append("        playIndex(curIdx - 1);\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("  }\n");
+
+        js.append("  var oldPrevBtn = document.getElementById('btn-prev');\n");
+        js.append("  if (oldPrevBtn) {\n");
+        js.append("    var newPrevBtn = oldPrevBtn.cloneNode(true);\n");
+        js.append("    oldPrevBtn.parentNode.replaceChild(newPrevBtn, oldPrevBtn);\n");
+        js.append("    newPrevBtn.addEventListener('click', function() {\n");
+        js.append("      if (window.__isBroadcastRadioMode) {\n");
+        js.append("        if (window.__radioStations.length > 0) {\n");
+        js.append("          var pIdx = (window.__radioIdx - 1 + window.__radioStations.length) % window.__radioStations.length;\n");
+        js.append("          window.playRadioStationIndex(pIdx);\n");
+        js.append("        }\n");
+        js.append("      } else if (curIdx + 1 < filteredRecs.length) {\n");
+        js.append("        playIndex(curIdx + 1);\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("  }\n");
+
+        /* 3-Way Mode Button: ARCHIVE -> RADIO -> SCANNER */
         js.append("  var backBtn = document.getElementById('btn-back-radio');\n");
         js.append("  if (backBtn) {\n");
         js.append("    var newBack = backBtn.cloneNode(true);\n");
+        js.append("    newBack.innerHTML = 'RADIO &#9654;';\n");
         js.append("    backBtn.parentNode.replaceChild(newBack, backBtn);\n");
         js.append("    newBack.addEventListener('click', function() {\n");
         js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
-        js.append("      if (window.markCurrentListAsVisited) window.markCurrentListAsVisited();\n");
-        js.append("      var dw = document.getElementById('device-wrapper');\n");
-        js.append("      if (dw) dw.classList.add('fading-out');\n");
-        js.append("      setTimeout(function() { if (window.PlayerBridge) window.PlayerBridge.closePlayer(); }, 180);\n");
+        js.append("      if (!window.__isBroadcastRadioMode) {\n");
+        js.append("        window.setAppMode(true);\n");
+        js.append("      } else {\n");
+        js.append("        if (window.markCurrentListAsVisited) window.markCurrentListAsVisited();\n");
+        js.append("        var dw = document.getElementById('device-wrapper');\n");
+        js.append("        if (dw) dw.classList.add('fading-out');\n");
+        js.append("        setTimeout(function() { if (window.PlayerBridge) window.PlayerBridge.closePlayer(); }, 180);\n");
+        js.append("      }\n");
         js.append("    });\n");
         js.append("  }\n");
         js.append("})();");
@@ -522,6 +768,7 @@ public class PlayerActivity extends Activity {
 
     private void stopNativePlayer() {
         mainHandler.removeCallbacks(progressTicker);
+        isLiveRadioStream = false;
         if (nativePlayer != null) {
             try { if (nativePlayer.isPlaying()) nativePlayer.stop(); } catch (Exception ignored) {}
             try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
@@ -570,6 +817,36 @@ public class PlayerActivity extends Activity {
         return env;
     }
 
+    private void playLiveRadioUrlNatively(final String streamUrl) {
+        stopNativePlayer();
+        mainHandler.post(() -> {
+            try {
+                isLiveRadioStream = true;
+                nativePlayer = new MediaPlayer();
+                if (Build.VERSION.SDK_INT >= 21) {
+                    nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build());
+                }
+                nativePlayer.setDataSource(streamUrl);
+                nativePlayer.setOnPreparedListener(mp -> {
+                    mp.start();
+                    if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
+                    mainHandler.post(progressTicker);
+                });
+                nativePlayer.setOnErrorListener((mp, what, extra) -> {
+                    stopNativePlayer();
+                    if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM OFFLINE');", null);
+                    return true;
+                });
+                nativePlayer.prepareAsync();
+            } catch (Exception e) {
+                if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
+            }
+        });
+    }
+
     private void playDriveFileIdNatively(final String fileId) {
         stopNativePlayer();
         final String urlStr = "https://drive.usercontent.google.com/download?id=" + fileId + "&export=download";
@@ -594,6 +871,7 @@ public class PlayerActivity extends Activity {
                 mainHandler.post(() -> {
                     try {
                         stopNativePlayer();
+                        isLiveRadioStream = false;
                         currentEnvelope = env;
                         nativePlayer = new MediaPlayer();
                         if (Build.VERSION.SDK_INT >= 21) {
@@ -627,6 +905,53 @@ public class PlayerActivity extends Activity {
         });
     }
 
+    private void openAddOrEditStationDialog(final int editIdx, String curName, String curFreq, String curUrl) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        layout.setPadding(pad, pad, pad, pad);
+
+        TextView l1 = new TextView(this);
+        l1.setText("Station Name (e.g. BBC Radio 5 Live):");
+        layout.addView(l1);
+        final EditText nameInput = new EditText(this);
+        nameInput.setText(curName != null ? curName : "");
+        layout.addView(nameInput);
+
+        TextView l2 = new TextView(this);
+        l2.setText("\nFreq / Band Label (e.g. 909 AM or DAB+):");
+        layout.addView(l2);
+        final EditText freqInput = new EditText(this);
+        freqInput.setText(curFreq != null && !curFreq.isEmpty() ? curFreq : "DAB+");
+        layout.addView(freqInput);
+
+        TextView l3 = new TextView(this);
+        l3.setText("\nDirect Stream URL (.mp3 / .aac / .m3u8):");
+        layout.addView(l3);
+        final EditText urlInput = new EditText(this);
+        urlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        urlInput.setText(curUrl != null ? curUrl : "");
+        layout.addView(urlInput);
+
+        new AlertDialog.Builder(this)
+                .setTitle(editIdx >= 0 ? "Edit Radio Station" : "Add Radio Station")
+                .setView(layout)
+                .setPositiveButton("Save Station", (d, w) -> {
+                    String n = nameInput.getText().toString().trim();
+                    String f = freqInput.getText().toString().trim();
+                    String u = urlInput.getText().toString().trim();
+                    if (n.isEmpty() || u.isEmpty()) {
+                        Toast.makeText(PlayerActivity.this, "Name and Stream URL required", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    String jsCall = "if(window.onNativeStationSaved)window.onNativeStationSaved("
+                            + editIdx + "," + JSONObject.quote(n) + "," + JSONObject.quote(f) + "," + JSONObject.quote(u) + ");";
+                    if (playerWeb != null) playerWeb.evaluateJavascript(jsCall, null);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     public class PlayerBridge {
         @JavascriptInterface
         public String getServerUrl() { return serverBaseUrl; }
@@ -643,9 +968,19 @@ public class PlayerActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void playLiveStreamUrl(final String url) {
+            mainHandler.post(() -> playLiveRadioUrlNatively(url));
+        }
+
+        @JavascriptInterface
+        public void showStationDialog(final int editIdx, final String name, final String freq, final String url) {
+            mainHandler.post(() -> openAddOrEditStationDialog(editIdx, name, freq, url));
+        }
+
+        @JavascriptInterface
         public void seekToSeconds(final int sec) {
             mainHandler.post(() -> {
-                try { if (nativePlayer != null) nativePlayer.seekTo(sec * 1000); } catch (Exception ignored) {}
+                try { if (nativePlayer != null && !isLiveRadioStream) nativePlayer.seekTo(sec * 1000); } catch (Exception ignored) {}
             });
         }
 
