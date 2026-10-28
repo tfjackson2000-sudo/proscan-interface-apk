@@ -75,7 +75,6 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemUI();
 
         if (Build.VERSION.SDK_INT >= 33) {
@@ -85,6 +84,7 @@ public class MainActivity extends Activity {
         }
 
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
+        userWakeLockEnabled = prefs.getBoolean("wake_lock_on", true);
 
         try {
             tts = new TextToSpeech(getApplicationContext(), status -> {
@@ -114,7 +114,7 @@ public class MainActivity extends Activity {
                 }
             }
         };
-        webView.setKeepScreenOn(false);
+        applyWindowWakeLock(userWakeLockEnabled);
         setupWebView();
         root.addView(webView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -130,6 +130,18 @@ public class MainActivity extends Activity {
             showSetupDialog(true);
         } else {
             connectSmart(localUrl, tailscaleUrl);
+        }
+    }
+
+    private void applyWindowWakeLock(boolean keepOn) {
+        userWakeLockEnabled = keepOn;
+        prefs.edit().putBoolean("wake_lock_on", keepOn).apply();
+        if (keepOn) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (webView != null) webView.setKeepScreenOn(true);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (webView != null) webView.setKeepScreenOn(false);
         }
     }
 
@@ -245,16 +257,8 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void setKeepScreenOn(final boolean keepOn) {
             mainHandler.post(() -> {
-                userWakeLockEnabled = keepOn;
-                if (keepOn) {
-                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                    webView.setKeepScreenOn(true);
-                    Toast.makeText(MainActivity.this, "Screen Wake: ON", Toast.LENGTH_SHORT).show();
-                } else {
-                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                    webView.setKeepScreenOn(false);
-                    Toast.makeText(MainActivity.this, "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
-                }
+                applyWindowWakeLock(keepOn);
+                Toast.makeText(MainActivity.this, keepOn ? "Screen Wake: ON (All Modes)" : "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
             });
         }
 
@@ -406,6 +410,7 @@ public class MainActivity extends Activity {
     private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
+        boolean wakePref = prefs.getBoolean("wake_lock_on", true);
 
         StringBuilder js = new StringBuilder();
         js.append("(function() {\n");
@@ -486,6 +491,12 @@ public class MainActivity extends Activity {
         js.append("    window.prepareWakeLockMedia = function() {};\n");
         js.append("    window.requestScreenWake = function() { if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(true); };\n");
         js.append("    window.releaseScreenWake = function() { if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(false); };\n");
+        js.append("    var wBtn = document.getElementById('btn-wake-toggle');\n");
+        js.append("    isWakeLockActive = ").append(wakePref).append(";\n");
+        js.append("    if (wBtn) {\n");
+        js.append("      wBtn.classList.toggle('active', isWakeLockActive);\n");
+        js.append("      wBtn.setAttribute('aria-pressed', isWakeLockActive ? 'true' : 'false');\n");
+        js.append("    }\n");
         js.append("    window.toggleWakeLock = function() {\n");
         js.append("      var btn = document.getElementById('btn-wake-toggle');\n");
         js.append("      isWakeLockActive = !isWakeLockActive;\n");
@@ -564,7 +575,7 @@ public class MainActivity extends Activity {
         js.append("      });\n");
         js.append("      var playerBtn = logoutBtn.cloneNode(true);\n");
         js.append("      playerBtn.id = 'btn-open-player-app';\n");
-        js.append("      playerBtn.textContent = 'PLAYER';\n");
+        js.append("      playerBtn.textContent = 'ARCHIVE';\n");
         js.append("      logoutBtn.parentNode.replaceChild(playerBtn, logoutBtn);\n");
         js.append("      playerBtn.addEventListener('click', function() {\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
@@ -879,8 +890,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        applyWindowWakeLock(prefs.getBoolean("wake_lock_on", true));
         if (webView != null) {
             webView.evaluateJavascript("var dw=document.getElementById('device-wrapper');if(dw)dw.classList.remove('flipping-out');", null);
+            injectEnhancements();
         }
     }
 
