@@ -2,10 +2,14 @@ package com.proscan.interfaceapp;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -61,6 +65,25 @@ public class MainActivity extends Activity {
     private TextToSpeech tts = null;
     private boolean ttsReady = false;
 
+    /* Automatically stop Scanner audio when Bluetooth headphones disconnect! */
+    private final BroadcastReceiver noisyAudioReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
+                setBgServiceRunning(false);
+                if (webView != null) {
+                    webView.evaluateJavascript(
+                            "try{if(window.__stopScannerAudioFromBt)window.__stopScannerAudioFromBt();" +
+                            "else{var p=document.getElementById('audio_player');if(p&&!p.paused)p.pause();isConnected=false;" +
+                            "var b=document.getElementById('btn-audio-toggle');if(b)b.classList.remove('active');}}catch(e){}",
+                            null
+                    );
+                }
+                Toast.makeText(MainActivity.this, "Headphones disconnected — Audio stopped", Toast.LENGTH_SHORT).show();
+            }
+        }
+    };
+
     private final Runnable periodicInjector = new Runnable() {
         @Override
         public void run() {
@@ -82,6 +105,10 @@ public class MainActivity extends Activity {
                 requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 101);
             } catch (Exception ignored) {}
         }
+
+        try {
+            registerReceiver(noisyAudioReceiver, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
+        } catch (Exception ignored) {}
 
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
         userWakeLockEnabled = prefs.getBoolean("wake_lock_on", true);
@@ -163,7 +190,12 @@ public class MainActivity extends Activity {
             JSONObject root = new JSONObject();
             root.put("local_url", prefs.getString("local_url", ""));
             root.put("tailscale_url", prefs.getString("tailscale_url", ""));
-            root.put("web_storage", webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject());
+            JSONObject wsObj = webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject();
+            String savedRadioStations = prefs.getString("radio_stations_json", "");
+            if (!savedRadioStations.isEmpty() && !wsObj.has("proscan_radio_stations_v3")) {
+                wsObj.put("proscan_radio_stations_v3", savedRadioStations);
+            }
+            root.put("web_storage", wsObj);
             byte[] bytes = root.toString(2).getBytes(StandardCharsets.UTF_8);
 
             prefs.edit().putString("last_backup_json", root.toString()).apply();
@@ -199,7 +231,7 @@ public class MainActivity extends Activity {
             }
 
             if (showToast) {
-                Toast.makeText(this, "Saved to Downloads/proscan_presets_backup.json", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Saved Presets + Radio Stations to Downloads/proscan_presets_backup.json", Toast.LENGTH_SHORT).show();
             }
         } catch (Exception e) {
             if (showToast) {
@@ -219,10 +251,16 @@ public class MainActivity extends Activity {
                 prefs.edit().putString("local_url", loc).putString("tailscale_url", ts).apply();
             }
             if (webStorage != null) {
-                prefs.edit().putString("shared_web_storage", webStorage.toString()).apply();
+                if (webStorage.has("proscan_radio_stations_v3")) {
+                    prefs.edit().putString("radio_stations_json", webStorage.optString("proscan_radio_stations_v3", "")).apply();
+                }
+                prefs.edit()
+                        .putString("shared_web_storage", webStorage.toString())
+                        .putString("last_backup_json", root.toString())
+                        .apply();
             }
 
-            Toast.makeText(this, "Presets & IPs Restored! Loading...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Presets, IPs & Radio Stations Restored!", Toast.LENGTH_SHORT).show();
             String activeLoc = prefs.getString("local_url", "");
             String activeTs = prefs.getString("tailscale_url", "");
             if (!activeLoc.isEmpty() || !activeTs.isEmpty()) {
@@ -232,8 +270,8 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Invalid backup JSON file", Toast.LENGTH_SHORT).show();
         }
     }
-
-    @Override
+    // === PASTE MAINACTIVITY PART 2 BELOW THIS LINE ===
+@Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQ_LOAD_JSON && resultCode == RESULT_OK && data != null && data.getData() != null) {
@@ -290,13 +328,17 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void syncActiveThemeInMemory(final String webStorageJson) {
             try {
-                if (webStorageJson != null && webStorageJson.length() > 10) {
-                    prefs.edit().putString("shared_web_storage", webStorageJson).apply();
+                JSONObject wsObj = webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject();
+                String savedRadioStations = prefs.getString("radio_stations_json", "");
+                if (!savedRadioStations.isEmpty()) {
+                    wsObj.put("proscan_radio_stations_v3", savedRadioStations);
                 }
+                prefs.edit().putString("shared_web_storage", wsObj.toString()).apply();
+
                 JSONObject root = new JSONObject();
                 root.put("local_url", prefs.getString("local_url", ""));
                 root.put("tailscale_url", prefs.getString("tailscale_url", ""));
-                root.put("web_storage", webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject());
+                root.put("web_storage", wsObj);
                 prefs.edit().putString("last_backup_json", root.toString()).apply();
             } catch (Exception ignored) {}
         }
@@ -351,9 +393,10 @@ public class MainActivity extends Activity {
             mainHandler.post(() -> closeAndExitApp());
         }
     }
-    // === PASTE PART 2 BELOW THIS LINE ===
-private void closeAndExitApp() {
+
+    private void closeAndExitApp() {
         setBgServiceRunning(false);
+        try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
         try {
             if (tts != null) {
                 tts.stop();
@@ -716,6 +759,7 @@ private void closeAndExitApp() {
         js.append("        }\n");
         js.append("        renderAudioLabel();\n");
         js.append("      }\n");
+        js.append("      window.__stopScannerAudioFromBt = function() { setAudioPlaying(false, false); };\n");
         js.append("      var aTimer = null, aLong = false;\n");
         js.append("      aBtn.addEventListener('pointerdown', function() {\n");
         js.append("        clearTimeout(aTimer); aLong = false;\n");
@@ -790,11 +834,11 @@ private void closeAndExitApp() {
 
     private void showPresetsBackupMenu() {
         String[] options = new String[]{
-                "Save Backup to Downloads (proscan_presets_backup.json)",
+                "Save Presets + Radio Stations to Downloads (proscan_presets_backup.json)",
                 "Load Backup File from Downloads"
         };
         new AlertDialog.Builder(this)
-                .setTitle("Presets & IP Backup (JSON)")
+                .setTitle("Presets, IPs & Radio Stations (JSON)")
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
                         if (webView != null) {
@@ -924,6 +968,12 @@ private void closeAndExitApp() {
             webView.evaluateJavascript("var dw=document.getElementById('device-wrapper');if(dw)dw.classList.remove('flipping-out');", null);
             injectEnhancements();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
+        super.onDestroy();
     }
 
     @Override
