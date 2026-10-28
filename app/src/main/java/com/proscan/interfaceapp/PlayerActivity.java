@@ -415,6 +415,7 @@ public class PlayerActivity extends Activity {
         js.append("    '#btn-player-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}';\n");
         js.append("  document.head.appendChild(st);\n");
         // === PASTE PLAYER PART 2 BELOW THIS LINE ===
+
 /* Add WAKE indicator/toggle on left of middle bar + Red Hardware EXIT (Off) button on right of middle bar! */
         js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
