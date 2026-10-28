@@ -42,6 +42,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -73,7 +74,7 @@ public class PlayerActivity extends Activity {
         @Override
         public void run() {
             try {
-                if (nativePlayer != null && nativePlayer.isPlaying() && playerWeb != null) {
+                if (playerWeb != null && (isLiveRadioStream || (nativePlayer != null && nativePlayer.isPlaying()))) {
                     int sec = 0, tot = 0;
                     float prog = 0.5f, level = 0.35f;
                     if (isLiveRadioStream) {
@@ -83,7 +84,7 @@ public class PlayerActivity extends Activity {
                         double t = System.currentTimeMillis() / 140.0;
                         level = (float) (0.32 + 0.24 * Math.sin(t) * Math.cos(t * 0.43) + 0.15 * Math.sin(t * 2.1));
                         level = Math.min(0.95f, Math.max(0.12f, level));
-                    } else {
+                    } else if (nativePlayer != null && nativePlayer.isPlaying()) {
                         int posMs = nativePlayer.getCurrentPosition();
                         int durMs = Math.max(1, nativePlayer.getDuration());
                         sec = posMs / 1000;
@@ -93,6 +94,8 @@ public class PlayerActivity extends Activity {
                             int envIdx = Math.min(currentEnvelope.length - 1, (int) (prog * currentEnvelope.length));
                             level = currentEnvelope[envIdx];
                         }
+                    } else {
+                        return;
                     }
                     playerWeb.evaluateJavascript("if(window.onNativeTelemetry)window.onNativeTelemetry(" + sec + "," + tot + "," + prog + "," + level + ");", null);
                     mainHandler.postDelayed(this, 60);
@@ -258,6 +261,7 @@ public class PlayerActivity extends Activity {
         js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}';\n");
         js.append("  document.head.appendChild(st);\n");
         // === PASTE PLAYER PART 2 BELOW THIS LINE ===
+
 js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
         js.append("    var wWrap = document.createElement('div');\n");
@@ -290,6 +294,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("    topRow.replaceChild(newScannerBtn, backBtn);\n");
         js.append("    newScannerBtn.addEventListener('click', function() {\n");
         js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("      if (window.__webStreamAudio) { try { window.__webStreamAudio.pause(); window.__webStreamAudio.src = ''; } catch(e){} }\n");
         js.append("      if (window.markCurrentListAsVisited) window.markCurrentListAsVisited();\n");
         js.append("      var dw = document.getElementById('device-wrapper');\n");
         js.append("      if (dw) dw.classList.add('fading-out');\n");
@@ -307,7 +312,6 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("      window.setAppMode(!window.__isBroadcastRadioMode);\n");
         js.append("    });\n");
 
-        /* Upgrade CONT button to 3-way (CONT: OFF -> CONT: ON -> LOOP: 1) */
         js.append("    var oldContBtn = document.getElementById('btn-mode-cont');\n");
         js.append("    if (oldContBtn) {\n");
         js.append("      var cBtn = oldContBtn.cloneNode(true);\n");
@@ -326,6 +330,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("    }\n");
         js.append("  }\n");
 
+        /* Verified Live UK Streams (Uses v3 key so updated talkSPORT & talkSPORT 2 streams load automatically!) */
         js.append("  var defaultStations = [\n");
         js.append("    { name: 'BBC Radio 5 Live', freq: '909 AM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_five_live&bitrate=128000' },\n");
         js.append("    { name: 'BBC Radio 5 Sports Extra', freq: 'DAB+', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_five_live_sports_extra&bitrate=128000' },\n");
@@ -340,15 +345,36 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("    { name: 'BBC Radio Wales', freq: '882 AM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_wales_fm&bitrate=128000' }\n");
         js.append("  ];\n");
         js.append("  try {\n");
-        js.append("    var savedSt = JSON.parse(localStorage.getItem('proscan_radio_stations_v1') || 'null');\n");
+        js.append("    var savedSt = JSON.parse(localStorage.getItem('proscan_radio_stations_v3') || 'null');\n");
         js.append("    window.__radioStations = (Array.isArray(savedSt) && savedSt.length > 0) ? savedSt : defaultStations.slice();\n");
         js.append("  } catch(e) { window.__radioStations = defaultStations.slice(); }\n");
         js.append("  window.__saveRadioStations = function() {\n");
-        js.append("    try { localStorage.setItem('proscan_radio_stations_v1', JSON.stringify(window.__radioStations)); } catch(e) {}\n");
+        js.append("    try { localStorage.setItem('proscan_radio_stations_v3', JSON.stringify(window.__radioStations)); } catch(e) {}\n");
         js.append("  };\n");
         js.append("  window.__isBroadcastRadioMode = false;\n");
         js.append("  window.__radioIdx = 0;\n");
         js.append("  window.__activeRadioUrl = '';\n");
+
+        /* Hybrid WebAudio + Native Stream Engine (Allows Chromium to follow 302 token redirects for talkSPORT, while Native handles HLS!) */
+        js.append("  window.__webStreamAudio = new Audio();\n");
+        js.append("  window.__webStreamAudio.crossOrigin = 'anonymous';\n");
+        js.append("  window.__startHybridLiveStream = function(url) {\n");
+        js.append("    try { window.__webStreamAudio.pause(); window.__webStreamAudio.src = ''; } catch(e){}\n");
+        js.append("    if (url.indexOf('.m3u8') === -1) {\n");
+        js.append("      window.__webStreamAudio.src = url;\n");
+        js.append("      var p = window.__webStreamAudio.play();\n");
+        js.append("      if (p && p.then) {\n");
+        js.append("        p.then(function() {\n");
+        js.append("          if (window.PlayerBridge && window.PlayerBridge.setWebStreamActive) window.PlayerBridge.setWebStreamActive(true);\n");
+        js.append("          if (window.onNativePlayStarted) window.onNativePlayStarted();\n");
+        js.append("        }).catch(function() {\n");
+        js.append("          if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) window.PlayerBridge.playLiveStreamUrl(url);\n");
+        js.append("        });\n");
+        js.append("        return;\n");
+        js.append("      }\n");
+        js.append("    }\n");
+        js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) window.PlayerBridge.playLiveStreamUrl(url);\n");
+        js.append("  };\n");
 
         js.append("  window.__seenOnPrevVisit = JSON.parse(localStorage.getItem('proscan_seen_visit_ids_v1') || '{}');\n");
         js.append("  window.__playedDriveIds = JSON.parse(localStorage.getItem('proscan_played_recs_v1') || '{}');\n");
@@ -370,7 +396,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
 
         js.append("    var rBar = document.createElement('div');\n");
         js.append("    rBar.id = 'radio-crud-row'; rBar.className = 'radio-crud-bar';\n");
-        js.append("    rBar.innerHTML = '<button class=\"btn\" type=\"button\" id=\"btn-rad-add\">+ ADD</button><button class=\"btn\" type=\"button\" id=\"btn-rad-edit\">EDIT</button><button class=\"btn\" type=\"button\" id=\"btn-rad-del\">DEL</button><button class=\"btn\" type=\"button\" id=\"btn-rad-archive\">ARCHIVE</button>';\n");
+        js.append("    rBar.innerHTML = '<button class=\"btn\" type=\"button\" id=\"btn-rad-add\">+ ADD</button><button class=\"btn\" type=\"button\" id=\"btn-rad-edit\">EDIT</button><button class=\"btn\" type=\"button\" id=\"btn-rad-del\">DEL</button><button class=\"btn\" type=\"button\" id=\"btn-rad-reset\">RESET</button>';\n");
         js.append("    fRow.parentNode.appendChild(rBar);\n");
 
         js.append("    document.getElementById('btn-rad-add').addEventListener('click', function() {\n");
@@ -391,8 +417,13 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("      window.__saveRadioStations();\n");
         js.append("      window.renderPlaylist();\n");
         js.append("    });\n");
-        js.append("    document.getElementById('btn-rad-archive').addEventListener('click', function() {\n");
-        js.append("      window.setAppMode(false);\n");
+        js.append("    document.getElementById('btn-rad-reset').addEventListener('click', function() {\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("      window.__radioStations = defaultStations.slice();\n");
+        js.append("      window.__radioIdx = 0;\n");
+        js.append("      window.__saveRadioStations();\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("      window.selectRadioStationOnly(0);\n");
         js.append("    });\n");
         js.append("  }\n");
 
@@ -600,10 +631,10 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("    if (isTtsCaption && window.PlayerBridge) {\n");
         js.append("      window.PlayerBridge.speakCaption(stObj.name);\n");
         js.append("      setTimeout(function() {\n");
-        js.append("        if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) window.PlayerBridge.playLiveStreamUrl(stObj.url);\n");
+        js.append("        window.__startHybridLiveStream(stObj.url);\n");
         js.append("      }, 1300);\n");
-        js.append("    } else if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) {\n");
-        js.append("      window.PlayerBridge.playLiveStreamUrl(stObj.url);\n");
+        js.append("    } else {\n");
+        js.append("      window.__startHybridLiveStream(stObj.url);\n");
         js.append("    }\n");
         js.append("  };\n");
 
@@ -612,6 +643,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("    if (dw && !skipAnim) dw.classList.add('fading-out');\n");
         js.append("    setTimeout(function() {\n");
         js.append("      window.__isBroadcastRadioMode = Boolean(radioMode);\n");
+        js.append("      if (window.__webStreamAudio) { try { window.__webStreamAudio.pause(); window.__webStreamAudio.src = ''; } catch(e){} }\n");
         js.append("      if (window.PlayerBridge && window.PlayerBridge.stopAudio) window.PlayerBridge.stopAudio();\n");
         js.append("      setPlayingUI(false);\n");
         js.append("      var swBtn = document.getElementById('btn-switch-radio-archive');\n");
@@ -774,7 +806,13 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("        var stObj = window.__radioStations[window.__radioIdx];\n");
         js.append("        if (!stObj) return;\n");
         js.append("        if (window.__activeRadioUrl === stObj.url && isPlayingNow) {\n");
-        js.append("          if (window.PlayerBridge) window.PlayerBridge.togglePause();\n");
+        js.append("          if (window.__webStreamAudio && !window.__webStreamAudio.paused) {\n");
+        js.append("            window.__webStreamAudio.pause();\n");
+        js.append("            if (window.PlayerBridge) window.PlayerBridge.setWebStreamActive(false);\n");
+        js.append("            setPlayingUI(false); renderPlaylist();\n");
+        js.append("          } else if (window.PlayerBridge) {\n");
+        js.append("            window.PlayerBridge.togglePause();\n");
+        js.append("          }\n");
         js.append("        } else {\n");
         js.append("          window.playRadioStationIndex(window.__radioIdx);\n");
         js.append("        }\n");
@@ -789,6 +827,13 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("          playIndex(curIdx);\n");
         js.append("        }\n");
         js.append("      }\n");
+        js.append("    });\n");
+        js.append("  }\n");
+
+        js.append("  var oldStopBtn = document.getElementById('btn-stop');\n");
+        js.append("  if (oldStopBtn) {\n");
+        js.append("    oldStopBtn.addEventListener('click', function() {\n");
+        js.append("      if (window.__webStreamAudio) { try { window.__webStreamAudio.pause(); window.__webStreamAudio.src = ''; } catch(e){} }\n");
         js.append("    });\n");
         js.append("  }\n");
 
@@ -824,7 +869,6 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("    });\n");
         js.append("  }\n");
 
-        /* If opened via the RADIO button on the Scanner, start directly in Broadcast Radio mode! */
         if (openInRadio) {
             js.append("  window.setAppMode(true, true);\n");
         }
@@ -884,33 +928,65 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         return env;
     }
 
+    private String resolveRedirects(String urlStr) {
+        String current = urlStr;
+        for (int hop = 0; hop < 6; hop++) {
+            try {
+                HttpURLConnection conn = (HttpURLConnection) new URL(current).openConnection();
+                conn.setInstanceFollowRedirects(false);
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+                int code = conn.getResponseCode();
+                if (code >= 300 && code < 400) {
+                    String loc = conn.getHeaderField("Location");
+                    conn.disconnect();
+                    if (loc == null || loc.isEmpty()) break;
+                    current = new URL(new URL(current), loc).toString();
+                } else {
+                    conn.disconnect();
+                    break;
+                }
+            } catch (Exception e) {
+                break;
+            }
+        }
+        return current;
+    }
+
     private void playLiveRadioUrlNatively(final String streamUrl) {
         stopNativePlayer();
-        mainHandler.post(() -> {
-            try {
-                isLiveRadioStream = true;
-                nativePlayer = new MediaPlayer();
-                if (Build.VERSION.SDK_INT >= 21) {
-                    nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                            .build());
-                }
-                nativePlayer.setDataSource(streamUrl);
-                nativePlayer.setOnPreparedListener(mp -> {
-                    mp.start();
-                    if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
-                    mainHandler.post(progressTicker);
-                });
-                nativePlayer.setOnErrorListener((mp, what, extra) -> {
+        audioFetchExecutor.execute(() -> {
+            final String resolvedUrl = resolveRedirects(streamUrl);
+            mainHandler.post(() -> {
+                try {
                     stopNativePlayer();
-                    if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM OFFLINE');", null);
-                    return true;
-                });
-                nativePlayer.prepareAsync();
-            } catch (Exception e) {
-                if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
-            }
+                    isLiveRadioStream = true;
+                    nativePlayer = new MediaPlayer();
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                                .build());
+                    }
+                    Map<String, String> headers = new HashMap<>();
+                    headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+                    nativePlayer.setDataSource(PlayerActivity.this, Uri.parse(resolvedUrl), headers);
+                    nativePlayer.setOnPreparedListener(mp -> {
+                        mp.start();
+                        if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
+                        mainHandler.post(progressTicker);
+                    });
+                    nativePlayer.setOnErrorListener((mp, what, extra) -> {
+                        stopNativePlayer();
+                        if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM OFFLINE');", null);
+                        return true;
+                    });
+                    nativePlayer.prepareAsync();
+                } catch (Exception e) {
+                    if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
+                }
+            });
         });
     }
 
@@ -1028,6 +1104,15 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
             mainHandler.post(() -> {
                 applyPlayerWakeLock(keepOn);
                 Toast.makeText(PlayerActivity.this, keepOn ? "Screen Wake: ON (All Modes)" : "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
+            });
+        }
+
+        @JavascriptInterface
+        public void setWebStreamActive(final boolean active) {
+            mainHandler.post(() -> {
+                isLiveRadioStream = active;
+                mainHandler.removeCallbacks(progressTicker);
+                if (active) mainHandler.post(progressTicker);
             });
         }
 
