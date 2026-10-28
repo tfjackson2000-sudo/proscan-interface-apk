@@ -68,6 +68,7 @@ public class PlayerActivity extends Activity {
     private MediaPlayer nativePlayer = null;
     private boolean isFetchingDrive = false;
     private boolean isLiveRadioStream = false;
+    private volatile int currentStreamReqId = 0;
     private float[] currentEnvelope = new float[0];
 
     private final Runnable progressTicker = new Runnable() {
@@ -231,7 +232,6 @@ public class PlayerActivity extends Activity {
         js.append("    '.unread-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--log-text,#39ff14);margin-right:4px;vertical-align:middle;}' +\n");
         js.append("    '.top-row-5{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:28px!important;}' +\n");
         js.append("    '.filter-row-5{display:grid!important;grid-template-columns:88px 1fr 62px 32px 46px!important;gap:5px!important;height:27px!important;}' +\n");
-        /* 5-Button Station Manager Bar: [ + ADD ] [ EDIT ] [ ▲ UP ] [ ▼ DN ] [ DEL ] */
         js.append("    '.radio-crud-bar{display:none;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;height:27px;}' +\n");
         js.append("    '#deck-vinyl{background:radial-gradient(circle at 46% 54%,#1e2229 0%,#0c0e12 85%)!important;}' +\n");
         js.append("    '.tt-platter{position:absolute!important;left:90px!important;top:38px!important;width:140px!important;height:140px!important;box-shadow:0 8px 20px rgba(0,0,0,0.95),0 0 0 3px #18181b!important;}' +\n");
@@ -284,6 +284,17 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("    });\n");
         js.append("  }\n");
 
+        /* Helper that immediately kills BOTH WebAudio and Native MediaPlayer so two streams never overlap! */
+        js.append("  window.__stopAllRadioAndNativeAudio = function() {\n");
+        js.append("    window.__streamLaunchToken = (window.__streamLaunchToken || 0) + 1;\n");
+        js.append("    if (window.__webStreamAudio) {\n");
+        js.append("      try { window.__webStreamAudio.pause(); window.__webStreamAudio.removeAttribute('src'); window.__webStreamAudio.load(); } catch(e){}\n");
+        js.append("    }\n");
+        js.append("    if (window.PlayerBridge && window.PlayerBridge.stopAudio) {\n");
+        js.append("      window.PlayerBridge.stopAudio();\n");
+        js.append("    }\n");
+        js.append("  };\n");
+
         /* Top Row 1-Click Direct Buttons: [ ◀ SCANNER ] [ RADIO ▶ / ARCHIVE ] [ DECK ] [ CONT/LOOP ] [ VOICE ] */
         js.append("  var backBtn = document.getElementById('btn-back-radio');\n");
         js.append("  var topRow = backBtn ? backBtn.parentNode : null;\n");
@@ -294,7 +305,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("    topRow.replaceChild(newScannerBtn, backBtn);\n");
         js.append("    newScannerBtn.addEventListener('click', function() {\n");
         js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
-        js.append("      if (window.__webStreamAudio) { try { window.__webStreamAudio.pause(); window.__webStreamAudio.src = ''; } catch(e){} }\n");
+        js.append("      window.__stopAllRadioAndNativeAudio();\n");
         js.append("      if (window.markCurrentListAsVisited) window.markCurrentListAsVisited();\n");
         js.append("      var dw = document.getElementById('device-wrapper');\n");
         js.append("      if (dw) dw.classList.add('fading-out');\n");
@@ -359,18 +370,22 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  window.__radioIdx = 0;\n");
         js.append("  window.__activeRadioUrl = '';\n");
 
+        /* Hybrid WebAudio + Native Stream Engine: Always stops BOTH engines before starting a new stream! */
         js.append("  window.__webStreamAudio = new Audio();\n");
         js.append("  window.__webStreamAudio.crossOrigin = 'anonymous';\n");
         js.append("  window.__startHybridLiveStream = function(url) {\n");
-        js.append("    try { window.__webStreamAudio.pause(); window.__webStreamAudio.src = ''; } catch(e){}\n");
+        js.append("    window.__stopAllRadioAndNativeAudio();\n");
+        js.append("    var myToken = window.__streamLaunchToken;\n");
         js.append("    if (url.indexOf('.m3u8') === -1) {\n");
         js.append("      window.__webStreamAudio.src = url;\n");
         js.append("      var p = window.__webStreamAudio.play();\n");
         js.append("      if (p && p.then) {\n");
         js.append("        p.then(function() {\n");
+        js.append("          if (window.__streamLaunchToken !== myToken) { window.__webStreamAudio.pause(); return; }\n");
         js.append("          if (window.PlayerBridge && window.PlayerBridge.setWebStreamActive) window.PlayerBridge.setWebStreamActive(true);\n");
         js.append("          if (window.onNativePlayStarted) window.onNativePlayStarted();\n");
         js.append("        }).catch(function() {\n");
+        js.append("          if (window.__streamLaunchToken !== myToken) return;\n");
         js.append("          if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) window.PlayerBridge.playLiveStreamUrl(url);\n");
         js.append("        });\n");
         js.append("        return;\n");
@@ -655,6 +670,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
 
         js.append("  window.playRadioStationIndex = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= window.__radioStations.length) return;\n");
+        js.append("    window.__stopAllRadioAndNativeAudio();\n");
         js.append("    window.__radioIdx = idx;\n");
         js.append("    var stObj = window.__radioStations[idx];\n");
         js.append("    window.__activeRadioUrl = stObj.url;\n");
@@ -665,10 +681,11 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("    if (bCh) bCh.innerText = 'ON AIR: ' + stObj.name;\n");
         js.append("    if (bFr) bFr.innerText = stObj.freq;\n");
         js.append("    window.renderPlaylist();\n");
+        js.append("    var myLaunch = window.__streamLaunchToken;\n");
         js.append("    if (isTtsCaption && window.PlayerBridge) {\n");
         js.append("      window.PlayerBridge.speakCaption(stObj.name);\n");
         js.append("      setTimeout(function() {\n");
-        js.append("        window.__startHybridLiveStream(stObj.url);\n");
+        js.append("        if (window.__streamLaunchToken === myLaunch) window.__startHybridLiveStream(stObj.url);\n");
         js.append("      }, 1300);\n");
         js.append("    } else {\n");
         js.append("      window.__startHybridLiveStream(stObj.url);\n");
@@ -680,8 +697,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("    if (dw && !skipAnim) dw.classList.add('fading-out');\n");
         js.append("    setTimeout(function() {\n");
         js.append("      window.__isBroadcastRadioMode = Boolean(radioMode);\n");
-        js.append("      if (window.__webStreamAudio) { try { window.__webStreamAudio.pause(); window.__webStreamAudio.src = ''; } catch(e){} }\n");
-        js.append("      if (window.PlayerBridge && window.PlayerBridge.stopAudio) window.PlayerBridge.stopAudio();\n");
+        js.append("      window.__stopAllRadioAndNativeAudio();\n");
         js.append("      setPlayingUI(false);\n");
         js.append("      var swBtn = document.getElementById('btn-switch-radio-archive');\n");
         js.append("      var subBrand = document.getElementById('brand-sub-mode');\n");
@@ -811,6 +827,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  var origPlayIndex = window.playIndex;\n");
         js.append("  window.playIndex = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= filteredRecs.length) return;\n");
+        js.append("    window.__stopAllRadioAndNativeAudio();\n");
         js.append("    var r = filteredRecs[idx];\n");
         js.append("    var id = r.fileId || r.fileName;\n");
         js.append("    window.__playedDriveIds[id] = true;\n");
@@ -839,13 +856,8 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("        var stObj = window.__radioStations[window.__radioIdx];\n");
         js.append("        if (!stObj) return;\n");
         js.append("        if (window.__activeRadioUrl === stObj.url && isPlayingNow) {\n");
-        js.append("          if (window.__webStreamAudio && !window.__webStreamAudio.paused) {\n");
-        js.append("            window.__webStreamAudio.pause();\n");
-        js.append("            if (window.PlayerBridge) window.PlayerBridge.setWebStreamActive(false);\n");
-        js.append("            setPlayingUI(false); renderPlaylist();\n");
-        js.append("          } else if (window.PlayerBridge) {\n");
-        js.append("            window.PlayerBridge.togglePause();\n");
-        js.append("          }\n");
+        js.append("          window.__stopAllRadioAndNativeAudio();\n");
+        js.append("          setPlayingUI(false); renderPlaylist();\n");
         js.append("        } else {\n");
         js.append("          window.playRadioStationIndex(window.__radioIdx);\n");
         js.append("        }\n");
@@ -866,7 +878,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  var oldStopBtn = document.getElementById('btn-stop');\n");
         js.append("  if (oldStopBtn) {\n");
         js.append("    oldStopBtn.addEventListener('click', function() {\n");
-        js.append("      if (window.__webStreamAudio) { try { window.__webStreamAudio.pause(); window.__webStreamAudio.src = ''; } catch(e){} }\n");
+        js.append("      window.__stopAllRadioAndNativeAudio();\n");
         js.append("    });\n");
         js.append("  }\n");
 
@@ -911,6 +923,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
     }
 
     private void stopNativePlayer() {
+        currentStreamReqId++;
         mainHandler.removeCallbacks(progressTicker);
         isLiveRadioStream = false;
         if (nativePlayer != null) {
@@ -989,11 +1002,17 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
 
     private void playLiveRadioUrlNatively(final String streamUrl) {
         stopNativePlayer();
+        final int reqId = ++currentStreamReqId;
         audioFetchExecutor.execute(() -> {
             final String resolvedUrl = resolveRedirects(streamUrl);
+            if (reqId != currentStreamReqId) return;
             mainHandler.post(() -> {
+                if (reqId != currentStreamReqId) return;
                 try {
-                    stopNativePlayer();
+                    if (nativePlayer != null) {
+                        try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
+                        nativePlayer = null;
+                    }
                     isLiveRadioStream = true;
                     nativePlayer = new MediaPlayer();
                     if (Build.VERSION.SDK_INT >= 21) {
@@ -1006,18 +1025,26 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
                     headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
                     nativePlayer.setDataSource(PlayerActivity.this, Uri.parse(resolvedUrl), headers);
                     nativePlayer.setOnPreparedListener(mp -> {
+                        if (reqId != currentStreamReqId) {
+                            try { mp.stop(); mp.release(); } catch (Exception ignored) {}
+                            return;
+                        }
                         mp.start();
                         if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
                         mainHandler.post(progressTicker);
                     });
                     nativePlayer.setOnErrorListener((mp, what, extra) -> {
-                        stopNativePlayer();
-                        if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM OFFLINE');", null);
+                        if (reqId == currentStreamReqId) {
+                            stopNativePlayer();
+                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM OFFLINE');", null);
+                        }
                         return true;
                     });
                     nativePlayer.prepareAsync();
                 } catch (Exception e) {
-                    if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
+                    if (reqId == currentStreamReqId && playerWeb != null) {
+                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
+                    }
                 }
             });
         });
@@ -1025,6 +1052,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
 
     private void playDriveFileIdNatively(final String fileId) {
         stopNativePlayer();
+        final int reqId = ++currentStreamReqId;
         final String urlStr = "https://drive.usercontent.google.com/download?id=" + fileId + "&export=download";
         audioFetchExecutor.execute(() -> {
             try {
@@ -1039,14 +1067,25 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
                 FileOutputStream fos = new FileOutputStream(tempMp3);
                 byte[] buf = new byte[8192];
                 int n;
-                while ((n = is.read(buf)) != -1) fos.write(buf, 0, n);
+                while ((n = is.read(buf)) != -1) {
+                    if (reqId != currentStreamReqId) {
+                        fos.close(); is.close(); conn.disconnect();
+                        return;
+                    }
+                    fos.write(buf, 0, n);
+                }
                 fos.close();
                 is.close();
                 conn.disconnect();
+                if (reqId != currentStreamReqId) return;
                 final float[] env = extractMp3AmplitudeEnvelope(tempMp3);
                 mainHandler.post(() -> {
+                    if (reqId != currentStreamReqId) return;
                     try {
-                        stopNativePlayer();
+                        if (nativePlayer != null) {
+                            try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
+                            nativePlayer = null;
+                        }
                         isLiveRadioStream = false;
                         currentEnvelope = env;
                         nativePlayer = new MediaPlayer();
@@ -1060,6 +1099,10 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
                         nativePlayer.setDataSource(fis.getFD());
                         fis.close();
                         nativePlayer.setOnPreparedListener(mp -> {
+                            if (reqId != currentStreamReqId) {
+                                try { mp.stop(); mp.release(); } catch (Exception ignored) {}
+                                return;
+                            }
                             mp.start();
                             if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
                             mainHandler.post(progressTicker);
@@ -1075,7 +1118,9 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
                 });
             } catch (Exception e) {
                 mainHandler.post(() -> {
-                    if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
+                    if (reqId == currentStreamReqId && playerWeb != null) {
+                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
+                    }
                 });
             }
         });
