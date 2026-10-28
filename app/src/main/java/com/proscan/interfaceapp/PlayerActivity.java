@@ -2,16 +2,23 @@ package com.proscan.interfaceapp;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
+import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.MediaStore;
 import android.speech.tts.TextToSpeech;
 import android.text.InputType;
 import android.view.View;
@@ -37,6 +44,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -54,6 +62,7 @@ import java.util.regex.Pattern;
 
 public class PlayerActivity extends Activity {
 
+    private static final int REQ_LOAD_RADIO_JSON = 902;
     private static final String GDRIVE_ROOT_FOLDER_ID = "1gToQyY6YPOk_3muiQSY5WLy7jTSvXbTv";
     private WebView playerWeb;
     private SharedPreferences prefs;
@@ -70,6 +79,25 @@ public class PlayerActivity extends Activity {
     private boolean isLiveRadioStream = false;
     private volatile int currentStreamReqId = 0;
     private float[] currentEnvelope = new float[0];
+
+    /* Stop Archive or Broadcast Radio immediately if Bluetooth headphones are taken off / disconnected! */
+    private final BroadcastReceiver noisyAudioReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
+                stopNativePlayer();
+                if (playerWeb != null) {
+                    playerWeb.evaluateJavascript(
+                            "try{if(window.__stopAllRadioAndNativeAudio)window.__stopAllRadioAndNativeAudio();" +
+                            "if(typeof setPlayingUI==='function')setPlayingUI(false);" +
+                            "if(typeof renderPlaylist==='function')renderPlaylist();}catch(e){}",
+                            null
+                    );
+                }
+                Toast.makeText(PlayerActivity.this, "Headphones disconnected — Stream stopped", Toast.LENGTH_SHORT).show();
+            }
+        }
+    };
 
     private final Runnable progressTicker = new Runnable() {
         @Override
@@ -118,6 +146,10 @@ public class PlayerActivity extends Activity {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         hideSystemUI();
+
+        try {
+            registerReceiver(noisyAudioReceiver, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
+        } catch (Exception ignored) {}
 
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
         wakeLockOn = prefs.getBoolean("wake_lock_on", true);
@@ -187,9 +219,124 @@ public class PlayerActivity extends Activity {
         }
     }
 
+    private void saveRadioStationsJsonToDownloads(String stationsJson, boolean showToast) {
+        try {
+            prefs.edit().putString("radio_stations_json", stationsJson).apply();
+            JSONArray arr = new JSONArray(stationsJson);
+            byte[] bytes = arr.toString(2).getBytes(StandardCharsets.UTF_8);
+
+            if (Build.VERSION.SDK_INT >= 29) {
+                try {
+                    getContentResolver().delete(
+                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            MediaStore.MediaColumns.DISPLAY_NAME + "=?",
+                            new String[]{"proscan_radio_stations.json"}
+                    );
+                } catch (Exception ignored) {}
+
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, "proscan_radio_stations.json");
+                values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+
+                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri != null) {
+                    OutputStream os = getContentResolver().openOutputStream(uri);
+                    if (os != null) {
+                        os.write(bytes);
+                        os.close();
+                    }
+                }
+            } else {
+                File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                File file = new File(dir, "proscan_radio_stations.json");
+                FileOutputStream fos = new FileOutputStream(file);
+                fos.write(bytes);
+                fos.close();
+            }
+
+            if (showToast) {
+                Toast.makeText(this, "Saved to Downloads/proscan_radio_stations.json", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            if (showToast) {
+                Toast.makeText(this, "Save error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_LOAD_RADIO_JSON && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            try {
+                InputStream is = getContentResolver().openInputStream(data.getData());
+                if (is != null) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) sb.append(line);
+                    reader.close();
+                    String raw = sb.toString().trim();
+                    String stationsArrayStr = raw;
+                    if (raw.startsWith("{")) {
+                        JSONObject obj = new JSONObject(raw);
+                        if (obj.has("web_storage")) {
+                            stationsArrayStr = obj.getJSONObject("web_storage").optString("proscan_radio_stations_v3", "");
+                        }
+                    }
+                    JSONArray testArr = new JSONArray(stationsArrayStr);
+                    if (testArr.length() > 0) {
+                        prefs.edit().putString("radio_stations_json", testArr.toString()).apply();
+                        final String safeArr = JSONObject.quote(testArr.toString());
+                        if (playerWeb != null) {
+                            playerWeb.evaluateJavascript("if(window.onNativeStationsJsonLoaded)window.onNativeStationsJsonLoaded(" + safeArr + ");", null);
+                        }
+                        Toast.makeText(this, "Loaded " + testArr.length() + " Radio Stations from JSON!", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            } catch (Exception e) {
+                Toast.makeText(this, "Invalid Radio Stations JSON file", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void showStationMenuDialog(final int curIdx, final String curName, final String curFreq, final String curUrl) {
+        String[] items = new String[]{
+                "Edit Selected Station (" + (curName != null && !curName.isEmpty() ? curName : "Station") + ")",
+                "Save Stations JSON to Downloads (proscan_radio_stations.json)",
+                "Load Stations JSON from Downloads",
+                "Reset Stations to Default UK List"
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("Radio Station & JSON Manager")
+                .setItems(items, (d, which) -> {
+                    if (which == 0) {
+                        openAddOrEditStationDialog(curIdx, curName, curFreq, curUrl);
+                    } else if (which == 1) {
+                        if (playerWeb != null) {
+                            playerWeb.evaluateJavascript("if(window.PlayerBridge)window.PlayerBridge.saveStationsJson(JSON.stringify(window.__radioStations), true);", null);
+                        }
+                    } else if (which == 2) {
+                        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                        intent.addCategory(Intent.CATEGORY_OPENABLE);
+                        intent.setType("*/*");
+                        startActivityForResult(intent, REQ_LOAD_RADIO_JSON);
+                    } else if (which == 3) {
+                        if (playerWeb != null) {
+                            playerWeb.evaluateJavascript("if(window.__resetDefaultRadioStations)window.__resetDefaultRadioStations();", null);
+                        }
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     private void injectReactiveDecksAndTheme() {
         String backupJson = prefs.getString("last_backup_json", "");
         String safeBackup = JSONObject.quote(backupJson);
+        String savedStationsJson = prefs.getString("radio_stations_json", "");
+        String safeStations = JSONObject.quote(savedStationsJson);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
         boolean openInRadio = "radio".equalsIgnoreCase(initialStartMode);
 
@@ -212,6 +359,8 @@ public class PlayerActivity extends Activity {
         js.append("        if (bs) bs.innerHTML = '<div class=\"brand-henus\"><span class=\"henus-mark\">'+br+'</span><span class=\"henus-sub\" id=\"brand-sub-mode\">ARCHIVE</span></div>';\n");
         js.append("      }\n");
         js.append("    }\n");
+        js.append("    var nativeSt = ").append(safeStations).append(";\n");
+        js.append("    if (nativeSt && nativeSt.length > 10) localStorage.setItem('proscan_radio_stations_v3', nativeSt);\n");
         js.append("  } catch(e) {}\n");
 
         js.append("  var nameHdr = document.querySelector('.screen-log-header span:last-child');\n");
@@ -257,12 +406,17 @@ public class PlayerActivity extends Activity {
         js.append("    '#cd-laser-sled{position:absolute;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle,#ff2222 20%,rgba(255,0,0,0.7) 55%,transparent 100%);box-shadow:0 0 10px #ff0000;z-index:2;pointer-events:none;transition:transform 0.2s linear;}' +\n");
         js.append("    '#reactive-vu-strip{position:absolute;bottom:5px;left:50%;transform:translateX(-50%);display:flex;gap:3px;z-index:12;background:rgba(0,0,0,0.78);padding:3px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);}' +\n");
         js.append("    '.rvu-seg{width:6px;height:5px;border-radius:1px;background:#1e293b;}' +\n");
-        js.append("    '#player-wake-pill{display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:1px 5px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:6px;}' +\n");
+        js.append("    '#player-wake-pill{display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:1px 5px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:5px;}' +\n");
         js.append("    '#player-wake-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
-        js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}';\n");
+        js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}' +\n");
+        js.append("    '#btn-player-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-left:6px;cursor:pointer;touch-action:manipulation;}' +\n");
+        js.append("    '#btn-player-exit .exit-cap{width:22px;height:10px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}' +\n");
+        js.append("    '#btn-player-exit .exit-cap::after{content:\"\";width:7px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}' +\n");
+        js.append("    '#btn-player-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}';\n");
         js.append("  document.head.appendChild(st);\n");
         // === PASTE PLAYER PART 2 BELOW THIS LINE ===
-js.append("  var recHud = document.getElementById('rec-count-hud');\n");
+/* Add WAKE indicator/toggle on left of middle bar + Red Hardware EXIT (Off) button on right of middle bar! */
+        js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
         js.append("    var wWrap = document.createElement('div');\n");
         js.append("    wWrap.style.cssText = 'display:flex;align-items:center;padding-left:2px;';\n");
@@ -282,6 +436,46 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("        window.PlayerBridge.setWakeLock(window.__playerWakeActive);\n");
         js.append("      }\n");
         js.append("    });\n");
+        js.append("  }\n");
+
+        /* Add Red Hardware EXIT (Off) Button on the right side of the status bar (Hold = Power Off App, Double-Tap = Minimize, Tap = System Bars) */
+        js.append("  var contHud = document.getElementById('cont-status-hud');\n");
+        js.append("  if (contHud && !document.getElementById('btn-player-exit')) {\n");
+        js.append("    var rWrap = document.createElement('div');\n");
+        js.append("    rWrap.style.cssText = 'justify-self:end;display:flex;align-items:center;padding-right:2px;';\n");
+        js.append("    contHud.parentNode.insertBefore(rWrap, contHud);\n");
+        js.append("    rWrap.appendChild(contHud);\n");
+        js.append("    var exBtn = document.createElement('button');\n");
+        js.append("    exBtn.id = 'btn-player-exit'; exBtn.type = 'button';\n");
+        js.append("    exBtn.innerHTML = '<div class=\"exit-cap\"></div><span style=\"font-size:6.5px;font-weight:900;color:var(--toggle-color);letter-spacing:0.5px;\">EXIT</span>';\n");
+        js.append("    rWrap.appendChild(exBtn);\n");
+        js.append("    var exTimer = null, exLong = false, lastExTap = 0;\n");
+        js.append("    exBtn.addEventListener('pointerdown', function() {\n");
+        js.append("      clearTimeout(exTimer); exLong = false;\n");
+        js.append("      exTimer = setTimeout(function() {\n");
+        js.append("        exTimer = null; exLong = true;\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate([45, 60, 55]);\n");
+        js.append("        if (window.__stopAllRadioAndNativeAudio) window.__stopAllRadioAndNativeAudio();\n");
+        js.append("        var dw = document.getElementById('device-wrapper');\n");
+        js.append("        if (dw) dw.classList.add('fading-out');\n");
+        js.append("        setTimeout(function() { if (window.PlayerBridge && window.PlayerBridge.exitEntireApp) window.PlayerBridge.exitEntireApp(); }, 350);\n");
+        js.append("      }, 550);\n");
+        js.append("    });\n");
+        js.append("    exBtn.addEventListener('pointerup', function() {\n");
+        js.append("      var wasTap = exTimer !== null; clearTimeout(exTimer); exTimer = null;\n");
+        js.append("      if (wasTap && !exLong) {\n");
+        js.append("        var now = Date.now();\n");
+        js.append("        if (now - lastExTap < 420) {\n");
+        js.append("          lastExTap = 0;\n");
+        js.append("          if (window.PlayerBridge && window.PlayerBridge.minimizeApp) window.PlayerBridge.minimizeApp();\n");
+        js.append("        } else {\n");
+        js.append("          lastExTap = now;\n");
+        js.append("          if (window.PlayerBridge && window.PlayerBridge.showSystemBars) window.PlayerBridge.showSystemBars();\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("    exBtn.addEventListener('pointerleave', function() { clearTimeout(exTimer); exTimer = null; });\n");
+        js.append("    exBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
         js.append("  }\n");
 
         /* Helper that immediately kills BOTH WebAudio and Native MediaPlayer so two streams never overlap! */
@@ -363,9 +557,40 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("      window.__radioStations.unshift(defaultStations[0]);\n");
         js.append("    }\n");
         js.append("  } catch(e) { window.__radioStations = defaultStations.slice(); }\n");
-        js.append("  window.__saveRadioStations = function() {\n");
-        js.append("    try { localStorage.setItem('proscan_radio_stations_v3', JSON.stringify(window.__radioStations)); } catch(e) {}\n");
+
+        /* Auto-sync stations to SharedPreferences + JSON whenever modified! */
+        js.append("  window.__saveRadioStations = function(exportToDownloads) {\n");
+        js.append("    try {\n");
+        js.append("      var sJson = JSON.stringify(window.__radioStations);\n");
+        js.append("      localStorage.setItem('proscan_radio_stations_v3', sJson);\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.saveStationsJson) {\n");
+        js.append("        window.PlayerBridge.saveStationsJson(sJson, Boolean(exportToDownloads));\n");
+        js.append("      }\n");
+        js.append("    } catch(e) {}\n");
         js.append("  };\n");
+        js.append("  window.__saveRadioStations(false);\n");
+
+        js.append("  window.onNativeStationsJsonLoaded = function(jsonStr) {\n");
+        js.append("    try {\n");
+        js.append("      var arr = JSON.parse(jsonStr);\n");
+        js.append("      if (Array.isArray(arr) && arr.length > 0) {\n");
+        js.append("        window.__radioStations = arr;\n");
+        js.append("        window.__radioIdx = 0;\n");
+        js.append("        localStorage.setItem('proscan_radio_stations_v3', JSON.stringify(arr));\n");
+        js.append("        window.renderPlaylist();\n");
+        js.append("        window.selectRadioStationOnly(0);\n");
+        js.append("      }\n");
+        js.append("    } catch(e) {}\n");
+        js.append("  };\n");
+
+        js.append("  window.__resetDefaultRadioStations = function() {\n");
+        js.append("    window.__radioStations = defaultStations.slice();\n");
+        js.append("    window.__radioIdx = 0;\n");
+        js.append("    window.__saveRadioStations(false);\n");
+        js.append("    window.renderPlaylist();\n");
+        js.append("    window.selectRadioStationOnly(0);\n");
+        js.append("  };\n");
+
         js.append("  window.__isBroadcastRadioMode = false;\n");
         js.append("  window.__radioIdx = 0;\n");
         js.append("  window.__activeRadioUrl = '';\n");
@@ -412,22 +637,40 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("      window.renderPlaylist();\n");
         js.append("    });\n");
 
-        /* 5-Button Station Bar: [ + ADD ] [ EDIT ] [ ▲ UP ] [ ▼ DN ] [ DEL ] (Hold DEL to Reset Defaults) */
+        /* 5-Button Station Bar: [ + ADD ] [ EDIT / JSON ] [ ▲ UP ] [ ▼ DN ] [ DEL ] (Hold EDIT for JSON Save/Load Menu!) */
         js.append("    var rBar = document.createElement('div');\n");
         js.append("    rBar.id = 'radio-crud-row'; rBar.className = 'radio-crud-bar';\n");
-        js.append("    rBar.innerHTML = '<button class=\"btn\" type=\"button\" id=\"btn-rad-add\">+ ADD</button><button class=\"btn\" type=\"button\" id=\"btn-rad-edit\">EDIT</button><button class=\"btn\" type=\"button\" id=\"btn-rad-up\">&#9650; UP</button><button class=\"btn\" type=\"button\" id=\"btn-rad-dn\">&#9660; DN</button><button class=\"btn\" type=\"button\" id=\"btn-rad-del\" title=\"Hold to reset defaults\">DEL</button>';\n");
+        js.append("    rBar.innerHTML = '<button class=\"btn\" type=\"button\" id=\"btn-rad-add\">+ ADD</button><button class=\"btn\" type=\"button\" id=\"btn-rad-edit\" title=\"Tap=Edit / Hold=JSON Backup\">EDIT/JSON</button><button class=\"btn\" type=\"button\" id=\"btn-rad-up\">&#9650; UP</button><button class=\"btn\" type=\"button\" id=\"btn-rad-dn\">&#9660; DN</button><button class=\"btn\" type=\"button\" id=\"btn-rad-del\">DEL</button>';\n");
         js.append("    fRow.parentNode.appendChild(rBar);\n");
 
         js.append("    document.getElementById('btn-rad-add').addEventListener('click', function() {\n");
         js.append("      if (window.PlayerBridge && window.PlayerBridge.showStationDialog) window.PlayerBridge.showStationDialog(-1, '', '', '');\n");
         js.append("    });\n");
-        js.append("    document.getElementById('btn-rad-edit').addEventListener('click', function() {\n");
-        js.append("      var stObj = window.__radioStations[window.__radioIdx];\n");
-        js.append("      if (!stObj) return;\n");
-        js.append("      if (window.PlayerBridge && window.PlayerBridge.showStationDialog) {\n");
-        js.append("        window.PlayerBridge.showStationDialog(window.__radioIdx, stObj.name || '', stObj.freq || '', stObj.url || '');\n");
+        js.append("    var edBtn = document.getElementById('btn-rad-edit');\n");
+        js.append("    var edTimer = null, edLong = false;\n");
+        js.append("    edBtn.addEventListener('pointerdown', function() {\n");
+        js.append("      clearTimeout(edTimer); edLong = false;\n");
+        js.append("      edTimer = setTimeout(function() {\n");
+        js.append("        edTimer = null; edLong = true;\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(30);\n");
+        js.append("        var stObj = window.__radioStations[window.__radioIdx] || {};\n");
+        js.append("        if (window.PlayerBridge && window.PlayerBridge.openStationJsonMenu) {\n");
+        js.append("          window.PlayerBridge.openStationJsonMenu(window.__radioIdx, stObj.name || '', stObj.freq || '', stObj.url || '');\n");
+        js.append("        }\n");
+        js.append("      }, 500);\n");
+        js.append("    });\n");
+        js.append("    edBtn.addEventListener('pointerup', function() {\n");
+        js.append("      var wasTap = edTimer !== null; clearTimeout(edTimer); edTimer = null;\n");
+        js.append("      if (wasTap && !edLong) {\n");
+        js.append("        var stObj = window.__radioStations[window.__radioIdx] || {};\n");
+        js.append("        if (window.PlayerBridge && window.PlayerBridge.openStationJsonMenu) {\n");
+        js.append("          window.PlayerBridge.openStationJsonMenu(window.__radioIdx, stObj.name || '', stObj.freq || '', stObj.url || '');\n");
+        js.append("        }\n");
         js.append("      }\n");
         js.append("    });\n");
+        js.append("    edBtn.addEventListener('pointerleave', function() { clearTimeout(edTimer); edTimer = null; });\n");
+        js.append("    edBtn.addEventListener('pointercancel', function() { clearTimeout(edTimer); edTimer = null; });\n");
+
         js.append("    document.getElementById('btn-rad-up').addEventListener('click', function() {\n");
         js.append("      var idx = window.__radioIdx;\n");
         js.append("      if (idx <= 0 || idx >= window.__radioStations.length) return;\n");
@@ -436,7 +679,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("      window.__radioStations[idx - 1] = window.__radioStations[idx];\n");
         js.append("      window.__radioStations[idx] = tmp;\n");
         js.append("      window.__radioIdx = idx - 1;\n");
-        js.append("      window.__saveRadioStations();\n");
+        js.append("      window.__saveRadioStations(false);\n");
         js.append("      window.renderPlaylist();\n");
         js.append("    });\n");
         js.append("    document.getElementById('btn-rad-dn').addEventListener('click', function() {\n");
@@ -447,36 +690,17 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("      window.__radioStations[idx + 1] = window.__radioStations[idx];\n");
         js.append("      window.__radioStations[idx] = tmp;\n");
         js.append("      window.__radioIdx = idx + 1;\n");
-        js.append("      window.__saveRadioStations();\n");
+        js.append("      window.__saveRadioStations(false);\n");
         js.append("      window.renderPlaylist();\n");
         js.append("    });\n");
-        js.append("    var delBtn = document.getElementById('btn-rad-del');\n");
-        js.append("    var dTimer = null, dLong = false;\n");
-        js.append("    delBtn.addEventListener('pointerdown', function() {\n");
-        js.append("      clearTimeout(dTimer); dLong = false;\n");
-        js.append("      dTimer = setTimeout(function() {\n");
-        js.append("        dTimer = null; dLong = true;\n");
-        js.append("        if (navigator.vibrate) navigator.vibrate([35, 50, 35]);\n");
-        js.append("        window.__radioStations = defaultStations.slice();\n");
-        js.append("        window.__radioIdx = 0;\n");
-        js.append("        window.__saveRadioStations();\n");
-        js.append("        window.renderPlaylist();\n");
-        js.append("        window.selectRadioStationOnly(0);\n");
-        js.append("      }, 650);\n");
+        js.append("    document.getElementById('btn-rad-del').addEventListener('click', function() {\n");
+        js.append("      if (window.__radioStations.length <= 1) return;\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("      window.__radioStations.splice(window.__radioIdx, 1);\n");
+        js.append("      if (window.__radioIdx >= window.__radioStations.length) window.__radioIdx = window.__radioStations.length - 1;\n");
+        js.append("      window.__saveRadioStations(false);\n");
+        js.append("      window.renderPlaylist();\n");
         js.append("    });\n");
-        js.append("    delBtn.addEventListener('pointerup', function() {\n");
-        js.append("      var wasTap = dTimer !== null; clearTimeout(dTimer); dTimer = null;\n");
-        js.append("      if (wasTap && !dLong) {\n");
-        js.append("        if (window.__radioStations.length <= 1) return;\n");
-        js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
-        js.append("        window.__radioStations.splice(window.__radioIdx, 1);\n");
-        js.append("        if (window.__radioIdx >= window.__radioStations.length) window.__radioIdx = window.__radioStations.length - 1;\n");
-        js.append("        window.__saveRadioStations();\n");
-        js.append("        window.renderPlaylist();\n");
-        js.append("      }\n");
-        js.append("    });\n");
-        js.append("    delBtn.addEventListener('pointerleave', function() { clearTimeout(dTimer); dTimer = null; });\n");
-        js.append("    delBtn.addEventListener('pointercancel', function() { clearTimeout(dTimer); dTimer = null; });\n");
         js.append("  }\n");
 
         js.append("  window.onNativeStationSaved = function(editIdx, name, freq, url) {\n");
@@ -489,7 +713,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("      window.__radioStations.unshift(item);\n");
         js.append("      window.__radioIdx = 0;\n");
         js.append("    }\n");
-        js.append("    window.__saveRadioStations();\n");
+        js.append("    window.__saveRadioStations(false);\n");
         js.append("    window.renderPlaylist();\n");
         js.append("    window.selectRadioStationOnly(window.__radioIdx);\n");
         js.append("  };\n");
@@ -1195,6 +1419,16 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         }
 
         @JavascriptInterface
+        public void saveStationsJson(final String jsonStr, final boolean showToast) {
+            mainHandler.post(() -> saveRadioStationsJsonToDownloads(jsonStr, showToast));
+        }
+
+        @JavascriptInterface
+        public void openStationJsonMenu(final int curIdx, final String name, final String freq, final String url) {
+            mainHandler.post(() -> showStationMenuDialog(curIdx, name, freq, url));
+        }
+
+        @JavascriptInterface
         public void refreshRecordings() {
             mainHandler.post(() -> Toast.makeText(PlayerActivity.this, "Syncing latest files from Google Drive...", Toast.LENGTH_SHORT).show());
             loadLiveGoogleDriveRecordings();
@@ -1265,6 +1499,34 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
                         tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, null);
                     }
                 }
+            });
+        }
+
+        @JavascriptInterface
+        public void showSystemBars() {
+            mainHandler.post(() -> {
+                getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+                mainHandler.postDelayed(() -> hideSystemUI(), 4500);
+            });
+        }
+
+        @JavascriptInterface
+        public void minimizeApp() {
+            mainHandler.post(() -> moveTaskToBack(true));
+        }
+
+        @JavascriptInterface
+        public void exitEntireApp() {
+            mainHandler.post(() -> {
+                stopNativePlayer();
+                try { stopService(new Intent(PlayerActivity.this, AudioKeepAliveService.class)); } catch (Exception ignored) {}
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    finishAffinity();
+                    finishAndRemoveTask();
+                } else {
+                    finishAffinity();
+                }
+                System.exit(0);
             });
         }
 
@@ -1450,6 +1712,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
 
     @Override
     protected void onDestroy() {
+        try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
         mainHandler.removeCallbacks(autoSyncRunnable);
         stopNativePlayer();
         try {
