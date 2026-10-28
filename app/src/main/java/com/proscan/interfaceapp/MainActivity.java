@@ -303,11 +303,21 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void openArchivePlayer() {
+            openPlayerWithMode("archive");
+        }
+
+        @JavascriptInterface
+        public void openBroadcastRadio() {
+            openPlayerWithMode("radio");
+        }
+
+        private void openPlayerWithMode(final String startMode) {
             mainHandler.post(() -> {
                 String base = activeServerUrl;
                 if (base == null || base.isEmpty()) base = webView.getUrl();
                 Intent i = new Intent(MainActivity.this, PlayerActivity.class);
                 i.putExtra("server_url", base != null ? base : "");
+                i.putExtra("start_mode", startMode);
                 startActivity(i);
                 overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
             });
@@ -341,8 +351,8 @@ public class MainActivity extends Activity {
             mainHandler.post(() -> closeAndExitApp());
         }
     }
-
-    private void closeAndExitApp() {
+    // === PASTE PART 2 BELOW THIS LINE ===
+private void closeAndExitApp() {
         setBgServiceRunning(false);
         try {
             if (tts != null) {
@@ -423,6 +433,7 @@ public class MainActivity extends Activity {
         js.append("      st.textContent = '' +\n");
         js.append("        '#device-wrapper{transition:opacity 0.18s ease!important;}' +\n");
         js.append("        '#device-wrapper.flipping-out{opacity:0!important;}' +\n");
+        js.append("        '.scanner-nav-5{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;}' +\n");
         js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:7px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
         js.append("        '.freq-hit-badge, #mini-log-table .freq-hit-badge, #mini-log-table td:nth-child(5) .freq-hit-badge, #mini-log-table td:nth-child(5) span[class*=\"hit\"], #mini-log-table td:nth-child(5) span[class*=\"badge\"]{display:none!important;visibility:hidden!important;width:0!important;height:0!important;padding:0!important;margin:0!important;border:none!important;overflow:hidden!important;font-size:0!important;}' +\n");
         js.append("        '#mini-log-table th,#mini-log-table td{padding:3px 2px 3px 4px!important;}' +\n");
@@ -546,12 +557,15 @@ public class MainActivity extends Activity {
         js.append("      }\n");
         js.append("    }\n");
 
+        /* 1-Click Direct Buttons on Scanner: [ LOG IN ] [ ARCHIVE ] [ RADIO ] [ BRAND ] [ GUIDE ] */
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
+        js.append("      var rowParent = loginBtn.parentNode;\n");
+        js.append("      if (rowParent) rowParent.classList.add('scanner-nav-5');\n");
         js.append("      var newAuthBtn = loginBtn.cloneNode(true);\n");
         js.append("      newAuthBtn.__mergedAuthHooked = true;\n");
-        js.append("      loginBtn.parentNode.replaceChild(newAuthBtn, loginBtn);\n");
+        js.append("      rowParent.replaceChild(newAuthBtn, loginBtn);\n");
         js.append("      function isSuperUserLoggedIn() {\n");
         js.append("        return (document.body.innerText || '').indexOf('Logged In: Super User') !== -1;\n");
         js.append("      }\n");
@@ -573,11 +587,15 @@ public class MainActivity extends Activity {
         js.append("          if (pw) pw.focus();\n");
         js.append("        }\n");
         js.append("      });\n");
-        js.append("      var playerBtn = logoutBtn.cloneNode(true);\n");
-        js.append("      playerBtn.id = 'btn-open-player-app';\n");
-        js.append("      playerBtn.textContent = 'ARCHIVE';\n");
-        js.append("      logoutBtn.parentNode.replaceChild(playerBtn, logoutBtn);\n");
-        js.append("      playerBtn.addEventListener('click', function() {\n");
+        js.append("      var archiveBtn = logoutBtn.cloneNode(true);\n");
+        js.append("      archiveBtn.id = 'btn-open-player-app';\n");
+        js.append("      archiveBtn.textContent = 'ARCHIVE';\n");
+        js.append("      var radioBtn = logoutBtn.cloneNode(true);\n");
+        js.append("      radioBtn.id = 'btn-open-radio-app';\n");
+        js.append("      radioBtn.textContent = 'RADIO';\n");
+        js.append("      rowParent.replaceChild(archiveBtn, logoutBtn);\n");
+        js.append("      rowParent.insertBefore(radioBtn, archiveBtn.nextSibling);\n");
+        js.append("      archiveBtn.addEventListener('click', function() {\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
         js.append("        if (window.__syncThemeInMem) window.__syncThemeInMem();\n");
         js.append("        var wrap = document.getElementById('device-wrapper');\n");
@@ -585,6 +603,17 @@ public class MainActivity extends Activity {
         js.append("        setTimeout(function() {\n");
         js.append("          if (window.AndroidApp && window.AndroidApp.openArchivePlayer) {\n");
         js.append("            window.AndroidApp.openArchivePlayer();\n");
+        js.append("          }\n");
+        js.append("        }, 160);\n");
+        js.append("      });\n");
+        js.append("      radioBtn.addEventListener('click', function() {\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("        if (window.__syncThemeInMem) window.__syncThemeInMem();\n");
+        js.append("        var wrap = document.getElementById('device-wrapper');\n");
+        js.append("        if (wrap) wrap.classList.add('flipping-out');\n");
+        js.append("        setTimeout(function() {\n");
+        js.append("          if (window.AndroidApp && window.AndroidApp.openBroadcastRadio) {\n");
+        js.append("            window.AndroidApp.openBroadcastRadio();\n");
         js.append("          }\n");
         js.append("        }, 160);\n");
         js.append("      });\n");
