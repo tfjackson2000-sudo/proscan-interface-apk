@@ -261,7 +261,6 @@ public class PlayerActivity extends Activity {
         js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}';\n");
         js.append("  document.head.appendChild(st);\n");
         // === PASTE PLAYER PART 2 BELOW THIS LINE ===
-
 js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
         js.append("    var wWrap = document.createElement('div');\n");
@@ -330,7 +329,6 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("    }\n");
         js.append("  }\n");
 
-        /* Verified Live UK Streams (Uses v3 key so updated talkSPORT & talkSPORT 2 streams load automatically!) */
         js.append("  var defaultStations = [\n");
         js.append("    { name: 'BBC Radio 5 Live', freq: '909 AM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_five_live&bitrate=128000' },\n");
         js.append("    { name: 'BBC Radio 5 Sports Extra', freq: 'DAB+', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_five_live_sports_extra&bitrate=128000' },\n");
@@ -355,7 +353,6 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  window.__radioIdx = 0;\n");
         js.append("  window.__activeRadioUrl = '';\n");
 
-        /* Hybrid WebAudio + Native Stream Engine (Allows Chromium to follow 302 token redirects for talkSPORT, while Native handles HLS!) */
         js.append("  window.__webStreamAudio = new Audio();\n");
         js.append("  window.__webStreamAudio.crossOrigin = 'anonymous';\n");
         js.append("  window.__startHybridLiveStream = function(url) {\n");
@@ -722,11 +719,7 @@ js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("          if (window.__playlistIsDragging) return;\n");
         js.append("          if (navigator.vibrate) navigator.vibrate(15);\n");
         js.append("          var idx = parseInt(el.getAttribute('data-ridx'), 10);\n");
-        js.append("          if (window.__radioIdx === idx && (!isPlayingNow || window.__activeRadioUrl !== window.__radioStations[idx].url)) {\n");
-        js.append("            window.playRadioStationIndex(idx);\n");
-        js.append("          } else {\n");
-        js.append("            window.selectRadioStationOnly(idx);\n");
-        js.append("          }\n");
+        js.append("          window.playRadioStationIndex(idx);\n");
         js.append("        });\n");
         js.append("      });\n");
         js.append("      return;\n");
