@@ -13,6 +13,7 @@ import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -23,6 +24,8 @@ import android.speech.tts.TextToSpeech;
 import android.text.InputType;
 import android.view.View;
 import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -205,6 +208,41 @@ public class PlayerActivity extends Activity {
 
         setContentView(playerWeb);
         playerWeb.loadUrl("file:///android_asset/player_ui.html");
+    }
+
+    private String getNativeBatteryStatus() {
+        try {
+            IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+            Intent b = registerReceiver(null, ifilter);
+            if (b != null) {
+                int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+                int status = b.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+                boolean charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
+                if (level >= 0 && scale > 0) {
+                    int pct = Math.round((level * 100f) / scale);
+                    return (charging ? "⚡" : "") + pct + "%";
+                }
+            }
+        } catch (Exception ignored) {}
+        return "";
+    }
+
+    private void showBothSystemBarsNow() {
+        try {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            );
+            if (Build.VERSION.SDK_INT >= 30) {
+                WindowInsetsController ic = getWindow().getInsetsController();
+                if (ic != null) {
+                    ic.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     private void applyPlayerWakeLock(boolean keepOn) {
@@ -412,11 +450,41 @@ public class PlayerActivity extends Activity {
         js.append("    '#btn-player-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-left:6px;cursor:pointer;touch-action:manipulation;}' +\n");
         js.append("    '#btn-player-exit .exit-cap{width:22px;height:10px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}' +\n");
         js.append("    '#btn-player-exit .exit-cap::after{content:\"\";width:7px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}' +\n");
-        js.append("    '#btn-player-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}';\n");
+        js.append("    '#btn-player-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
+        js.append("    '#player-bat-hud{display:inline-flex;align-items:center;gap:3px;margin-right:7px;font-family:\"JetBrains Mono\",monospace;font-size:10px;font-weight:800;color:var(--log-text);}' +\n");
+        js.append("    '.bat-icon-box{display:inline-block;width:15px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;}' +\n");
+        js.append("    '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
+        js.append("    '.bat-icon-fill{height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("  document.head.appendChild(st);\n");
         // === PASTE PLAYER PART 2 BELOW THIS LINE ===
+/* Inject Live Battery + Percentage Indicator right next to Clock in Top-Right of Archive & Radio Screen */
+        js.append("  var pClk = document.getElementById('player-clock-hud');\n");
+        js.append("  if (pClk && !document.getElementById('player-bat-hud')) {\n");
+        js.append("    var rTopWrap = document.createElement('span');\n");
+        js.append("    rTopWrap.style.cssText = 'display:inline-flex;align-items:center;';\n");
+        js.append("    pClk.parentNode.insertBefore(rTopWrap, pClk);\n");
+        js.append("    var pBat = document.createElement('span');\n");
+        js.append("    pBat.id = 'player-bat-hud';\n");
+        js.append("    pBat.innerHTML = '<span class=\"bat-icon-box\"><span class=\"bat-icon-fill\" id=\"player-bat-fill\"></span></span><span id=\"player-bat-txt\">--%</span>';\n");
+        js.append("    rTopWrap.appendChild(pBat);\n");
+        js.append("    rTopWrap.appendChild(pClk);\n");
+        js.append("    function updatePlayerBattery() {\n");
+        js.append("      if (window.PlayerBridge && typeof window.PlayerBridge.getBatteryStatus === 'function') {\n");
+        js.append("        var bStr = window.PlayerBridge.getBatteryStatus() || '';\n");
+        js.append("        var bTxt = document.getElementById('player-bat-txt');\n");
+        js.append("        var bFill = document.getElementById('player-bat-fill');\n");
+        js.append("        if (bTxt && bStr) bTxt.innerText = bStr;\n");
+        js.append("        if (bFill && bStr) {\n");
+        js.append("          var num = parseInt(bStr.replace(/[^0-9]/g, ''), 10) || 0;\n");
+        js.append("          bFill.style.width = Math.max(8, Math.min(100, num)) + '%';\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("    }\n");
+        js.append("    updatePlayerBattery();\n");
+        js.append("    setInterval(updatePlayerBattery, 10000);\n");
+        js.append("  }\n");
 
-/* Add WAKE indicator/toggle on left of middle bar + Red Hardware EXIT (Off) button on right of middle bar! */
+        /* Add WAKE indicator/toggle on left of middle bar + Red Hardware EXIT (Off) button on right of middle bar! */
         js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
         js.append("    var wWrap = document.createElement('div');\n");
@@ -638,7 +706,7 @@ public class PlayerActivity extends Activity {
         js.append("      window.renderPlaylist();\n");
         js.append("    });\n");
 
-        /* 5-Button Station Bar: [ + ADD ] [ EDIT / JSON ] [ ▲ UP ] [ ▼ DN ] [ DEL ] (Hold EDIT for JSON Save/Load Menu!) */
+        /* 5-Button Station Bar: [ + ADD ] [ EDIT / JSON ] [ ▲ UP ] [ ▼ DN ] [ DEL ] */
         js.append("    var rBar = document.createElement('div');\n");
         js.append("    rBar.id = 'radio-crud-row'; rBar.className = 'radio-crud-bar';\n");
         js.append("    rBar.innerHTML = '<button class=\"btn\" type=\"button\" id=\"btn-rad-add\">+ ADD</button><button class=\"btn\" type=\"button\" id=\"btn-rad-edit\" title=\"Tap=Edit / Hold=JSON Backup\">EDIT/JSON</button><button class=\"btn\" type=\"button\" id=\"btn-rad-up\">&#9650; UP</button><button class=\"btn\" type=\"button\" id=\"btn-rad-dn\">&#9660; DN</button><button class=\"btn\" type=\"button\" id=\"btn-rad-del\">DEL</button>';\n");
@@ -1403,6 +1471,9 @@ public class PlayerActivity extends Activity {
         public String getServerUrl() { return serverBaseUrl; }
 
         @JavascriptInterface
+        public String getBatteryStatus() { return getNativeBatteryStatus(); }
+
+        @JavascriptInterface
         public void setWakeLock(final boolean keepOn) {
             mainHandler.post(() -> {
                 applyPlayerWakeLock(keepOn);
@@ -1506,7 +1577,7 @@ public class PlayerActivity extends Activity {
         @JavascriptInterface
         public void showSystemBars() {
             mainHandler.post(() -> {
-                getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+                showBothSystemBarsNow();
                 mainHandler.postDelayed(() -> hideSystemUI(), 4500);
             });
         }
@@ -1693,14 +1764,24 @@ public class PlayerActivity extends Activity {
     }
 
     private void hideSystemUI() {
-        getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN
-        );
+        try {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN
+            );
+            if (Build.VERSION.SDK_INT >= 30) {
+                WindowInsetsController ic = getWindow().getInsetsController();
+                if (ic != null) {
+                    ic.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    ic.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     @Override
