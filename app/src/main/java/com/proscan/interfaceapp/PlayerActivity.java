@@ -83,7 +83,6 @@ public class PlayerActivity extends Activity {
     private volatile int currentStreamReqId = 0;
     private float[] currentEnvelope = new float[0];
 
-    /* Stop Archive or Broadcast Radio immediately if Bluetooth headphones are taken off / disconnected! */
     private final BroadcastReceiver noisyAudioReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -302,8 +301,8 @@ public class PlayerActivity extends Activity {
             }
         }
     }
-
-    @Override
+    // === PASTE PLAYER PART 2 BELOW THIS LINE ===
+@Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQ_LOAD_RADIO_JSON && resultCode == RESULT_OK && data != null && data.getData() != null) {
@@ -451,23 +450,21 @@ public class PlayerActivity extends Activity {
         js.append("    '#btn-player-exit .exit-cap{width:22px;height:10px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}' +\n");
         js.append("    '#btn-player-exit .exit-cap::after{content:\"\";width:7px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}' +\n");
         js.append("    '#btn-player-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
-        js.append("    '#player-bat-hud{display:inline-flex;align-items:center;gap:3px;margin-right:7px;font-family:\"JetBrains Mono\",monospace;font-size:10px;font-weight:800;color:var(--log-text);}' +\n");
-        js.append("    '.bat-icon-box{display:inline-block;width:15px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;}' +\n");
+        js.append("    '#player-bat-hud{display:inline-flex;align-items:center;gap:3px;font-family:\"JetBrains Mono\",monospace;font-size:10px;font-weight:800;color:var(--log-text);}' +\n");
+        js.append("    '.bat-icon-box{display:inline-block;width:15px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;margin-right:3px;}' +\n");
         js.append("    '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
-        js.append("    '.bat-icon-fill{height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
+        js.append("    '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("  document.head.appendChild(st);\n");
-        // === PASTE PLAYER PART 2 BELOW THIS LINE ===
-/* Inject Live Battery + Percentage Indicator right next to Clock in Top-Right of Archive & Radio Screen */
+
+        /* Mirror Phone Status Bar: Put 24h Time on Top-Left, Mode HUD in Center, and Battery + % on Top-Right! */
         js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  if (pClk && !document.getElementById('player-bat-hud')) {\n");
-        js.append("    var rTopWrap = document.createElement('span');\n");
-        js.append("    rTopWrap.style.cssText = 'display:inline-flex;align-items:center;';\n");
-        js.append("    pClk.parentNode.insertBefore(rTopWrap, pClk);\n");
+        js.append("    var topBar = pClk.parentNode;\n");
         js.append("    var pBat = document.createElement('span');\n");
         js.append("    pBat.id = 'player-bat-hud';\n");
         js.append("    pBat.innerHTML = '<span class=\"bat-icon-box\"><span class=\"bat-icon-fill\" id=\"player-bat-fill\"></span></span><span id=\"player-bat-txt\">--%</span>';\n");
-        js.append("    rTopWrap.appendChild(pBat);\n");
-        js.append("    rTopWrap.appendChild(pClk);\n");
+        js.append("    topBar.insertBefore(pClk, topBar.firstChild);\n");
+        js.append("    topBar.appendChild(pBat);\n");
         js.append("    function updatePlayerBattery() {\n");
         js.append("      if (window.PlayerBridge && typeof window.PlayerBridge.getBatteryStatus === 'function') {\n");
         js.append("        var bStr = window.PlayerBridge.getBatteryStatus() || '';\n");
@@ -507,7 +504,7 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
-        /* Add Red Hardware EXIT (Off) Button on the right side of the status bar (Hold = Power Off App, Double-Tap = Minimize, Tap = System Bars) */
+        /* Add Red Hardware EXIT (Off) Button on the right side of the status bar */
         js.append("  var contHud = document.getElementById('cont-status-hud');\n");
         js.append("  if (contHud && !document.getElementById('btn-player-exit')) {\n");
         js.append("    var rWrap = document.createElement('div');\n");
@@ -546,8 +543,8 @@ public class PlayerActivity extends Activity {
         js.append("    exBtn.addEventListener('pointerleave', function() { clearTimeout(exTimer); exTimer = null; });\n");
         js.append("    exBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
         js.append("  }\n");
-
-        /* Helper that immediately kills BOTH WebAudio and Native MediaPlayer so two streams never overlap! */
+        // === PASTE PLAYER PART 3 BELOW THIS LINE ===
+/* Helper that immediately kills BOTH WebAudio and Native MediaPlayer so two streams never overlap! */
         js.append("  window.__stopAllRadioAndNativeAudio = function() {\n");
         js.append("    window.__streamLaunchToken = (window.__streamLaunchToken || 0) + 1;\n");
         js.append("    if (window.__webStreamAudio) {\n");
@@ -627,7 +624,6 @@ public class PlayerActivity extends Activity {
         js.append("    }\n");
         js.append("  } catch(e) { window.__radioStations = defaultStations.slice(); }\n");
 
-        /* Auto-sync stations to SharedPreferences + JSON whenever modified! */
         js.append("  window.__saveRadioStations = function(exportToDownloads) {\n");
         js.append("    try {\n");
         js.append("      var sJson = JSON.stringify(window.__radioStations);\n");
@@ -664,7 +660,6 @@ public class PlayerActivity extends Activity {
         js.append("  window.__radioIdx = 0;\n");
         js.append("  window.__activeRadioUrl = '';\n");
 
-        /* Hybrid WebAudio + Native Stream Engine: Always stops BOTH engines before starting a new stream! */
         js.append("  window.__webStreamAudio = new Audio();\n");
         js.append("  window.__webStreamAudio.crossOrigin = 'anonymous';\n");
         js.append("  window.__startHybridLiveStream = function(url) {\n");
@@ -706,7 +701,6 @@ public class PlayerActivity extends Activity {
         js.append("      window.renderPlaylist();\n");
         js.append("    });\n");
 
-        /* 5-Button Station Bar: [ + ADD ] [ EDIT / JSON ] [ ▲ UP ] [ ▼ DN ] [ DEL ] */
         js.append("    var rBar = document.createElement('div');\n");
         js.append("    rBar.id = 'radio-crud-row'; rBar.className = 'radio-crud-bar';\n");
         js.append("    rBar.innerHTML = '<button class=\"btn\" type=\"button\" id=\"btn-rad-add\">+ ADD</button><button class=\"btn\" type=\"button\" id=\"btn-rad-edit\" title=\"Tap=Edit / Hold=JSON Backup\">EDIT/JSON</button><button class=\"btn\" type=\"button\" id=\"btn-rad-up\">&#9650; UP</button><button class=\"btn\" type=\"button\" id=\"btn-rad-dn\">&#9660; DN</button><button class=\"btn\" type=\"button\" id=\"btn-rad-del\">DEL</button>';\n");
@@ -715,31 +709,12 @@ public class PlayerActivity extends Activity {
         js.append("    document.getElementById('btn-rad-add').addEventListener('click', function() {\n");
         js.append("      if (window.PlayerBridge && window.PlayerBridge.showStationDialog) window.PlayerBridge.showStationDialog(-1, '', '', '');\n");
         js.append("    });\n");
-        js.append("    var edBtn = document.getElementById('btn-rad-edit');\n");
-        js.append("    var edTimer = null, edLong = false;\n");
-        js.append("    edBtn.addEventListener('pointerdown', function() {\n");
-        js.append("      clearTimeout(edTimer); edLong = false;\n");
-        js.append("      edTimer = setTimeout(function() {\n");
-        js.append("        edTimer = null; edLong = true;\n");
-        js.append("        if (navigator.vibrate) navigator.vibrate(30);\n");
-        js.append("        var stObj = window.__radioStations[window.__radioIdx] || {};\n");
-        js.append("        if (window.PlayerBridge && window.PlayerBridge.openStationJsonMenu) {\n");
-        js.append("          window.PlayerBridge.openStationJsonMenu(window.__radioIdx, stObj.name || '', stObj.freq || '', stObj.url || '');\n");
-        js.append("        }\n");
-        js.append("      }, 500);\n");
-        js.append("    });\n");
-        js.append("    edBtn.addEventListener('pointerup', function() {\n");
-        js.append("      var wasTap = edTimer !== null; clearTimeout(edTimer); edTimer = null;\n");
-        js.append("      if (wasTap && !edLong) {\n");
-        js.append("        var stObj = window.__radioStations[window.__radioIdx] || {};\n");
-        js.append("        if (window.PlayerBridge && window.PlayerBridge.openStationJsonMenu) {\n");
-        js.append("          window.PlayerBridge.openStationJsonMenu(window.__radioIdx, stObj.name || '', stObj.freq || '', stObj.url || '');\n");
-        js.append("        }\n");
+        js.append("    document.getElementById('btn-rad-edit').addEventListener('click', function() {\n");
+        js.append("      var stObj = window.__radioStations[window.__radioIdx] || {};\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.openStationJsonMenu) {\n");
+        js.append("        window.PlayerBridge.openStationJsonMenu(window.__radioIdx, stObj.name || '', stObj.freq || '', stObj.url || '');\n");
         js.append("      }\n");
         js.append("    });\n");
-        js.append("    edBtn.addEventListener('pointerleave', function() { clearTimeout(edTimer); edTimer = null; });\n");
-        js.append("    edBtn.addEventListener('pointercancel', function() { clearTimeout(edTimer); edTimer = null; });\n");
-
         js.append("    document.getElementById('btn-rad-up').addEventListener('click', function() {\n");
         js.append("      var idx = window.__radioIdx;\n");
         js.append("      if (idx <= 0 || idx >= window.__radioStations.length) return;\n");
@@ -786,8 +761,8 @@ public class PlayerActivity extends Activity {
         js.append("    window.renderPlaylist();\n");
         js.append("    window.selectRadioStationOnly(window.__radioIdx);\n");
         js.append("  };\n");
-
-        js.append("  var mb = document.getElementById('mech-bay');\n");
+        // === PASTE PLAYER PART 3B BELOW THIS LINE ===
+js.append("  var mb = document.getElementById('mech-bay');\n");
         js.append("  if (mb && !document.getElementById('deck-global-badge')) {\n");
         js.append("    var bdg = document.createElement('div'); bdg.id = 'deck-global-badge'; bdg.className = 'deck-track-badge';\n");
         js.append("    bdg.innerHTML = '<span id=\"badge-ch-name\">READY // SELECT TRACK</span><span id=\"badge-ch-freq\">---.----</span>';\n");
@@ -984,8 +959,8 @@ public class PlayerActivity extends Activity {
         js.append("      window.__startHybridLiveStream(stObj.url);\n");
         js.append("    }\n");
         js.append("  };\n");
-
-        js.append("  window.setAppMode = function(radioMode, skipAnim) {\n");
+        // === PASTE PLAYER PART 3C BELOW THIS LINE ===
+js.append("  window.setAppMode = function(radioMode, skipAnim) {\n");
         js.append("    var dw = document.getElementById('device-wrapper');\n");
         js.append("    if (dw && !skipAnim) dw.classList.add('fading-out');\n");
         js.append("    setTimeout(function() {\n");
@@ -1214,8 +1189,8 @@ public class PlayerActivity extends Activity {
 
         if (playerWeb != null) playerWeb.evaluateJavascript(js.toString(), null);
     }
-
-    private void stopNativePlayer() {
+    // === PASTE PLAYER PART 3D BELOW THIS LINE ===
+private void stopNativePlayer() {
         currentStreamReqId++;
         mainHandler.removeCallbacks(progressTicker);
         isLiveRadioStream = false;
