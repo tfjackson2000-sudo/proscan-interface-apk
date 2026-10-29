@@ -532,31 +532,22 @@ public class MainActivity extends Activity {
         js.append("        '@keyframes voice-led-pulse-green{0%,100%{background-color:#10b981;border-color:#a7f3d0;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.9),0 0 0 1px rgba(0,0,0,0.65),0 0 8px #10b981,0 0 14px rgba(16,185,129,0.75);}50%{background-color:#065f46;border-color:#059669;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.35),0 0 0 1px rgba(0,0,0,0.65),0 0 2px rgba(16,185,129,0.25);}}' +\n");
         js.append("        '#btn-voice-toggle.active #voice-led{border-style:solid!important;border-width:2px!important;animation:voice-led-pulse-green 3.8s ease-in-out infinite!important;}' +\n");
         js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:24px;height:11px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
-        js.append("        '#scanner-bat-hud{display:inline-flex;align-items:center;gap:3px;margin-right:6px;font-family:\"JetBrains Mono\",monospace;font-size:10px;font-weight:800;color:var(--log-text);}' +\n");
-        js.append("        '.bat-icon-box{display:inline-block;width:15px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;}' +\n");
-        js.append("        '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
-        js.append("        '.bat-icon-fill{height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
+        /* Embed Battery directly BEFORE #clock-display via ::before pseudo-element + CSS variable so it sits flush-right AND inherits 100% of #clock-display's glitch/flicker/CRT animations! */
+        js.append("        '#clock-display::before{content:var(--scanner-bat-label,\"\");margin-right:7px;opacity:0.95;}';\n");
         js.append("      document.head.appendChild(st);\n");
         js.append("    } else if (existingSt && document.head.lastElementChild !== existingSt) {\n");
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Inject Live Battery + Percentage Indicator into Top-Right of Scanner LCD Screen */
-        js.append("    var clkEl = document.getElementById('clock-display') || document.querySelector('[id*=\"clock\"]');\n");
-        js.append("    if (clkEl && !document.getElementById('scanner-bat-hud')) {\n");
-        js.append("      var batSpan = document.createElement('span');\n");
-        js.append("      batSpan.id = 'scanner-bat-hud';\n");
-        js.append("      batSpan.innerHTML = '<span class=\"bat-icon-box\"><span class=\"bat-icon-fill\" id=\"scanner-bat-fill\"></span></span><span id=\"scanner-bat-txt\">--%</span>';\n");
-        js.append("      clkEl.parentNode.insertBefore(batSpan, clkEl);\n");
-        js.append("    }\n");
+        /* Remove any old standalone #scanner-bat-hud and feed Battery directly into #clock-display::before so it sits flush right and glitches in sync with the clock! */
+        js.append("    var oldBat = document.getElementById('scanner-bat-hud');\n");
+        js.append("    if (oldBat) oldBat.remove();\n");
         js.append("    if (window.AndroidApp && typeof window.AndroidApp.getBatteryStatus === 'function') {\n");
         js.append("      var bStr = window.AndroidApp.getBatteryStatus() || '';\n");
-        js.append("      var bTxt = document.getElementById('scanner-bat-txt');\n");
-        js.append("      var bFill = document.getElementById('scanner-bat-fill');\n");
-        js.append("      if (bTxt && bStr) bTxt.innerText = bStr;\n");
-        js.append("      if (bFill && bStr) {\n");
+        js.append("      if (bStr) {\n");
         js.append("        var num = parseInt(bStr.replace(/[^0-9]/g, ''), 10) || 0;\n");
-        js.append("        bFill.style.width = Math.max(8, Math.min(100, num)) + '%';\n");
+        js.append("        var bars = num >= 80 ? '▮▮▮' : (num >= 40 ? '▮▮▯' : '▮▯▯');\n");
+        js.append("        document.documentElement.style.setProperty('--scanner-bat-label', '\"[' + bars + ' ' + bStr + ']\"');\n");
         js.append("      }\n");
         js.append("    }\n");
 
