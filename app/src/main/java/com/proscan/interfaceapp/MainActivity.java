@@ -11,6 +11,7 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.media.AudioManager;
 import android.net.Uri;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -21,6 +22,8 @@ import android.speech.tts.TextToSpeech;
 import android.text.InputType;
 import android.view.View;
 import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -160,6 +163,24 @@ public class MainActivity extends Activity {
         }
     }
 
+    private String getNativeBatteryStatus() {
+        try {
+            IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+            Intent b = registerReceiver(null, ifilter);
+            if (b != null) {
+                int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+                int status = b.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+                boolean charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
+                if (level >= 0 && scale > 0) {
+                    int pct = Math.round((level * 100f) / scale);
+                    return (charging ? "⚡" : "") + pct + "%";
+                }
+            }
+        } catch (Exception ignored) {}
+        return "";
+    }
+
     private void setBgServiceRunning(boolean enable) {
         bgAudioModeEnabled = enable;
         Intent svc = new Intent(this, AudioKeepAliveService.class);
@@ -256,7 +277,6 @@ public class MainActivity extends Activity {
         }
     }
     // === PASTE MAINACTIVITY PART 2 BELOW THIS LINE ===
-
 @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -290,6 +310,11 @@ public class MainActivity extends Activity {
     }
 
     public class WebAppBridge {
+        @JavascriptInterface
+        public String getBatteryStatus() {
+            return getNativeBatteryStatus();
+        }
+
         @JavascriptInterface
         public void setKeepScreenOn(final boolean keepOn) {
             mainHandler.post(() -> {
@@ -369,7 +394,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void showSystemBars() {
             mainHandler.post(() -> {
-                getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+                showBothSystemBarsNow();
                 mainHandler.postDelayed(() -> hideSystemUI(), 4500);
             });
         }
@@ -383,6 +408,23 @@ public class MainActivity extends Activity {
         public void exitApp() {
             mainHandler.post(() -> closeAndExitApp());
         }
+    }
+
+    private void showBothSystemBarsNow() {
+        try {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            );
+            if (Build.VERSION.SDK_INT >= 30) {
+                WindowInsetsController ic = getWindow().getInsetsController();
+                if (ic != null) {
+                    ic.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     private void closeAndExitApp() {
@@ -489,10 +531,33 @@ public class MainActivity extends Activity {
         js.append("        '#voice-led{flex-shrink:0;width:10px;height:10px;border-radius:50%;background-color:var(--led-off-bg,#1a1a1a);border:var(--led-off-border,2px solid #000);box-shadow:var(--led-off-shadow,inset 1px 1px 3px rgba(0,0,0,0.8),0 1px 1px rgba(255,255,255,0.1));transition:all 0.3s ease;}' +\n");
         js.append("        '@keyframes voice-led-pulse-green{0%,100%{background-color:#10b981;border-color:#a7f3d0;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.9),0 0 0 1px rgba(0,0,0,0.65),0 0 8px #10b981,0 0 14px rgba(16,185,129,0.75);}50%{background-color:#065f46;border-color:#059669;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.35),0 0 0 1px rgba(0,0,0,0.65),0 0 2px rgba(16,185,129,0.25);}}' +\n");
         js.append("        '#btn-voice-toggle.active #voice-led{border-style:solid!important;border-width:2px!important;animation:voice-led-pulse-green 3.8s ease-in-out infinite!important;}' +\n");
-        js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:24px;height:11px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}';\n");
+        js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:24px;height:11px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
+        js.append("        '#scanner-bat-hud{display:inline-flex;align-items:center;gap:3px;margin-right:6px;font-family:\"JetBrains Mono\",monospace;font-size:10px;font-weight:800;color:var(--log-text);}' +\n");
+        js.append("        '.bat-icon-box{display:inline-block;width:15px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;}' +\n");
+        js.append("        '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
+        js.append("        '.bat-icon-fill{height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("      document.head.appendChild(st);\n");
         js.append("    } else if (existingSt && document.head.lastElementChild !== existingSt) {\n");
         js.append("      document.head.appendChild(existingSt);\n");
+        js.append("    }\n");
+
+        /* Inject Live Battery + Percentage Indicator into Top-Right of Scanner LCD Screen */
+        js.append("    var clkEl = document.getElementById('clock-display') || document.querySelector('[id*=\"clock\"]');\n");
+        js.append("    if (clkEl && !document.getElementById('scanner-bat-hud')) {\n");
+        js.append("      var batSpan = document.createElement('span');\n");
+        js.append("      batSpan.id = 'scanner-bat-hud';\n");
+        js.append("      batSpan.innerHTML = '<span class=\"bat-icon-box\"><span class=\"bat-icon-fill\" id=\"scanner-bat-fill\"></span></span><span id=\"scanner-bat-txt\">--%</span>';\n");
+        js.append("      clkEl.parentNode.insertBefore(batSpan, clkEl);\n");
+        js.append("    }\n");
+        js.append("    if (window.AndroidApp && typeof window.AndroidApp.getBatteryStatus === 'function') {\n");
+        js.append("      var bStr = window.AndroidApp.getBatteryStatus() || '';\n");
+        js.append("      var bTxt = document.getElementById('scanner-bat-txt');\n");
+        js.append("      var bFill = document.getElementById('scanner-bat-fill');\n");
+        js.append("      if (bTxt && bStr) bTxt.innerText = bStr;\n");
+        js.append("      if (bFill && bStr) {\n");
+        js.append("        var num = parseInt(bStr.replace(/[^0-9]/g, ''), 10) || 0;\n");
+        js.append("        bFill.style.width = Math.max(8, Math.min(100, num)) + '%';\n");
+        js.append("      }\n");
         js.append("    }\n");
 
         js.append("    window.__stripHitBadgesFromLog = function() {\n");
@@ -650,9 +715,11 @@ public class MainActivity extends Activity {
         js.append("      });\n");
         js.append("    }\n");
 
+        /* Upgraded Reliable VOICE Log Reader (Catches every new top row & in-place updates at 0.35f volume!) */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
         js.append("      window.__voiceReadoutEnabled = false;\n");
+        js.append("      window.__lastSpokenRowKey = '';\n");
         js.append("      window.__lastSpokenChannel = '';\n");
         js.append("      window.__lastSpokenTime = 0;\n");
         js.append("      function speakTextNow(txt) {\n");
@@ -679,26 +746,37 @@ public class MainActivity extends Activity {
         js.append("      ledsLeft.appendChild(vBtn);\n");
         js.append("      var logBody = document.getElementById('mini-log-data');\n");
         js.append("      if (logBody) {\n");
-        js.append("        new MutationObserver(function() {\n");
+        js.append("        function checkTopLogRowForSpeech() {\n");
         js.append("          if (window.__stripHitBadgesFromLog) window.__stripHitBadgesFromLog();\n");
         js.append("          if (!window.__voiceReadoutEnabled) return;\n");
-        js.append("          var newRow = logBody.querySelector('tr.new-log-row');\n");
-        js.append("          if (newRow && newRow.children.length >= 5) {\n");
-        js.append("            var nameTd = newRow.children[4];\n");
-        js.append("            var rawTitle = nameTd.getAttribute('title') || nameTd.innerText || '';\n");
-        js.append("            var closeParen = rawTitle.indexOf(')');\n");
-        js.append("            var chName = (closeParen !== -1 ? rawTitle.slice(closeParen + 1) : rawTitle).trim();\n");
-        js.append("            if (!chName || chName === '---') chName = (newRow.children[1].innerText || '').trim();\n");
-        js.append("            var now = Date.now();\n");
-        js.append("            if (chName && (chName !== window.__lastSpokenChannel || (now - window.__lastSpokenTime) > 15000)) {\n");
-        js.append("              window.__lastSpokenChannel = chName;\n");
-        js.append("              window.__lastSpokenTime = now;\n");
-        js.append("              setTimeout(function() {\n");
-        js.append("                if (window.__voiceReadoutEnabled) speakTextNow(chName);\n");
-        js.append("              }, 350);\n");
-        js.append("            }\n");
+        js.append("          var topRow = logBody.querySelector('tr.new-log-row') || logBody.querySelector('tr');\n");
+        js.append("          if (!topRow || topRow.children.length < 5) return;\n");
+        js.append("          var timeStr = (topRow.children[0].textContent || '').trim();\n");
+        js.append("          var freqStr = (topRow.children[1].textContent || '').trim();\n");
+        js.append("          var nameTd = topRow.children[4];\n");
+        js.append("          var rawTitle = nameTd.getAttribute('title') || '';\n");
+        js.append("          if (!rawTitle) {\n");
+        js.append("            var cloneTd = nameTd.cloneNode(true);\n");
+        js.append("            cloneTd.querySelectorAll('.freq-hit-badge').forEach(function(b){ b.remove(); });\n");
+        js.append("            rawTitle = cloneTd.textContent || '';\n");
         js.append("          }\n");
-        js.append("        }).observe(logBody, { childList: true, subtree: true });\n");
+        js.append("          var closeParen = rawTitle.indexOf(')');\n");
+        js.append("          var chName = (closeParen !== -1 ? rawTitle.slice(closeParen + 1) : rawTitle).replace(/^[×xX]\\s*\\d+\\s*/, '').trim();\n");
+        js.append("          if (!chName || chName === '---') chName = freqStr;\n");
+        js.append("          if (!chName) return;\n");
+        js.append("          var rowKey = timeStr + '|' + freqStr + '|' + chName;\n");
+        js.append("          var now = Date.now();\n");
+        js.append("          if (rowKey !== window.__lastSpokenRowKey && (chName !== window.__lastSpokenChannel || (now - window.__lastSpokenTime) > 4500)) {\n");
+        js.append("            window.__lastSpokenRowKey = rowKey;\n");
+        js.append("            window.__lastSpokenChannel = chName;\n");
+        js.append("            window.__lastSpokenTime = now;\n");
+        js.append("            setTimeout(function() {\n");
+        js.append("              if (window.__voiceReadoutEnabled) speakTextNow(chName);\n");
+        js.append("            }, 250);\n");
+        js.append("          }\n");
+        js.append("        }\n");
+        js.append("        new MutationObserver(checkTopLogRowForSpeech).observe(logBody, { childList: true, subtree: true, characterData: true });\n");
+        js.append("        setInterval(checkTopLogRowForSpeech, 1200);\n");
         js.append("      }\n");
         js.append("    }\n");
 
@@ -959,14 +1037,24 @@ public class MainActivity extends Activity {
     }
 
     private void hideSystemUI() {
-        getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN
-        );
+        try {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN
+            );
+            if (Build.VERSION.SDK_INT >= 30) {
+                WindowInsetsController ic = getWindow().getInsetsController();
+                if (ic != null) {
+                    ic.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    ic.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     @Override
