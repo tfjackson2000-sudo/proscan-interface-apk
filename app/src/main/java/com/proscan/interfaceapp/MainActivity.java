@@ -336,9 +336,7 @@ public class MainActivity extends Activity {
         public void setBackgroundAudioMode(final boolean enabled) {
             mainHandler.post(() -> {
                 setBgServiceRunning(enabled);
-                if (enabled) {
-                    Toast.makeText(MainActivity.this, "VLC / Screen-Off Stream: ON", Toast.LENGTH_SHORT).show();
-                }
+                if (enabled) Toast.makeText(MainActivity.this, "VLC / Screen-Off Stream: ON", Toast.LENGTH_SHORT).show();
             });
         }
 
@@ -372,14 +370,10 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void openArchivePlayer() {
-            openPlayerActivityMode("archive");
-        }
+        public void openArchivePlayer() { openPlayerActivityMode("archive"); }
 
         @JavascriptInterface
-        public void openBroadcastRadio() {
-            openPlayerActivityMode("radio");
-        }
+        public void openBroadcastRadio() { openPlayerActivityMode("radio"); }
 
         @JavascriptInterface
         public void autoSavePresetsJson(final String webStorageJson, final boolean notifyUser) {
@@ -400,14 +394,10 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void minimizeApp() {
-            mainHandler.post(() -> moveTaskToBack(true));
-        }
+        public void minimizeApp() { mainHandler.post(() -> moveTaskToBack(true)); }
 
         @JavascriptInterface
-        public void exitApp() {
-            mainHandler.post(() -> closeAndExitApp());
-        }
+        public void exitApp() { mainHandler.post(() -> closeAndExitApp()); }
     }
 
     private void showBothSystemBarsNow() {
@@ -420,9 +410,7 @@ public class MainActivity extends Activity {
             );
             if (Build.VERSION.SDK_INT >= 30) {
                 WindowInsetsController ic = getWindow().getInsetsController();
-                if (ic != null) {
-                    ic.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                }
+                if (ic != null) ic.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
             }
         } catch (Exception ignored) {}
     }
@@ -430,25 +418,10 @@ public class MainActivity extends Activity {
     private void closeAndExitApp() {
         setBgServiceRunning(false);
         try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
-        try {
-            if (tts != null) {
-                tts.stop();
-                tts.shutdown();
-            }
-        } catch (Exception ignored) {}
-        try {
-            if (webView != null) {
-                webView.loadUrl("about:blank");
-                webView.stopLoading();
-                webView.destroy();
-            }
-        } catch (Exception ignored) {}
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            finishAndRemoveTask();
-        } else {
-            finish();
-        }
+        try { if (tts != null) { tts.stop(); tts.shutdown(); } } catch (Exception ignored) {}
+        try { if (webView != null) { webView.loadUrl("about:blank"); webView.stopLoading(); webView.destroy(); } } catch (Exception ignored) {}
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) finishAndRemoveTask();
+        else finish();
         System.exit(0);
     }
 
@@ -471,9 +444,7 @@ public class MainActivity extends Activity {
         webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new WebViewClient() {
             @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return false;
-            }
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return false; }
 
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
@@ -492,8 +463,8 @@ public class MainActivity extends Activity {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 900);
     }
-
-    private void injectEnhancements() {
+    // === PASTE MAINACTIVITY PART 3 BELOW THIS LINE ===
+private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -501,7 +472,6 @@ public class MainActivity extends Activity {
         StringBuilder js = new StringBuilder();
         js.append("(function() {\n");
         js.append("  try {\n");
-
         js.append("    var existingSt = document.getElementById('proscan-v7-upgrade-css');\n");
         js.append("    if (document.head && !existingSt) {\n");
         js.append("      var st = document.createElement('style');\n");
@@ -519,10 +489,6 @@ public class MainActivity extends Activity {
         js.append("        '#mini-log-table th:nth-child(4),#mini-log-table td:nth-child(4){width:14%!important;}' +\n");
         js.append("        '#mini-log-table th:nth-child(5),#mini-log-table td:nth-child(5){width:34%!important;}' +\n");
         js.append("        '#mini-log-table tbody tr{cursor:pointer;}#mini-log-table tbody tr:active{background:rgba(255,255,255,0.15)!important;}' +\n");
-        js.append("        'html[data-skin=\"whiteline\"]{--ui-bg:radial-gradient(circle at 50% 12%,#26292e 0%,#121417 65%,#070809 100%)!important;--ui-bevel:inset 0 2px 3px rgba(255,255,255,0.35),inset 0 -3px 6px rgba(0,0,0,0.9)!important;--btn-bg:linear-gradient(180deg,#2e3238 0%,#181a1e 55%,#0d0e11 100%)!important;--btn-border:1px solid rgba(255,255,255,0.75)!important;--btn-shadow:0 3px 0 #94a3b8,0 4px 6px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.45)!important;--btn-shadow-active:0 0 0 #94a3b8,inset 0 2px 5px rgba(0,0,0,0.95)!important;--btn-active-transform:translateY(3px)!important;}' +\n");
-        js.append("        'html[data-skin=\"tron\"]{--ui-bg:radial-gradient(circle at 50% 12%,#0c2e36 0%,#06161a 65%,#02080a 100%)!important;--ui-bevel:inset 0 2px 3px rgba(0,255,255,0.4),inset 0 -3px 6px rgba(0,0,0,0.9)!important;--btn-bg:linear-gradient(180deg,#103c47 0%,#071f26 55%,#031014 100%)!important;--btn-border:1px solid #00ffff!important;--btn-shadow:0 3px 0 #008b8b,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(180,255,255,0.45)!important;--btn-shadow-active:0 0 0 #008b8b,inset 0 2px 5px rgba(0,0,0,0.95)!important;--btn-active-transform:translateY(3px)!important;}' +\n");
-        js.append("        'html[data-skin=\"neongreen\"]{--ui-bg:radial-gradient(circle at 50% 12%,#11330d 0%,#081906 65%,#030a02 100%)!important;--ui-bevel:inset 0 2px 3px rgba(57,255,20,0.4),inset 0 -3px 6px rgba(0,0,0,0.9)!important;--btn-bg:linear-gradient(180deg,#184212 0%,#0b2108 55%,#051104 100%)!important;--btn-border:1px solid #39ff14!important;--btn-shadow:0 3px 0 #1b8a08,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(190,255,180,0.45)!important;--btn-shadow-active:0 0 0 #1b8a08,inset 0 2px 5px rgba(0,0,0,0.95)!important;--btn-active-transform:translateY(3px)!important;}' +\n");
-        js.append("        'html[data-skin=\"amber\"]{--ui-bg:radial-gradient(circle at 50% 12%,#332406 0%,#1a1203 65%,#0a0701 100%)!important;--ui-bevel:inset 0 2px 3px rgba(255,176,0,0.4),inset 0 -3px 6px rgba(0,0,0,0.9)!important;--btn-bg:linear-gradient(180deg,#422f08 0%,#211704 55%,#120c02 100%)!important;--btn-border:1px solid #ffb000!important;--btn-shadow:0 3px 0 #996900,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,230,170,0.45)!important;--btn-shadow-active:0 0 0 #996900,inset 0 2px 5px rgba(0,0,0,0.95)!important;--btn-active-transform:translateY(3px)!important;}' +\n");
         js.append("        '.top-leds-left{gap:10px!important;}' +\n");
         js.append("        '#voice-switch-track{width:26px;height:11px;border-radius:999px;background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.16);box-shadow:inset 0 1px 3px rgba(0,0,0,0.85),0 1px 0 rgba(255,255,255,0.08);padding:1px;display:flex;align-items:center;position:relative;flex-shrink:0;}' +\n");
         js.append("        '#voice-switch-thumb{width:11px;height:7px;border-radius:999px;background:var(--btn-bg);border:var(--btn-border);box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.2);transform:translateX(0);transition:transform 0.22s cubic-bezier(0.4,0,0.2,1);display:flex;align-items:center;justify-content:center;}' +\n");
@@ -532,22 +498,37 @@ public class MainActivity extends Activity {
         js.append("        '@keyframes voice-led-pulse-green{0%,100%{background-color:#10b981;border-color:#a7f3d0;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.9),0 0 0 1px rgba(0,0,0,0.65),0 0 8px #10b981,0 0 14px rgba(16,185,129,0.75);}50%{background-color:#065f46;border-color:#059669;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.35),0 0 0 1px rgba(0,0,0,0.65),0 0 2px rgba(16,185,129,0.25);}}' +\n");
         js.append("        '#btn-voice-toggle.active #voice-led{border-style:solid!important;border-width:2px!important;animation:voice-led-pulse-green 3.8s ease-in-out infinite!important;}' +\n");
         js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:24px;height:11px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
-        /* Embed Battery directly BEFORE #clock-display via ::before pseudo-element + CSS variable so it sits flush-right AND inherits 100% of #clock-display's glitch/flicker/CRT animations! */
-        js.append("        '#clock-display::before{content:var(--scanner-bat-label,\"\");margin-right:7px;opacity:0.95;}';\n");
+        js.append("        '.bat-icon-box{display:inline-block;width:15px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;margin-right:4px;}' +\n");
+        js.append("        '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
+        js.append("        '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("      document.head.appendChild(st);\n");
         js.append("    } else if (existingSt && document.head.lastElementChild !== existingSt) {\n");
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Remove any old standalone #scanner-bat-hud and feed Battery directly into #clock-display::before so it sits flush right and glitches in sync with the clock! */
-        js.append("    var oldBat = document.getElementById('scanner-bat-hud');\n");
-        js.append("    if (oldBat) oldBat.remove();\n");
-        js.append("    if (window.AndroidApp && typeof window.AndroidApp.getBatteryStatus === 'function') {\n");
-        js.append("      var bStr = window.AndroidApp.getBatteryStatus() || '';\n");
-        js.append("      if (bStr) {\n");
-        js.append("        var num = parseInt(bStr.replace(/[^0-9]/g, ''), 10) || 0;\n");
-        js.append("        var bars = num >= 80 ? '▮▮▮' : (num >= 40 ? '▮▮▯' : '▮▯▯');\n");
-        js.append("        document.documentElement.style.setProperty('--scanner-bat-label', '\"[' + bars + ' ' + bStr + ']\"');\n");
+        /* Mirror Phone Status Bar: Put 24h Clock on Top-Left, Signal Bars in Center, and Glitch-Synced Cloned Battery on Top-Right! */
+        js.append("    var clkEl = document.getElementById('clock-display') || document.querySelector('[id*=\"clock\"]');\n");
+        js.append("    if (clkEl && clkEl.parentNode) {\n");
+        js.append("      var topBar = clkEl.parentNode;\n");
+        js.append("      var batEl = document.getElementById('scanner-bat-hud');\n");
+        js.append("      if (!batEl) {\n");
+        js.append("        batEl = clkEl.cloneNode(false);\n");
+        js.append("        batEl.id = 'scanner-bat-hud';\n");
+        js.append("        batEl.innerHTML = '<span class=\"bat-icon-box\"><span class=\"bat-icon-fill\" id=\"scanner-bat-fill\"></span></span><span id=\"scanner-bat-txt\">--%</span>';\n");
+        js.append("        topBar.insertBefore(clkEl, topBar.firstChild);\n");
+        js.append("        topBar.appendChild(batEl);\n");
+        js.append("      } else {\n");
+        js.append("        if (batEl.className !== clkEl.className) batEl.className = clkEl.className;\n");
+        js.append("      }\n");
+        js.append("      if (window.AndroidApp && typeof window.AndroidApp.getBatteryStatus === 'function') {\n");
+        js.append("        var bStr = window.AndroidApp.getBatteryStatus() || '';\n");
+        js.append("        var bTxt = document.getElementById('scanner-bat-txt');\n");
+        js.append("        var bFill = document.getElementById('scanner-bat-fill');\n");
+        js.append("        if (bTxt && bStr) bTxt.innerText = bStr;\n");
+        js.append("        if (bFill && bStr) {\n");
+        js.append("          var num = parseInt(bStr.replace(/[^0-9]/g, ''), 10) || 0;\n");
+        js.append("          bFill.style.width = Math.max(8, Math.min(100, num)) + '%';\n");
+        js.append("        }\n");
         js.append("      }\n");
         js.append("    }\n");
 
@@ -594,20 +575,12 @@ public class MainActivity extends Activity {
         js.append("    window.releaseScreenWake = function() { if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(false); };\n");
         js.append("    var wBtn = document.getElementById('btn-wake-toggle');\n");
         js.append("    isWakeLockActive = ").append(wakePref).append(";\n");
-        js.append("    if (wBtn) {\n");
-        js.append("      wBtn.classList.toggle('active', isWakeLockActive);\n");
-        js.append("      wBtn.setAttribute('aria-pressed', isWakeLockActive ? 'true' : 'false');\n");
-        js.append("    }\n");
+        js.append("    if (wBtn) { wBtn.classList.toggle('active', isWakeLockActive); wBtn.setAttribute('aria-pressed', isWakeLockActive ? 'true' : 'false'); }\n");
         js.append("    window.toggleWakeLock = function() {\n");
         js.append("      var btn = document.getElementById('btn-wake-toggle');\n");
         js.append("      isWakeLockActive = !isWakeLockActive;\n");
-        js.append("      if (isWakeLockActive) {\n");
-        js.append("        if (btn) { btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true'); }\n");
-        js.append("        if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(true);\n");
-        js.append("      } else {\n");
-        js.append("        if (btn) { btn.classList.remove('active'); btn.setAttribute('aria-pressed', 'false'); }\n");
-        js.append("        if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(false);\n");
-        js.append("      }\n");
+        js.append("      if (btn) { btn.classList.toggle('active', isWakeLockActive); btn.setAttribute('aria-pressed', isWakeLockActive ? 'true' : 'false'); }\n");
+        js.append("      if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(isWakeLockActive);\n");
         js.append("    };\n");
 
         js.append("    window.__syncThemeInMem = function() {\n");
@@ -617,9 +590,7 @@ public class MainActivity extends Activity {
         js.append("          var k = localStorage.key(i);\n");
         js.append("          if (k && k.indexOf('proscan_') === 0) dump[k] = localStorage.getItem(k);\n");
         js.append("        }\n");
-        js.append("        if (window.AndroidApp && window.AndroidApp.syncActiveThemeInMemory) {\n");
-        js.append("          window.AndroidApp.syncActiveThemeInMemory(JSON.stringify(dump));\n");
-        js.append("        }\n");
+        js.append("        if (window.AndroidApp && window.AndroidApp.syncActiveThemeInMemory) window.AndroidApp.syncActiveThemeInMemory(JSON.stringify(dump));\n");
         js.append("      } catch (e) {}\n");
         js.append("    };\n");
         js.append("    window.__syncThemeInMem();\n");
@@ -633,16 +604,11 @@ public class MainActivity extends Activity {
         js.append("            var k = localStorage.key(i);\n");
         js.append("            if (k && k.indexOf('proscan_') === 0) dump[k] = localStorage.getItem(k);\n");
         js.append("          }\n");
-        js.append("          if (window.AndroidApp && window.AndroidApp.autoSavePresetsJson) {\n");
-        js.append("            window.AndroidApp.autoSavePresetsJson(JSON.stringify(dump), Boolean(notify));\n");
-        js.append("          }\n");
+        js.append("          if (window.AndroidApp && window.AndroidApp.autoSavePresetsJson) window.AndroidApp.autoSavePresetsJson(JSON.stringify(dump), Boolean(notify));\n");
         js.append("        } catch (e) {}\n");
         js.append("      };\n");
         js.append("      var origSave = window.savePresetToSlot;\n");
-        js.append("      window.savePresetToSlot = function(slot, snap) {\n");
-        js.append("        origSave(slot, snap);\n");
-        js.append("        window.__exportAllProscanStorage(false);\n");
-        js.append("      };\n");
+        js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
 
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
@@ -653,75 +619,45 @@ public class MainActivity extends Activity {
         js.append("      var newAuthBtn = loginBtn.cloneNode(true);\n");
         js.append("      newAuthBtn.__mergedAuthHooked = true;\n");
         js.append("      rowParent.replaceChild(newAuthBtn, loginBtn);\n");
-        js.append("      function isSuperUserLoggedIn() {\n");
-        js.append("        return (document.body.innerText || '').indexOf('Logged In: Super User') !== -1;\n");
-        js.append("      }\n");
-        js.append("      function syncAuthBtnLabel() {\n");
-        js.append("        newAuthBtn.textContent = isSuperUserLoggedIn() ? 'LOG OUT' : 'LOG IN';\n");
-        js.append("      }\n");
-        js.append("      syncAuthBtnLabel();\n");
-        js.append("      setInterval(syncAuthBtnLabel, 1000);\n");
+        js.append("      function isSuperUserLoggedIn() { return (document.body.innerText || '').indexOf('Logged In: Super User') !== -1; }\n");
+        js.append("      function syncAuthBtnLabel() { newAuthBtn.textContent = isSuperUserLoggedIn() ? 'LOG OUT' : 'LOG IN'; }\n");
+        js.append("      syncAuthBtnLabel(); setInterval(syncAuthBtnLabel, 1000);\n");
         js.append("      newAuthBtn.addEventListener('click', function() {\n");
         js.append("        if (isSuperUserLoggedIn()) {\n");
-        js.append("          var origOut = document.getElementById('input3');\n");
-        js.append("          if (origOut) origOut.click();\n");
-        js.append("          var p = document.getElementById('proscan-login-panel');\n");
-        js.append("          if (p) p.hidden = true;\n");
+        js.append("          var origOut = document.getElementById('input3'); if (origOut) origOut.click();\n");
+        js.append("          var p = document.getElementById('proscan-login-panel'); if (p) p.hidden = true;\n");
         js.append("        } else {\n");
-        js.append("          var p = document.getElementById('proscan-login-panel');\n");
-        js.append("          var pw = document.getElementById('proscan-password');\n");
-        js.append("          if (p) p.hidden = false;\n");
-        js.append("          if (pw) pw.focus();\n");
+        js.append("          var p = document.getElementById('proscan-login-panel'); var pw = document.getElementById('proscan-password');\n");
+        js.append("          if (p) p.hidden = false; if (pw) pw.focus();\n");
         js.append("        }\n");
         js.append("      });\n");
         js.append("      var archiveBtn = logoutBtn.cloneNode(true);\n");
-        js.append("      archiveBtn.id = 'btn-open-player-app';\n");
-        js.append("      archiveBtn.textContent = 'ARCHIVE';\n");
+        js.append("      archiveBtn.id = 'btn-open-player-app'; archiveBtn.textContent = 'ARCHIVE';\n");
         js.append("      var radioBtn = logoutBtn.cloneNode(true);\n");
-        js.append("      radioBtn.id = 'btn-open-radio-app';\n");
-        js.append("      radioBtn.textContent = 'RADIO';\n");
+        js.append("      radioBtn.id = 'btn-open-radio-app'; radioBtn.textContent = 'RADIO';\n");
         js.append("      rowParent.replaceChild(archiveBtn, logoutBtn);\n");
         js.append("      rowParent.insertBefore(radioBtn, archiveBtn.nextSibling);\n");
         js.append("      archiveBtn.addEventListener('click', function() {\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
         js.append("        if (window.__syncThemeInMem) window.__syncThemeInMem();\n");
-        js.append("        var wrap = document.getElementById('device-wrapper');\n");
-        js.append("        if (wrap) wrap.classList.add('flipping-out');\n");
-        js.append("        setTimeout(function() {\n");
-        js.append("          if (window.AndroidApp && window.AndroidApp.openArchivePlayer) {\n");
-        js.append("            window.AndroidApp.openArchivePlayer();\n");
-        js.append("          }\n");
-        js.append("        }, 160);\n");
+        js.append("        var wrap = document.getElementById('device-wrapper'); if (wrap) wrap.classList.add('flipping-out');\n");
+        js.append("        setTimeout(function() { if (window.AndroidApp) window.AndroidApp.openArchivePlayer(); }, 160);\n");
         js.append("      });\n");
         js.append("      radioBtn.addEventListener('click', function() {\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
         js.append("        if (window.__syncThemeInMem) window.__syncThemeInMem();\n");
-        js.append("        var wrap = document.getElementById('device-wrapper');\n");
-        js.append("        if (wrap) wrap.classList.add('flipping-out');\n");
-        js.append("        setTimeout(function() {\n");
-        js.append("          if (window.AndroidApp && window.AndroidApp.openBroadcastRadio) {\n");
-        js.append("            window.AndroidApp.openBroadcastRadio();\n");
-        js.append("          }\n");
-        js.append("        }, 160);\n");
+        js.append("        var wrap = document.getElementById('device-wrapper'); if (wrap) wrap.classList.add('flipping-out');\n");
+        js.append("        setTimeout(function() { if (window.AndroidApp) window.AndroidApp.openBroadcastRadio(); }, 160);\n");
         js.append("      });\n");
         js.append("    }\n");
 
         /* Upgraded Reliable VOICE Log Reader (Catches every new top row & in-place updates at 0.35f volume!) */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
-        js.append("      window.__voiceReadoutEnabled = false;\n");
-        js.append("      window.__lastSpokenRowKey = '';\n");
-        js.append("      window.__lastSpokenChannel = '';\n");
-        js.append("      window.__lastSpokenTime = 0;\n");
-        js.append("      function speakTextNow(txt) {\n");
-        js.append("        if (window.AndroidApp && typeof window.AndroidApp.speakChannel === 'function') {\n");
-        js.append("          window.AndroidApp.speakChannel(txt);\n");
-        js.append("        }\n");
-        js.append("      }\n");
+        js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = ''; window.__lastSpokenChannel = ''; window.__lastSpokenTime = 0;\n");
+        js.append("      function speakTextNow(txt) { if (window.AndroidApp) window.AndroidApp.speakChannel(txt); }\n");
         js.append("      var vBtn = document.createElement('button');\n");
-        js.append("      vBtn.id = 'btn-voice-toggle';\n");
-        js.append("      vBtn.className = 'wake-btn-wrapper';\n");
-        js.append("      vBtn.type = 'button';\n");
+        js.append("      vBtn.id = 'btn-voice-toggle'; vBtn.className = 'wake-btn-wrapper'; vBtn.type = 'button';\n");
         js.append("      vBtn.innerHTML = '<div class=\"wake-switch-col\"><div id=\"voice-switch-track\"><div id=\"voice-switch-thumb\"></div></div><span class=\"rx-label\">VOICE</span></div><div id=\"voice-led\"></div>';\n");
         js.append("      vBtn.addEventListener('click', function() {\n");
         js.append("        window.__voiceReadoutEnabled = !window.__voiceReadoutEnabled;\n");
@@ -730,8 +666,8 @@ public class MainActivity extends Activity {
         js.append("        if (window.__voiceReadoutEnabled) {\n");
         js.append("          speakTextNow('Voice readout on');\n");
         js.append("          if (typeof showDisplayHud === 'function') showDisplayHud('VOICE READOUT: ON', 1400);\n");
-        js.append("        } else {\n");
-        js.append("          if (typeof showDisplayHud === 'function') showDisplayHud('VOICE READOUT: OFF', 1400);\n");
+        js.append("        } else if (typeof showDisplayHud === 'function') {\n");
+        js.append("          showDisplayHud('VOICE READOUT: OFF', 1400);\n");
         js.append("        }\n");
         js.append("      });\n");
         js.append("      ledsLeft.appendChild(vBtn);\n");
@@ -758,12 +694,8 @@ public class MainActivity extends Activity {
         js.append("          var rowKey = timeStr + '|' + freqStr + '|' + chName;\n");
         js.append("          var now = Date.now();\n");
         js.append("          if (rowKey !== window.__lastSpokenRowKey && (chName !== window.__lastSpokenChannel || (now - window.__lastSpokenTime) > 4500)) {\n");
-        js.append("            window.__lastSpokenRowKey = rowKey;\n");
-        js.append("            window.__lastSpokenChannel = chName;\n");
-        js.append("            window.__lastSpokenTime = now;\n");
-        js.append("            setTimeout(function() {\n");
-        js.append("              if (window.__voiceReadoutEnabled) speakTextNow(chName);\n");
-        js.append("            }, 250);\n");
+        js.append("            window.__lastSpokenRowKey = rowKey; window.__lastSpokenChannel = chName; window.__lastSpokenTime = now;\n");
+        js.append("            setTimeout(function() { if (window.__voiceReadoutEnabled) speakTextNow(chName); }, 250);\n");
         js.append("          }\n");
         js.append("        }\n");
         js.append("        new MutationObserver(checkTopLogRowForSpeech).observe(logBody, { childList: true, subtree: true, characterData: true });\n");
@@ -775,25 +707,20 @@ public class MainActivity extends Activity {
         js.append("    if (logTb && !logTb.__hitHudHooked) {\n");
         js.append("      logTb.__hitHudHooked = true;\n");
         js.append("      logTb.addEventListener('click', function(e) {\n");
-        js.append("        var tr = e.target.closest('tr');\n");
-        js.append("        if (!tr || tr.children.length < 5) return;\n");
-        js.append("        var nameTd = tr.children[4];\n");
-        js.append("        var badge = nameTd.querySelector('.freq-hit-badge');\n");
+        js.append("        var tr = e.target.closest('tr'); if (!tr || tr.children.length < 5) return;\n");
+        js.append("        var nameTd = tr.children[4]; var badge = nameTd.querySelector('.freq-hit-badge');\n");
         js.append("        var hitsText = nameTd.getAttribute('data-hit-count') || (badge ? (badge.textContent || '').replace(/[^0-9]/g, '') : '') || '1';\n");
         js.append("        var rawTitle = nameTd.getAttribute('title') || nameTd.innerText || '';\n");
         js.append("        var closeParen = rawTitle.indexOf(')');\n");
         js.append("        var cleanName = (closeParen !== -1 ? rawTitle.slice(closeParen + 1) : rawTitle).trim();\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(15);\n");
-        js.append("        if (typeof showDisplayHud === 'function') {\n");
-        js.append("          showDisplayHud(cleanName + ' • HITS: ' + hitsText, 2200);\n");
-        js.append("        }\n");
+        js.append("        if (typeof showDisplayHud === 'function') showDisplayHud(cleanName + ' • HITS: ' + hitsText, 2200);\n");
         js.append("      });\n");
         js.append("    }\n");
 
         js.append("    var oldAudioBtn = document.getElementById('btn-audio-toggle');\n");
         js.append("    if (oldAudioBtn && !oldAudioBtn.__vlcUnifiedHooked) {\n");
-        js.append("      var aBtn = oldAudioBtn.cloneNode(true);\n");
-        js.append("      aBtn.__vlcUnifiedHooked = true;\n");
+        js.append("      var aBtn = oldAudioBtn.cloneNode(true); aBtn.__vlcUnifiedHooked = true;\n");
         js.append("      oldAudioBtn.parentNode.replaceChild(aBtn, oldAudioBtn);\n");
         js.append("      var isVlcMode = false;\n");
         js.append("      function renderAudioLabel() {\n");
@@ -821,18 +748,13 @@ public class MainActivity extends Activity {
         js.append("      aBtn.addEventListener('pointerdown', function() {\n");
         js.append("        clearTimeout(aTimer); aLong = false;\n");
         js.append("        aTimer = setTimeout(function() {\n");
-        js.append("          aTimer = null; aLong = true;\n");
-        js.append("          if (navigator.vibrate) navigator.vibrate(40);\n");
-        js.append("          if (!isConnected) setAudioPlaying(true, true);\n");
-        js.append("          else setAudioPlaying(true, !isVlcMode);\n");
+        js.append("          aTimer = null; aLong = true; if (navigator.vibrate) navigator.vibrate(40);\n");
+        js.append("          if (!isConnected) setAudioPlaying(true, true); else setAudioPlaying(true, !isVlcMode);\n");
         js.append("        }, 500);\n");
         js.append("      });\n");
         js.append("      aBtn.addEventListener('pointerup', function() {\n");
         js.append("        var wasActive = aTimer !== null; clearTimeout(aTimer); aTimer = null;\n");
-        js.append("        if (wasActive && !aLong) {\n");
-        js.append("          if (!isConnected) setAudioPlaying(true, false);\n");
-        js.append("          else setAudioPlaying(false, false);\n");
-        js.append("        }\n");
+        js.append("        if (wasActive && !aLong) { if (!isConnected) setAudioPlaying(true, false); else setAudioPlaying(false, false); }\n");
         js.append("      });\n");
         js.append("      aBtn.addEventListener('pointerleave', function() { clearTimeout(aTimer); aTimer = null; });\n");
         js.append("      aBtn.addEventListener('pointercancel', function() { clearTimeout(aTimer); aTimer = null; });\n");
@@ -841,35 +763,28 @@ public class MainActivity extends Activity {
         js.append("    var ledsRight = document.querySelector('.top-leds-right');\n");
         js.append("    if (ledsRight && !document.getElementById('btn-hardware-exit')) {\n");
         js.append("      var exitBtn = document.createElement('button');\n");
-        js.append("      exitBtn.id = 'btn-hardware-exit';\n");
-        js.append("      exitBtn.type = 'button';\n");
+        js.append("      exitBtn.id = 'btn-hardware-exit'; exitBtn.type = 'button';\n");
         js.append("      exitBtn.innerHTML = '<div class=\"exit-cap\"></div><span class=\"rx-label\">EXIT</span>';\n");
         js.append("      ledsRight.appendChild(exitBtn);\n");
         js.append("      var exTimer = null, exLong = false, lastTapTime = 0;\n");
         js.append("      exitBtn.addEventListener('pointerdown', function() {\n");
         js.append("        clearTimeout(exTimer); exLong = false;\n");
         js.append("        exTimer = setTimeout(function() {\n");
-        js.append("          exTimer = null; exLong = true;\n");
-        js.append("          if (navigator.vibrate) navigator.vibrate([45, 60, 55]);\n");
+        js.append("          exTimer = null; exLong = true; if (navigator.vibrate) navigator.vibrate([45, 60, 55]);\n");
         js.append("          if (typeof isConnected !== 'undefined' && isConnected) {\n");
         js.append("            var p = document.getElementById('audio_player'); if (p && !p.paused) p.pause();\n");
         js.append("            isConnected = false; var ab = document.getElementById('btn-audio-toggle'); if (ab) ab.classList.remove('active');\n");
         js.append("          }\n");
         js.append("          if (typeof isDisplayOn !== 'undefined' && isDisplayOn && typeof toggleDisplay === 'function') toggleDisplay();\n");
-        js.append("          setTimeout(function() { if (window.AndroidApp && window.AndroidApp.exitApp) window.AndroidApp.exitApp(); }, 550);\n");
+        js.append("          setTimeout(function() { if (window.AndroidApp) window.AndroidApp.exitApp(); }, 550);\n");
         js.append("        }, 550);\n");
         js.append("      });\n");
         js.append("      exitBtn.addEventListener('pointerup', function() {\n");
         js.append("        var wasActive = exTimer !== null; clearTimeout(exTimer); exTimer = null;\n");
         js.append("        if (wasActive && !exLong) {\n");
         js.append("          var now = Date.now();\n");
-        js.append("          if (now - lastTapTime < 420) {\n");
-        js.append("            lastTapTime = 0;\n");
-        js.append("            if (window.AndroidApp && window.AndroidApp.minimizeApp) window.AndroidApp.minimizeApp();\n");
-        js.append("          } else {\n");
-        js.append("            lastTapTime = now;\n");
-        js.append("            if (window.AndroidApp && window.AndroidApp.showSystemBars) window.AndroidApp.showSystemBars();\n");
-        js.append("          }\n");
+        js.append("          if (now - lastTapTime < 420) { lastTapTime = 0; if (window.AndroidApp) window.AndroidApp.minimizeApp(); }\n");
+        js.append("          else { lastTapTime = now; if (window.AndroidApp) window.AndroidApp.showSystemBars(); }\n");
         js.append("        }\n");
         js.append("      });\n");
         js.append("      exitBtn.addEventListener('pointerleave', function() { clearTimeout(exTimer); exTimer = null; });\n");
@@ -900,9 +815,7 @@ public class MainActivity extends Activity {
                 .setTitle("Presets, IPs & Direct Modes")
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
-                        if (webView != null) {
-                            webView.evaluateJavascript("if(window.__exportAllProscanStorage)window.__exportAllProscanStorage(true);", null);
-                        }
+                        if (webView != null) webView.evaluateJavascript("if(window.__exportAllProscanStorage)window.__exportAllProscanStorage(true);", null);
                     } else if (which == 1) {
                         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -927,7 +840,6 @@ public class MainActivity extends Activity {
         TextView label1 = new TextView(this);
         label1.setText("Local Wi-Fi URL (e.g. 192.168.1.31:5000):");
         layout.addView(label1);
-
         EditText localInput = new EditText(this);
         localInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         localInput.setHint("http://192.168.1.31:5000");
@@ -937,7 +849,6 @@ public class MainActivity extends Activity {
         TextView label2 = new TextView(this);
         label2.setText("\nTailscale URL (e.g. 100.85.223.120:5000):");
         layout.addView(label2);
-
         EditText tsInput = new EditText(this);
         tsInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         tsInput.setHint("http://100.85.223.120:5000");
@@ -948,7 +859,6 @@ public class MainActivity extends Activity {
         builder.setTitle("ProScan Connection Setup");
         builder.setView(layout);
         builder.setCancelable(!isFirstRun);
-
         builder.setPositiveButton("Save & Connect", (dialog, which) -> {
             String loc = normalizeUrl(localInput.getText().toString());
             String ts = normalizeUrl(tsInput.getText().toString());
@@ -960,26 +870,14 @@ public class MainActivity extends Activity {
             prefs.edit().putString("local_url", loc).putString("tailscale_url", ts).apply();
             connectSmart(loc, ts);
         });
-
         builder.setNeutralButton("JSON / Radio", (dialog, which) -> showPresetsBackupMenu());
-
-        if (!isFirstRun) {
-            builder.setNegativeButton("Cancel", null);
-        }
+        if (!isFirstRun) builder.setNegativeButton("Cancel", null);
         builder.show();
     }
 
     private void connectSmart(String localUrl, String tailscaleUrl) {
-        if (!localUrl.isEmpty() && tailscaleUrl.isEmpty()) {
-            activeServerUrl = localUrl;
-            webView.loadUrl(localUrl);
-            return;
-        }
-        if (localUrl.isEmpty() && !tailscaleUrl.isEmpty()) {
-            activeServerUrl = tailscaleUrl;
-            webView.loadUrl(tailscaleUrl);
-            return;
-        }
+        if (!localUrl.isEmpty() && tailscaleUrl.isEmpty()) { activeServerUrl = localUrl; webView.loadUrl(localUrl); return; }
+        if (localUrl.isEmpty() && !tailscaleUrl.isEmpty()) { activeServerUrl = tailscaleUrl; webView.loadUrl(tailscaleUrl); return; }
         Toast.makeText(this, "Checking Local Wi-Fi...", Toast.LENGTH_SHORT).show();
         executor.execute(() -> {
             boolean localReachable = isUrlReachable(localUrl, 1500);
@@ -1014,17 +912,14 @@ public class MainActivity extends Activity {
 
     private boolean isUrlReachable(String urlStr, int timeoutMs) {
         try {
-            URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
             conn.setConnectTimeout(timeoutMs);
             conn.setReadTimeout(timeoutMs);
             conn.setRequestMethod("GET");
             int code = conn.getResponseCode();
             conn.disconnect();
             return (code >= 200 && code < 500);
-        } catch (Exception e) {
-            return false;
-        }
+        } catch (Exception e) { return false; }
     }
 
     private void hideSystemUI() {
@@ -1069,7 +964,5 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    public void onBackPressed() {
-        showSetupDialog(false);
-    }
+    public void onBackPressed() { showSetupDialog(false); }
 }
