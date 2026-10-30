@@ -9,6 +9,8 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.BatteryManager;
@@ -59,6 +61,7 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private SharedPreferences prefs;
+    private AudioManager audioManager;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -68,15 +71,52 @@ public class MainActivity extends Activity {
     private TextToSpeech tts = null;
     private boolean ttsReady = false;
 
+    private void forceStopScannerOnHeadphoneDisconnect() {
+        setBgServiceRunning(false);
+        Runnable stopJs = () -> {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                        "try{if(window.__stopScannerAudioFromBt)window.__stopScannerAudioFromBt();" +
+                        "var p=document.getElementById('audio_player');if(p){p.pause();}" +
+                        "isConnected=false;var b=document.getElementById('btn-audio-toggle');if(b)b.classList.remove('active');}catch(e){}",
+                        null
+                );
+            }
+        };
+        mainHandler.post(stopJs);
+        mainHandler.postDelayed(stopJs, 200);
+        mainHandler.postDelayed(stopJs, 500);
+        mainHandler.post(() -> Toast.makeText(MainActivity.this, "Headphones disconnected — Audio stopped", Toast.LENGTH_SHORT).show());
+    }
+
     private final BroadcastReceiver noisyAudioReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
-                setBgServiceRunning(false);
-                if (webView != null) {
-                    webView.evaluateJavascript("try{if(window.__stopScannerAudioFromBt)window.__stopScannerAudioFromBt();}catch(e){}", null);
+            if (intent == null) return;
+            String act = intent.getAction();
+            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(act)
+                    || Intent.ACTION_HEADSET_PLUG.equals(act) && intent.getIntExtra("state", -1) == 0) {
+                forceStopScannerOnHeadphoneDisconnect();
+            }
+        }
+    };
+
+    private final AudioDeviceCallback btDeviceCallback = new AudioDeviceCallback() {
+        @Override
+        public void onAudioDevicesRemoved(AudioDeviceInfo[] removedDevices) {
+            if (removedDevices == null) return;
+            for (AudioDeviceInfo dev : removedDevices) {
+                int t = dev.getType();
+                if (t == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                        || t == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                        || t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                        || t == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                        || t == AudioDeviceInfo.TYPE_USB_HEADSET
+                        || t == 26 /* TYPE_BLE_HEADSET */
+                        || t == 27 /* TYPE_BLE_SPEAKER */) {
+                    forceStopScannerOnHeadphoneDisconnect();
+                    break;
                 }
-                Toast.makeText(MainActivity.this, "Headphones disconnected — Audio stopped", Toast.LENGTH_SHORT).show();
             }
         }
     };
@@ -105,7 +145,16 @@ public class MainActivity extends Activity {
         }
 
         try {
-            registerReceiver(noisyAudioReceiver, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
+            IntentFilter f = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+            f.addAction(Intent.ACTION_HEADSET_PLUG);
+            registerReceiver(noisyAudioReceiver, f);
+        } catch (Exception ignored) {}
+
+        try {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
+                audioManager.registerAudioDeviceCallback(btDeviceCallback, mainHandler);
+            }
         } catch (Exception ignored) {}
 
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
@@ -418,6 +467,11 @@ public class MainActivity extends Activity {
     private void closeAndExitApp() {
         setBgServiceRunning(false);
         try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
+        try {
+            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
+                audioManager.unregisterAudioDeviceCallback(btDeviceCallback);
+            }
+        } catch (Exception ignored) {}
         try { if (tts != null) { tts.stop(); tts.shutdown(); } } catch (Exception ignored) {}
         try { if (webView != null) { webView.loadUrl("about:blank"); webView.stopLoading(); webView.destroy(); } } catch (Exception ignored) {}
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) finishAndRemoveTask();
@@ -463,7 +517,7 @@ public class MainActivity extends Activity {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 900);
     }
-    // === PASTE MAINACTIVITY PART 3 BELOW THIS LINE ===
+    // === PASTE MAINACTIVITY PART 3A BELOW THIS LINE ===
 private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
@@ -506,59 +560,58 @@ private void injectEnhancements() {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Find the Scanner's 24h Clock Element by ID, Class, or HH:MM:SS text pattern, move Clock to Top-Left, and put Glitch-Synced Battery on Top-Right! */
-        js.append("    var clkEl = window.__cachedScannerClockEl;\n");
-        js.append("    if (!clkEl || !document.body.contains(clkEl)) {\n");
-        js.append("      clkEl = document.getElementById('clock-display') || document.querySelector('[id*=\"clock\"], [class*=\"clock\"]');\n");
-        js.append("      if (!clkEl) {\n");
-        js.append("        var dispBox = document.querySelector('.scanner-display') || document.body;\n");
-        js.append("        var allEls = dispBox.querySelectorAll('span, div');\n");
-        js.append("        for (var c = 0; c < allEls.length; c++) {\n");
-        js.append("          var el = allEls[c];\n");
-        js.append("          if (el.children.length === 0 && /^\\d{2}:\\d{2}:\\d{2}$/.test((el.textContent || '').trim())) {\n");
-        js.append("            clkEl = el; break;\n");
+        /* Find ONLY the Top-Right Clock (never a log row!), pin Clock to Top-Left (left:12px), and pin Glitch-Synced Cloned Battery to Top-Right (right:12px)! */
+        js.append("    var dispBox = document.querySelector('.scanner-display');\n");
+        js.append("    if (dispBox) {\n");
+        js.append("      var clkEl = window.__cachedTopClockEl;\n");
+        js.append("      if (!clkEl || !dispBox.contains(clkEl)) {\n");
+        js.append("        var dRect = dispBox.getBoundingClientRect();\n");
+        js.append("        var candidates = dispBox.querySelectorAll('*');\n");
+        js.append("        for (var c = 0; c < candidates.length; c++) {\n");
+        js.append("          var el = candidates[c];\n");
+        js.append("          if (el.id === 'scanner-bat-hud' || el.closest('#mini-log-table') || el.children.length > 0) continue;\n");
+        js.append("          var txt = (el.textContent || '').trim();\n");
+        js.append("          if (/^\\d{2}:\\d{2}:\\d{2}$/.test(txt)) {\n");
+        js.append("            var r = el.getBoundingClientRect();\n");
+        js.append("            if (r.top >= dRect.top - 5 && r.top <= dRect.top + 55) {\n");
+        js.append("              clkEl = el; break;\n");
+        js.append("            }\n");
         js.append("          }\n");
         js.append("        }\n");
+        js.append("        window.__cachedTopClockEl = clkEl;\n");
         js.append("      }\n");
-        js.append("      window.__cachedScannerClockEl = clkEl;\n");
-        js.append("    }\n");
-        js.append("    if (clkEl && clkEl.parentNode) {\n");
-        js.append("      var topBar = clkEl.parentNode;\n");
-        js.append("      var batEl = document.getElementById('scanner-bat-hud');\n");
-        js.append("      var cs = window.getComputedStyle(clkEl);\n");
-        js.append("      if (!batEl) {\n");
-        js.append("        batEl = clkEl.cloneNode(false);\n");
-        js.append("        batEl.id = 'scanner-bat-hud';\n");
-        js.append("        batEl.innerHTML = '<span class=\"bat-icon-box\"><span class=\"bat-icon-fill\" id=\"scanner-bat-fill\"></span></span><span id=\"scanner-bat-txt\">--%</span>';\n");
-        js.append("        if (cs.position === 'absolute') {\n");
-        js.append("          var origRight = cs.right && cs.right !== 'auto' ? cs.right : '10px';\n");
-        js.append("          clkEl.style.setProperty('left', origRight, 'important');\n");
+        js.append("      if (clkEl) {\n");
+        js.append("        var batEl = document.getElementById('scanner-bat-hud');\n");
+        js.append("        if (!batEl) {\n");
+        js.append("          var dRect2 = dispBox.getBoundingClientRect();\n");
+        js.append("          var cRect = clkEl.getBoundingClientRect();\n");
+        js.append("          var topPx = Math.max(4, Math.round(cRect.top - dRect2.top)) + 'px';\n");
+        js.append("          batEl = clkEl.cloneNode(false);\n");
+        js.append("          batEl.id = 'scanner-bat-hud';\n");
+        js.append("          batEl.innerHTML = '<span class=\"bat-icon-box\"><span class=\"bat-icon-fill\" id=\"scanner-bat-fill\"></span></span><span id=\"scanner-bat-txt\">--%</span>';\n");
+        js.append("          clkEl.style.setProperty('position', 'absolute', 'important');\n");
+        js.append("          clkEl.style.setProperty('top', topPx, 'important');\n");
+        js.append("          clkEl.style.setProperty('left', '12px', 'important');\n");
         js.append("          clkEl.style.setProperty('right', 'auto', 'important');\n");
-        js.append("          batEl.style.setProperty('right', origRight, 'important');\n");
+        js.append("          clkEl.style.setProperty('z-index', '25', 'important');\n");
+        js.append("          batEl.style.setProperty('position', 'absolute', 'important');\n");
+        js.append("          batEl.style.setProperty('top', topPx, 'important');\n");
+        js.append("          batEl.style.setProperty('right', '12px', 'important');\n");
         js.append("          batEl.style.setProperty('left', 'auto', 'important');\n");
-        js.append("          topBar.appendChild(batEl);\n");
+        js.append("          batEl.style.setProperty('z-index', '25', 'important');\n");
+        js.append("          dispBox.appendChild(batEl);\n");
         js.append("        } else {\n");
-        js.append("          topBar.style.setProperty('display', 'flex', 'important');\n");
-        js.append("          topBar.style.setProperty('justify-content', 'space-between', 'important');\n");
-        js.append("          topBar.style.setProperty('align-items', 'center', 'important');\n");
-        js.append("          topBar.style.setProperty('width', '100%', 'important');\n");
-        js.append("          clkEl.style.setProperty('margin-left', '0', 'important');\n");
-        js.append("          clkEl.style.setProperty('order', '-1', 'important');\n");
-        js.append("          batEl.style.setProperty('order', '99', 'important');\n");
-        js.append("          topBar.insertBefore(clkEl, topBar.firstChild);\n");
-        js.append("          topBar.appendChild(batEl);\n");
+        js.append("          if (batEl.className !== clkEl.className) batEl.className = clkEl.className;\n");
         js.append("        }\n");
-        js.append("      } else {\n");
-        js.append("        if (batEl.className !== clkEl.className) batEl.className = clkEl.className;\n");
-        js.append("      }\n");
-        js.append("      if (window.AndroidApp && typeof window.AndroidApp.getBatteryStatus === 'function') {\n");
-        js.append("        var bStr = window.AndroidApp.getBatteryStatus() || '';\n");
-        js.append("        var bTxt = document.getElementById('scanner-bat-txt');\n");
-        js.append("        var bFill = document.getElementById('scanner-bat-fill');\n");
-        js.append("        if (bTxt && bStr) bTxt.innerText = bStr;\n");
-        js.append("        if (bFill && bStr) {\n");
-        js.append("          var num = parseInt(bStr.replace(/[^0-9]/g, ''), 10) || 0;\n");
-        js.append("          bFill.style.width = Math.max(8, Math.min(100, num)) + '%';\n");
+        js.append("        if (window.AndroidApp && typeof window.AndroidApp.getBatteryStatus === 'function') {\n");
+        js.append("          var bStr = window.AndroidApp.getBatteryStatus() || '';\n");
+        js.append("          var bTxt = document.getElementById('scanner-bat-txt');\n");
+        js.append("          var bFill = document.getElementById('scanner-bat-fill');\n");
+        js.append("          if (bTxt && bStr) bTxt.innerText = bStr;\n");
+        js.append("          if (bFill && bStr) {\n");
+        js.append("            var num = parseInt(bStr.replace(/[^0-9]/g, ''), 10) || 0;\n");
+        js.append("            bFill.style.width = Math.max(8, Math.min(100, num)) + '%';\n");
+        js.append("          }\n");
         js.append("        }\n");
         js.append("      }\n");
         js.append("    }\n");
@@ -984,6 +1037,11 @@ js.append("    window.__syncThemeInMem = function() {\n");
     @Override
     protected void onDestroy() {
         try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
+        try {
+            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
+                audioManager.unregisterAudioDeviceCallback(btDeviceCallback);
+            }
+        } catch (Exception ignored) {}
         super.onDestroy();
     }
 
