@@ -325,8 +325,8 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Invalid backup JSON file", Toast.LENGTH_SHORT).show();
         }
     }
-    // === PASTE MAINACTIVITY PART 2 BELOW THIS LINE ===
-@Override
+
+    @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQ_LOAD_JSON && resultCode == RESULT_OK && data != null && data.getData() != null) {
@@ -517,8 +517,8 @@ public class MainActivity extends Activity {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 900);
     }
-    // === PASTE MAINACTIVITY PART 3A BELOW THIS LINE ===
-private void injectEnhancements() {
+
+    private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -552,7 +552,10 @@ private void injectEnhancements() {
         js.append("        '@keyframes voice-led-pulse-green{0%,100%{background-color:#10b981;border-color:#a7f3d0;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.9),0 0 0 1px rgba(0,0,0,0.65),0 0 8px #10b981,0 0 14px rgba(16,185,129,0.75);}50%{background-color:#065f46;border-color:#059669;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.35),0 0 0 1px rgba(0,0,0,0.65),0 0 2px rgba(16,185,129,0.25);}}' +\n");
         js.append("        '#btn-voice-toggle.active #voice-led{border-style:solid!important;border-width:2px!important;animation:voice-led-pulse-green 3.8s ease-in-out infinite!important;}' +\n");
         js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:24px;height:11px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
-        js.append("        '.bat-icon-box{display:inline-block;width:15px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;margin-right:4px;}' +\n");
+        js.append("        '#scanner-bat-hud{display:inline-flex!important;align-items:center!important;color:inherit;font-family:inherit;font-size:inherit;font-weight:inherit;letter-spacing:inherit;text-shadow:inherit;line-height:normal!important;pointer-events:none;}' +\n");
+        js.append("        '#scanner-bat-hud *{font-family:inherit!important;font-size:inherit!important;font-weight:inherit!important;letter-spacing:inherit!important;}' +\n");
+        js.append("        '#scanner-bat-txt{color:inherit!important;text-shadow:inherit!important;display:inline-block!important;}' +\n");
+        js.append("        '.bat-icon-box{display:inline-block;width:14px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;margin-right:4px;box-sizing:border-box;flex-shrink:0;filter:drop-shadow(0 0 1px currentColor);}' +\n");
         js.append("        '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
         js.append("        '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("      document.head.appendChild(st);\n");
@@ -560,7 +563,7 @@ private void injectEnhancements() {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Find ONLY the Top-Right Clock (never a log row!), pin Clock to Top-Left (left:12px), and pin Glitch-Synced Cloned Battery to Top-Right (right:12px)! */
+        /* Find ONLY the Top-Right Clock, pin Clock to Top-Left, pin Battery to Top-Right, and bind Glitch/Color/Font styles */
         js.append("    var dispBox = document.querySelector('.scanner-display');\n");
         js.append("    if (dispBox) {\n");
         js.append("      var clkEl = window.__cachedTopClockEl;\n");
@@ -581,11 +584,12 @@ private void injectEnhancements() {
         js.append("        window.__cachedTopClockEl = clkEl;\n");
         js.append("      }\n");
         js.append("      if (clkEl) {\n");
+        js.append("        var targetParent = clkEl.parentElement || dispBox;\n");
         js.append("        var batEl = document.getElementById('scanner-bat-hud');\n");
         js.append("        if (!batEl) {\n");
-        js.append("          var dRect2 = dispBox.getBoundingClientRect();\n");
+        js.append("          var pRect = targetParent.getBoundingClientRect();\n");
         js.append("          var cRect = clkEl.getBoundingClientRect();\n");
-        js.append("          var topPx = Math.max(4, Math.round(cRect.top - dRect2.top)) + 'px';\n");
+        js.append("          var topPx = Math.max(2, Math.round(cRect.top - pRect.top)) + 'px';\n");
         js.append("          batEl = clkEl.cloneNode(false);\n");
         js.append("          batEl.id = 'scanner-bat-hud';\n");
         js.append("          batEl.innerHTML = '<span class=\"bat-icon-box\"><span class=\"bat-icon-fill\" id=\"scanner-bat-fill\"></span></span><span id=\"scanner-bat-txt\">--%</span>';\n");
@@ -599,20 +603,66 @@ private void injectEnhancements() {
         js.append("          batEl.style.setProperty('right', '12px', 'important');\n");
         js.append("          batEl.style.setProperty('left', 'auto', 'important');\n");
         js.append("          batEl.style.setProperty('z-index', '25', 'important');\n");
-        js.append("          dispBox.appendChild(batEl);\n");
-        js.append("        } else {\n");
-        js.append("          if (batEl.className !== clkEl.className) batEl.className = clkEl.className;\n");
+        js.append("          targetParent.appendChild(batEl);\n");
+        js.append("        } else if (batEl.parentElement !== targetParent) {\n");
+        js.append("          targetParent.appendChild(batEl);\n");
         js.append("        }\n");
+
+        /* Sync visual properties and glitch animation state */
+        js.append("        var syncBatStyle = function() {\n");
+        js.append("          if (!clkEl || !batEl) return;\n");
+        js.append("          var cs = window.getComputedStyle(clkEl);\n");
+        js.append("          if (cs) {\n");
+        js.append("            batEl.style.color = cs.color;\n");
+        js.append("            batEl.style.fontFamily = cs.fontFamily;\n");
+        js.append("            batEl.style.fontSize = cs.fontSize;\n");
+        js.append("            batEl.style.fontWeight = cs.fontWeight;\n");
+        js.append("            batEl.style.letterSpacing = cs.letterSpacing;\n");
+        js.append("            batEl.style.textShadow = cs.textShadow;\n");
+        js.append("            if (cs.filter && cs.filter !== 'none') batEl.style.filter = cs.filter;\n");
+        js.append("            if (cs.animation && cs.animation !== 'none') {\n");
+        js.append("              batEl.style.animation = cs.animation;\n");
+        js.append("            }\n");
+        js.append("            if (cs.transform && cs.transform !== 'none') {\n");
+        js.append("              batEl.style.transform = cs.transform;\n");
+        js.append("            }\n");
+        js.append("            if (cs.opacity) {\n");
+        js.append("              batEl.style.opacity = cs.opacity;\n");
+        js.append("            }\n");
+        js.append("          }\n");
+        js.append("          if (batEl.className !== clkEl.className) {\n");
+        js.append("            batEl.className = clkEl.className;\n");
+        js.append("          }\n");
+        js.append("          var bTxtEl = document.getElementById('scanner-bat-txt');\n");
+        js.append("          var tVal = bTxtEl ? (bTxtEl.innerText || bTxtEl.textContent || '') : '';\n");
+        js.append("          batEl.setAttribute('data-text', tVal);\n");
+        js.append("          if (bTxtEl) bTxtEl.setAttribute('data-text', tVal);\n");
+        js.append("        };\n");
+
+        /* Real-time observer on the clock element to follow glitch animations instantaneously */
+        js.append("        if (!clkEl.__batObserverAttached) {\n");
+        js.append("          clkEl.__batObserverAttached = true;\n");
+        js.append("          try {\n");
+        js.append("            var mo = new MutationObserver(syncBatStyle);\n");
+        js.append("            mo.observe(clkEl, { attributes: true, attributeFilter: ['class', 'style', 'data-text'] });\n");
+        js.append("          } catch(e) {}\n");
+        js.append("        }\n");
+
         js.append("        if (window.AndroidApp && typeof window.AndroidApp.getBatteryStatus === 'function') {\n");
         js.append("          var bStr = window.AndroidApp.getBatteryStatus() || '';\n");
         js.append("          var bTxt = document.getElementById('scanner-bat-txt');\n");
         js.append("          var bFill = document.getElementById('scanner-bat-fill');\n");
-        js.append("          if (bTxt && bStr) bTxt.innerText = bStr;\n");
+        js.append("          if (bTxt && bStr) {\n");
+        js.append("            bTxt.innerText = bStr;\n");
+        js.append("            bTxt.setAttribute('data-text', bStr);\n");
+        js.append("            batEl.setAttribute('data-text', bStr);\n");
+        js.append("          }\n");
         js.append("          if (bFill && bStr) {\n");
         js.append("            var num = parseInt(bStr.replace(/[^0-9]/g, ''), 10) || 0;\n");
         js.append("            bFill.style.width = Math.max(8, Math.min(100, num)) + '%';\n");
         js.append("          }\n");
         js.append("        }\n");
+        js.append("        syncBatStyle();\n");
         js.append("      }\n");
         js.append("    }\n");
 
@@ -666,8 +716,8 @@ private void injectEnhancements() {
         js.append("      if (btn) { btn.classList.toggle('active', isWakeLockActive); btn.setAttribute('aria-pressed', isWakeLockActive ? 'true' : 'false'); }\n");
         js.append("      if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(isWakeLockActive);\n");
         js.append("    };\n");
-        // === PASTE MAINACTIVITY PART 3B BELOW THIS LINE ===
-js.append("    window.__syncThemeInMem = function() {\n");
+
+        js.append("    window.__syncThemeInMem = function() {\n");
         js.append("      try {\n");
         js.append("        var dump = {};\n");
         js.append("        for (var i = 0; i < localStorage.length; i++) {\n");
