@@ -10,6 +10,8 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.media.AudioAttributes;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
@@ -69,6 +71,7 @@ public class PlayerActivity extends Activity {
     private static final String GDRIVE_ROOT_FOLDER_ID = "1gToQyY6YPOk_3muiQSY5WLy7jTSvXbTv";
     private WebView playerWeb;
     private SharedPreferences prefs;
+    private AudioManager audioManager;
     private boolean wakeLockOn = true;
     private String serverBaseUrl = "";
     private String initialStartMode = "archive";
@@ -83,20 +86,53 @@ public class PlayerActivity extends Activity {
     private volatile int currentStreamReqId = 0;
     private float[] currentEnvelope = new float[0];
 
+    private void forceStopAllPlayerAudioOnDisconnect() {
+        stopNativePlayer();
+        Runnable killWebAudio = () -> {
+            stopNativePlayer();
+            if (playerWeb != null) {
+                playerWeb.evaluateJavascript(
+                        "try{if(window.__stopAllRadioAndNativeAudio)window.__stopAllRadioAndNativeAudio();" +
+                        "if(typeof setPlayingUI==='function')setPlayingUI(false);" +
+                        "if(typeof renderPlaylist==='function')renderPlaylist();}catch(e){}",
+                        null
+                );
+            }
+        };
+        mainHandler.post(killWebAudio);
+        mainHandler.postDelayed(killWebAudio, 200);
+        mainHandler.postDelayed(killWebAudio, 500);
+        mainHandler.post(() -> Toast.makeText(PlayerActivity.this, "Headphones disconnected — Stream stopped", Toast.LENGTH_SHORT).show());
+    }
+
     private final BroadcastReceiver noisyAudioReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
-                stopNativePlayer();
-                if (playerWeb != null) {
-                    playerWeb.evaluateJavascript(
-                            "try{if(window.__stopAllRadioAndNativeAudio)window.__stopAllRadioAndNativeAudio();" +
-                            "if(typeof setPlayingUI==='function')setPlayingUI(false);" +
-                            "if(typeof renderPlaylist==='function')renderPlaylist();}catch(e){}",
-                            null
-                    );
+            if (intent == null) return;
+            String act = intent.getAction();
+            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(act)
+                    || (Intent.ACTION_HEADSET_PLUG.equals(act) && intent.getIntExtra("state", -1) == 0)) {
+                forceStopAllPlayerAudioOnDisconnect();
+            }
+        }
+    };
+
+    private final AudioDeviceCallback btDeviceCallback = new AudioDeviceCallback() {
+        @Override
+        public void onAudioDevicesRemoved(AudioDeviceInfo[] removedDevices) {
+            if (removedDevices == null) return;
+            for (AudioDeviceInfo dev : removedDevices) {
+                int t = dev.getType();
+                if (t == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                        || t == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                        || t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                        || t == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                        || t == AudioDeviceInfo.TYPE_USB_HEADSET
+                        || t == 26 /* TYPE_BLE_HEADSET */
+                        || t == 27 /* TYPE_BLE_SPEAKER */) {
+                    forceStopAllPlayerAudioOnDisconnect();
+                    break;
                 }
-                Toast.makeText(PlayerActivity.this, "Headphones disconnected — Stream stopped", Toast.LENGTH_SHORT).show();
             }
         }
     };
@@ -150,7 +186,16 @@ public class PlayerActivity extends Activity {
         hideSystemUI();
 
         try {
-            registerReceiver(noisyAudioReceiver, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
+            IntentFilter f = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+            f.addAction(Intent.ACTION_HEADSET_PLUG);
+            registerReceiver(noisyAudioReceiver, f);
+        } catch (Exception ignored) {}
+
+        try {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
+                audioManager.registerAudioDeviceCallback(btDeviceCallback, mainHandler);
+            }
         } catch (Exception ignored) {}
 
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
@@ -208,8 +253,8 @@ public class PlayerActivity extends Activity {
         setContentView(playerWeb);
         playerWeb.loadUrl("file:///android_asset/player_ui.html");
     }
-
-    private String getNativeBatteryStatus() {
+    // === PASTE PLAYER PART 2 BELOW THIS LINE ===
+private String getNativeBatteryStatus() {
         try {
             IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
             Intent b = registerReceiver(null, ifilter);
@@ -301,8 +346,8 @@ public class PlayerActivity extends Activity {
             }
         }
     }
-    // === PASTE PLAYER PART 2 BELOW THIS LINE ===
-@Override
+
+    @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQ_LOAD_RADIO_JSON && resultCode == RESULT_OK && data != null && data.getData() != null) {
@@ -455,8 +500,8 @@ public class PlayerActivity extends Activity {
         js.append("    '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
         js.append("    '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("  document.head.appendChild(st);\n");
-
-        /* Mirror Phone Status Bar: Put 24h Time on Top-Left, Mode HUD in Center, and Battery + % on Top-Right! */
+        // === PASTE PLAYER PART 3 BELOW THIS LINE ===
+/* Mirror Phone Status Bar: Put 24h Time on Top-Left, Mode HUD in Center, and Battery + % on Top-Right! */
         js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  if (pClk && !document.getElementById('player-bat-hud')) {\n");
         js.append("    var topBar = pClk.parentNode;\n");
@@ -543,8 +588,8 @@ public class PlayerActivity extends Activity {
         js.append("    exBtn.addEventListener('pointerleave', function() { clearTimeout(exTimer); exTimer = null; });\n");
         js.append("    exBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
         js.append("  }\n");
-        // === PASTE PLAYER PART 3 BELOW THIS LINE ===
-/* Helper that immediately kills BOTH WebAudio and Native MediaPlayer so two streams never overlap! */
+
+        /* Helper that immediately kills BOTH WebAudio and Native MediaPlayer so two streams never overlap! */
         js.append("  window.__stopAllRadioAndNativeAudio = function() {\n");
         js.append("    window.__streamLaunchToken = (window.__streamLaunchToken || 0) + 1;\n");
         js.append("    if (window.__webStreamAudio) {\n");
@@ -683,19 +728,23 @@ public class PlayerActivity extends Activity {
         js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) window.PlayerBridge.playLiveStreamUrl(url);\n");
         js.append("  };\n");
 
+        /* Remember Last Filter Mode (0 = ALL, 1 = NEW, 2 = UNPLAY) across sessions! */
         js.append("  window.__seenOnPrevVisit = JSON.parse(localStorage.getItem('proscan_seen_visit_ids_v1') || '{}');\n");
         js.append("  window.__playedDriveIds = JSON.parse(localStorage.getItem('proscan_played_recs_v1') || '{}');\n");
-        js.append("  window.__filterMode = 0;\n");
+        js.append("  window.__filterMode = parseInt(localStorage.getItem('proscan_archive_filter_mode_v1') || '0', 10) || 0;\n");
+        js.append("  if (window.__filterMode < 0 || window.__filterMode > 2) window.__filterMode = 0;\n");
 
         js.append("  var fRow = document.getElementById('date-select').parentNode;\n");
         js.append("  if (fRow && !document.getElementById('btn-filter-unread')) {\n");
         js.append("    fRow.className = 'filter-row-5';\n");
         js.append("    var uBtn = document.createElement('button');\n");
         js.append("    uBtn.id = 'btn-filter-unread'; uBtn.className = 'btn'; uBtn.type = 'button';\n");
-        js.append("    uBtn.innerText = 'ALL';\n");
+        js.append("    uBtn.classList.toggle('active', window.__filterMode !== 0);\n");
+        js.append("    uBtn.innerText = window.__filterMode === 0 ? 'ALL' : (window.__filterMode === 1 ? 'NEW' : 'UNPLAY');\n");
         js.append("    fRow.insertBefore(uBtn, document.getElementById('btn-refresh'));\n");
         js.append("    uBtn.addEventListener('click', function() {\n");
         js.append("      window.__filterMode = (window.__filterMode + 1) % 3;\n");
+        js.append("      localStorage.setItem('proscan_archive_filter_mode_v1', String(window.__filterMode));\n");
         js.append("      uBtn.classList.toggle('active', window.__filterMode !== 0);\n");
         js.append("      uBtn.innerText = window.__filterMode === 0 ? 'ALL' : (window.__filterMode === 1 ? 'NEW' : 'UNPLAY');\n");
         js.append("      window.renderPlaylist();\n");
@@ -761,7 +810,7 @@ public class PlayerActivity extends Activity {
         js.append("    window.renderPlaylist();\n");
         js.append("    window.selectRadioStationOnly(window.__radioIdx);\n");
         js.append("  };\n");
-        // === PASTE PLAYER PART 3B BELOW THIS LINE ===
+        // === PASTE PLAYER PART 4A BELOW THIS LINE ===
 js.append("  var mb = document.getElementById('mech-bay');\n");
         js.append("  if (mb && !document.getElementById('deck-global-badge')) {\n");
         js.append("    var bdg = document.createElement('div'); bdg.id = 'deck-global-badge'; bdg.className = 'deck-track-badge';\n");
@@ -922,8 +971,8 @@ js.append("  var mb = document.getElementById('mech-bay');\n");
         js.append("    }\n");
         js.append("    drawProSigintScope();\n");
         js.append("  }\n");
-
-        js.append("  window.selectRadioStationOnly = function(idx) {\n");
+        // === PASTE PLAYER PART 4B BELOW THIS LINE ===
+js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= window.__radioStations.length) return;\n");
         js.append("    window.__radioIdx = idx;\n");
         js.append("    var stObj = window.__radioStations[idx];\n");
@@ -959,8 +1008,9 @@ js.append("  var mb = document.getElementById('mech-bay');\n");
         js.append("      window.__startHybridLiveStream(stObj.url);\n");
         js.append("    }\n");
         js.append("  };\n");
-        // === PASTE PLAYER PART 3C BELOW THIS LINE ===
-js.append("  window.setAppMode = function(radioMode, skipAnim) {\n");
+
+        /* Cleanly reset/restore Archive Readout when switching from Radio to Archive! */
+        js.append("  window.setAppMode = function(radioMode, skipAnim) {\n");
         js.append("    var dw = document.getElementById('device-wrapper');\n");
         js.append("    if (dw && !skipAnim) dw.classList.add('fading-out');\n");
         js.append("    setTimeout(function() {\n");
@@ -994,7 +1044,22 @@ js.append("  window.setAppMode = function(radioMode, skipAnim) {\n");
         js.append("        }\n");
         js.append("        if (fRowEl) fRowEl.style.display = 'grid';\n");
         js.append("        if (cRowEl) cRowEl.style.display = 'none';\n");
+        js.append("        window.__activePlayingFileId = '';\n");
         js.append("        window.renderPlaylist();\n");
+        js.append("        if (curIdx >= 0 && curIdx < filteredRecs.length) {\n");
+        js.append("          window.selectIndexOnly(curIdx);\n");
+        js.append("        } else if (filteredRecs.length > 0) {\n");
+        js.append("          window.selectIndexOnly(0);\n");
+        js.append("        } else {\n");
+        js.append("          document.getElementById('track-main-readout').innerText = 'SELECT A RECORDING';\n");
+        js.append("          document.getElementById('cassette-lbl-left').innerText = 'PROSCAN C-90';\n");
+        js.append("          document.getElementById('cassette-lbl-right').innerText = 'HI-BIAS CrO2';\n");
+        js.append("          var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
+        js.append("          if (bCh) bCh.innerText = 'READY // SELECT TRACK';\n");
+        js.append("          if (bFr) bFr.innerText = '---.----';\n");
+        js.append("          document.getElementById('time-cur').innerText = '00:00';\n");
+        js.append("          document.getElementById('time-tot').innerText = '00:00';\n");
+        js.append("        }\n");
         js.append("      }\n");
         js.append("      if (dw) dw.classList.remove('fading-out');\n");
         js.append("    }, skipAnim ? 0 : 150);\n");
@@ -1057,10 +1122,14 @@ js.append("  window.setAppMode = function(radioMode, skipAnim) {\n");
         js.append("        window.__seenOnPrevVisit[allRecs[k].fileId || allRecs[k].fileName] = true;\n");
         js.append("      }\n");
         js.append("    }\n");
+        /* Keep currently playing track visible in NEW / UNPLAY mode until it finishes playing! */
         js.append("    filteredRecs = allRecs.filter(function(r) {\n");
         js.append("      var id = r.fileId || r.fileName;\n");
-        js.append("      if (window.__filterMode === 1 && window.__seenOnPrevVisit[id]) return false;\n");
-        js.append("      if (window.__filterMode === 2 && window.__playedDriveIds[id]) return false;\n");
+        js.append("      var isCurrentlyActive = (r.fileId && r.fileId === window.__activePlayingFileId && isPlayingNow);\n");
+        js.append("      if (!isCurrentlyActive) {\n");
+        js.append("        if (window.__filterMode === 1 && window.__seenOnPrevVisit[id]) return false;\n");
+        js.append("        if (window.__filterMode === 2 && window.__playedDriveIds[id]) return false;\n");
+        js.append("      }\n");
         js.append("      if (selDate && r.ukDate !== selDate) return false;\n");
         js.append("      if (q && !r.name.toLowerCase().includes(q) && !r.freq.toLowerCase().includes(q) && !r.timeStr.toLowerCase().includes(q)) return false;\n");
         js.append("      return true;\n");
@@ -1091,17 +1160,15 @@ js.append("  window.setAppMode = function(radioMode, skipAnim) {\n");
         js.append("      });\n");
         js.append("    });\n");
         js.append("  };\n");
-
+        // === PASTE PLAYER PART 4C BELOW THIS LINE ===
+/* Mark track as played only when playback finishes (or when you switch to another track) so it stays in UNPLAY while playing! */
         js.append("  var origPlayIndex = window.playIndex;\n");
         js.append("  window.playIndex = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= filteredRecs.length) return;\n");
         js.append("    window.__stopAllRadioAndNativeAudio();\n");
         js.append("    var r = filteredRecs[idx];\n");
         js.append("    var id = r.fileId || r.fileName;\n");
-        js.append("    window.__playedDriveIds[id] = true;\n");
-        js.append("    window.__seenOnPrevVisit[id] = true;\n");
-        js.append("    localStorage.setItem('proscan_played_recs_v1', JSON.stringify(window.__playedDriveIds));\n");
-        js.append("    localStorage.setItem('proscan_seen_visit_ids_v1', JSON.stringify(window.__seenOnPrevVisit));\n");
+        js.append("    window.__activePlayingRecordKey = id;\n");
         js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
         js.append("    if (bCh) bCh.innerText = 'PLAYING: ' + r.name + ' (' + r.timeStr + ')';\n");
         js.append("    if (bFr) bFr.innerText = r.freq;\n");
@@ -1109,8 +1176,16 @@ js.append("  window.setAppMode = function(radioMode, skipAnim) {\n");
         js.append("  };\n");
 
         js.append("  window.onNativePlayEnded = function() {\n");
-        js.append("    setPlayingUI(false); renderPlaylist();\n");
-        js.append("    if (window.__isBroadcastRadioMode) return;\n");
+        js.append("    setPlayingUI(false);\n");
+        js.append("    if (window.__isBroadcastRadioMode) { renderPlaylist(); return; }\n");
+        js.append("    if (window.__activePlayingRecordKey) {\n");
+        js.append("      window.__playedDriveIds[window.__activePlayingRecordKey] = true;\n");
+        js.append("      window.__seenOnPrevVisit[window.__activePlayingRecordKey] = true;\n");
+        js.append("      localStorage.setItem('proscan_played_recs_v1', JSON.stringify(window.__playedDriveIds));\n");
+        js.append("      localStorage.setItem('proscan_seen_visit_ids_v1', JSON.stringify(window.__seenOnPrevVisit));\n");
+        js.append("    }\n");
+        js.append("    window.__activePlayingFileId = '';\n");
+        js.append("    renderPlaylist();\n");
         js.append("    if (window.__isLoopMode && curIdx >= 0) playIndex(curIdx);\n");
         js.append("    else if (isCont && curIdx > 0) playIndex(curIdx - 1);\n");
         js.append("  };\n");
@@ -1189,8 +1264,8 @@ js.append("  window.setAppMode = function(radioMode, skipAnim) {\n");
 
         if (playerWeb != null) playerWeb.evaluateJavascript(js.toString(), null);
     }
-    // === PASTE PLAYER PART 3D BELOW THIS LINE ===
-private void stopNativePlayer() {
+
+    private void stopNativePlayer() {
         currentStreamReqId++;
         mainHandler.removeCallbacks(progressTicker);
         isLiveRadioStream = false;
@@ -1267,8 +1342,8 @@ private void stopNativePlayer() {
         }
         return current;
     }
-
-    private void playLiveRadioUrlNatively(final String streamUrl) {
+    // === PASTE PLAYER PART 4D BELOW THIS LINE ===
+private void playLiveRadioUrlNatively(final String streamUrl) {
         stopNativePlayer();
         final int reqId = ++currentStreamReqId;
         audioFetchExecutor.execute(() -> {
@@ -1770,6 +1845,11 @@ private void stopNativePlayer() {
     @Override
     protected void onDestroy() {
         try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
+        try {
+            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
+                audioManager.unregisterAudioDeviceCallback(btDeviceCallback);
+            }
+        } catch (Exception ignored) {}
         mainHandler.removeCallbacks(autoSyncRunnable);
         stopNativePlayer();
         try {
