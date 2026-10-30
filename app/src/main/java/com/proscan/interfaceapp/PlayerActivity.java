@@ -1,3 +1,5 @@
+
+
 package com.proscan.interfaceapp;
 
 import android.app.Activity;
@@ -87,6 +89,7 @@ public class PlayerActivity extends Activity {
     private float[] currentEnvelope = new float[0];
 
     private void forceStopAllPlayerAudioOnDisconnect() {
+        boolean wasPlaying = isLiveRadioStream || (nativePlayer != null && nativePlayer.isPlaying());
         stopNativePlayer();
         Runnable killWebAudio = () -> {
             stopNativePlayer();
@@ -102,13 +105,16 @@ public class PlayerActivity extends Activity {
         mainHandler.post(killWebAudio);
         mainHandler.postDelayed(killWebAudio, 200);
         mainHandler.postDelayed(killWebAudio, 500);
-        mainHandler.post(() -> Toast.makeText(PlayerActivity.this, "Headphones disconnected — Stream stopped", Toast.LENGTH_SHORT).show());
+        if (wasPlaying) {
+            mainHandler.post(() -> Toast.makeText(PlayerActivity.this, "Headphones disconnected — Stream stopped", Toast.LENGTH_SHORT).show());
+        }
     }
 
     private final BroadcastReceiver noisyAudioReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
+            if (isInitialStickyBroadcast()) return;
             String act = intent.getAction();
             if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(act)
                     || (Intent.ACTION_HEADSET_PLUG.equals(act) && intent.getIntExtra("state", -1) == 0)) {
@@ -253,8 +259,8 @@ public class PlayerActivity extends Activity {
         setContentView(playerWeb);
         playerWeb.loadUrl("file:///android_asset/player_ui.html");
     }
-    // === PASTE PLAYER PART 2 BELOW THIS LINE ===
-private String getNativeBatteryStatus() {
+
+    private String getNativeBatteryStatus() {
         try {
             IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
             Intent b = registerReceiver(null, ifilter);
@@ -500,8 +506,7 @@ private String getNativeBatteryStatus() {
         js.append("    '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
         js.append("    '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("  document.head.appendChild(st);\n");
-        // === PASTE PLAYER PART 3 BELOW THIS LINE ===
-/* Mirror Phone Status Bar: Put 24h Time on Top-Left, Mode HUD in Center, and Battery + % on Top-Right! */
+
         js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  if (pClk && !document.getElementById('player-bat-hud')) {\n");
         js.append("    var topBar = pClk.parentNode;\n");
@@ -526,7 +531,6 @@ private String getNativeBatteryStatus() {
         js.append("    setInterval(updatePlayerBattery, 10000);\n");
         js.append("  }\n");
 
-        /* Add WAKE indicator/toggle on left of middle bar + Red Hardware EXIT (Off) button on right of middle bar! */
         js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
         js.append("    var wWrap = document.createElement('div');\n");
@@ -549,7 +553,6 @@ private String getNativeBatteryStatus() {
         js.append("    });\n");
         js.append("  }\n");
 
-        /* Add Red Hardware EXIT (Off) Button on the right side of the status bar */
         js.append("  var contHud = document.getElementById('cont-status-hud');\n");
         js.append("  if (contHud && !document.getElementById('btn-player-exit')) {\n");
         js.append("    var rWrap = document.createElement('div');\n");
@@ -589,7 +592,6 @@ private String getNativeBatteryStatus() {
         js.append("    exBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
         js.append("  }\n");
 
-        /* Helper that immediately kills BOTH WebAudio and Native MediaPlayer so two streams never overlap! */
         js.append("  window.__stopAllRadioAndNativeAudio = function() {\n");
         js.append("    window.__streamLaunchToken = (window.__streamLaunchToken || 0) + 1;\n");
         js.append("    if (window.__webStreamAudio) {\n");
@@ -600,7 +602,6 @@ private String getNativeBatteryStatus() {
         js.append("    }\n");
         js.append("  };\n");
 
-        /* Top Row 1-Click Direct Buttons: [ ◀ SCANNER ] [ RADIO ▶ / ARCHIVE ] [ DECK ] [ CONT/LOOP ] [ VOICE ] */
         js.append("  var backBtn = document.getElementById('btn-back-radio');\n");
         js.append("  var topRow = backBtn ? backBtn.parentNode : null;\n");
         js.append("  if (topRow && !document.getElementById('btn-switch-radio-archive')) {\n");
@@ -646,7 +647,6 @@ private String getNativeBatteryStatus() {
         js.append("    }\n");
         js.append("  }\n");
 
-        /* Default Stations (Includes Radio City Swansea + BBC + talkSPORT) */
         js.append("  var defaultStations = [\n");
         js.append("    { name: 'Radio City Swansea', freq: '1386 AM', band: 'LOCAL', url: 'https://radiocity1386am.radioca.st/stream' },\n");
         js.append("    { name: 'BBC Radio 5 Live', freq: '909 AM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_five_live&bitrate=128000' },\n");
@@ -728,7 +728,6 @@ private String getNativeBatteryStatus() {
         js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) window.PlayerBridge.playLiveStreamUrl(url);\n");
         js.append("  };\n");
 
-        /* Remember Last Filter Mode (0 = ALL, 1 = NEW, 2 = UNPLAY) across sessions! */
         js.append("  window.__seenOnPrevVisit = JSON.parse(localStorage.getItem('proscan_seen_visit_ids_v1') || '{}');\n");
         js.append("  window.__playedDriveIds = JSON.parse(localStorage.getItem('proscan_played_recs_v1') || '{}');\n");
         js.append("  window.__filterMode = parseInt(localStorage.getItem('proscan_archive_filter_mode_v1') || '0', 10) || 0;\n");
@@ -810,8 +809,8 @@ private String getNativeBatteryStatus() {
         js.append("    window.renderPlaylist();\n");
         js.append("    window.selectRadioStationOnly(window.__radioIdx);\n");
         js.append("  };\n");
-        // === PASTE PLAYER PART 4A BELOW THIS LINE ===
-js.append("  var mb = document.getElementById('mech-bay');\n");
+
+        js.append("  var mb = document.getElementById('mech-bay');\n");
         js.append("  if (mb && !document.getElementById('deck-global-badge')) {\n");
         js.append("    var bdg = document.createElement('div'); bdg.id = 'deck-global-badge'; bdg.className = 'deck-track-badge';\n");
         js.append("    bdg.innerHTML = '<span id=\"badge-ch-name\">READY // SELECT TRACK</span><span id=\"badge-ch-freq\">---.----</span>';\n");
@@ -971,8 +970,8 @@ js.append("  var mb = document.getElementById('mech-bay');\n");
         js.append("    }\n");
         js.append("    drawProSigintScope();\n");
         js.append("  }\n");
-        // === PASTE PLAYER PART 4B BELOW THIS LINE ===
-js.append("  window.selectRadioStationOnly = function(idx) {\n");
+
+        js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= window.__radioStations.length) return;\n");
         js.append("    window.__radioIdx = idx;\n");
         js.append("    var stObj = window.__radioStations[idx];\n");
@@ -1009,7 +1008,6 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    }\n");
         js.append("  };\n");
 
-        /* Cleanly reset/restore Archive Readout when switching from Radio to Archive! */
         js.append("  window.setAppMode = function(radioMode, skipAnim) {\n");
         js.append("    var dw = document.getElementById('device-wrapper');\n");
         js.append("    if (dw && !skipAnim) dw.classList.add('fading-out');\n");
@@ -1122,7 +1120,6 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("        window.__seenOnPrevVisit[allRecs[k].fileId || allRecs[k].fileName] = true;\n");
         js.append("      }\n");
         js.append("    }\n");
-        /* Keep currently playing track visible in NEW / UNPLAY mode until it finishes playing! */
         js.append("    filteredRecs = allRecs.filter(function(r) {\n");
         js.append("      var id = r.fileId || r.fileName;\n");
         js.append("      var isCurrentlyActive = (r.fileId && r.fileId === window.__activePlayingFileId && isPlayingNow);\n");
@@ -1160,8 +1157,7 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("      });\n");
         js.append("    });\n");
         js.append("  };\n");
-        // === PASTE PLAYER PART 4C BELOW THIS LINE ===
-/* Mark track as played only when playback finishes (or when you switch to another track) so it stays in UNPLAY while playing! */
+
         js.append("  var origPlayIndex = window.playIndex;\n");
         js.append("  window.playIndex = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= filteredRecs.length) return;\n");
@@ -1342,8 +1338,8 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         }
         return current;
     }
-    // === PASTE PLAYER PART 4D BELOW THIS LINE ===
-private void playLiveRadioUrlNatively(final String streamUrl) {
+
+    private void playLiveRadioUrlNatively(final String streamUrl) {
         stopNativePlayer();
         final int reqId = ++currentStreamReqId;
         audioFetchExecutor.execute(() -> {
