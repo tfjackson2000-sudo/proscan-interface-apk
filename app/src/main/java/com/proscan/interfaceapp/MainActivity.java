@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
@@ -69,7 +70,30 @@ public class MainActivity extends Activity {
     private boolean bgAudioModeEnabled = false;
     private String activeServerUrl = "";
     private TextToSpeech tts = null;
-    private boolean ttsReady = false;
+    private volatile boolean ttsReady = false;
+
+    private synchronized void initTTS() {
+        try {
+            if (tts != null) {
+                try { tts.stop(); tts.shutdown(); } catch (Exception ignored) {}
+                tts = null;
+            }
+            ttsReady = false;
+            tts = new TextToSpeech(getApplicationContext(), status -> {
+                if (status == TextToSpeech.SUCCESS && tts != null) {
+                    tts.setLanguage(Locale.UK);
+                    tts.setSpeechRate(1.05f);
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        tts.setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .build());
+                    }
+                    ttsReady = true;
+                }
+            });
+        } catch (Exception ignored) {}
+    }
 
     private void forceStopScannerOnHeadphoneDisconnect() {
         setBgServiceRunning(false);
@@ -93,9 +117,10 @@ public class MainActivity extends Activity {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
+            if (isInitialStickyBroadcast()) return; // Discard Android launch-time status dump
             String act = intent.getAction();
             if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(act)
-                    || Intent.ACTION_HEADSET_PLUG.equals(act) && intent.getIntExtra("state", -1) == 0) {
+                    || (Intent.ACTION_HEADSET_PLUG.equals(act) && intent.getIntExtra("state", -1) == 0)) {
                 forceStopScannerOnHeadphoneDisconnect();
             }
         }
@@ -159,15 +184,7 @@ public class MainActivity extends Activity {
 
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
 
-        try {
-            tts = new TextToSpeech(getApplicationContext(), status -> {
-                if (status == TextToSpeech.SUCCESS && tts != null) {
-                    tts.setLanguage(Locale.UK);
-                    tts.setSpeechRate(1.05f);
-                    ttsReady = true;
-                }
-            });
-        } catch (Exception ignored) {}
+        initTTS();
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
@@ -392,16 +409,46 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void speakChannel(final String text) {
             mainHandler.post(() -> {
-                if (tts != null && ttsReady && text != null && !text.trim().isEmpty()) {
-                    if (Build.VERSION.SDK_INT >= 21) {
-                        Bundle params = new Bundle();
-                        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.35f);
-                        tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, params, "proscan_tts");
-                    } else {
-                        tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, null);
-                    }
+                if (text == null || text.trim().isEmpty()) return;
+                final String cleanText = text.trim();
+                if (tts == null || !ttsReady) {
+                    initTTS();
+                    mainHandler.postDelayed(() -> speakDirect(cleanText), 1000);
+                    return;
                 }
+                speakDirect(cleanText);
             });
+        }
+
+        private void speakDirect(String cleanText) {
+            int result = TextToSpeech.ERROR;
+            try {
+                if (Build.VERSION.SDK_INT >= 21) {
+                    Bundle params = new Bundle();
+                    params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.40f);
+                    result = tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "proscan_tts");
+                } else {
+                    result = tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null);
+                }
+            } catch (Exception e) {
+                result = TextToSpeech.ERROR;
+            }
+
+            // If Android killed the remote TTS engine overnight, resurrect it immediately
+            if (result != TextToSpeech.SUCCESS) {
+                initTTS();
+                mainHandler.postDelayed(() -> {
+                    if (tts != null && ttsReady) {
+                        if (Build.VERSION.SDK_INT >= 21) {
+                            Bundle params = new Bundle();
+                            params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.40f);
+                            tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "proscan_tts");
+                        } else {
+                            tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null);
+                        }
+                    }
+                }, 1100);
+            }
         }
 
         @JavascriptInterface
@@ -546,14 +593,14 @@ public class MainActivity extends Activity {
         js.append("        '.top-leds-left{gap:10px!important;}' +\n");
         js.append("        '#voice-switch-track{width:26px;height:11px;border-radius:999px;background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.16);box-shadow:inset 0 1px 3px rgba(0,0,0,0.85),0 1px 0 rgba(255,255,255,0.08);padding:1px;display:flex;align-items:center;position:relative;flex-shrink:0;}' +\n");
         js.append("        '#voice-switch-thumb{width:11px;height:7px;border-radius:999px;background:var(--btn-bg);border:var(--btn-border);box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.2);transform:translateX(0);transition:transform 0.22s cubic-bezier(0.4,0,0.2,1);display:flex;align-items:center;justify-content:center;}' +\n");
-        js.append("        '#voice-switch-thumb::after{content:\"\";width:2px;height:3px;border-radius:1px;background:rgba(255,255,255,0.22);}' +\n");
+        js.append("        '#voice-switch-thumb::after{content:\"\";width:2px;height:3px;border-radius:1px;background:rgba(255,220,220,0.85);}' +\n");
         js.append("        '#btn-voice-toggle.active #voice-switch-thumb{transform:translateX(11px);}' +\n");
         js.append("        '#voice-led{flex-shrink:0;width:10px;height:10px;border-radius:50%;background-color:var(--led-off-bg,#1a1a1a);border:var(--led-off-border,2px solid #000);box-shadow:var(--led-off-shadow,inset 1px 1px 3px rgba(0,0,0,0.8),0 1px 1px rgba(255,255,255,0.1));transition:all 0.3s ease;}' +\n");
         js.append("        '@keyframes voice-led-pulse-green{0%,100%{background-color:#10b981;border-color:#a7f3d0;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.9),0 0 0 1px rgba(0,0,0,0.65),0 0 8px #10b981,0 0 14px rgba(16,185,129,0.75);}50%{background-color:#065f46;border-color:#059669;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.35),0 0 0 1px rgba(0,0,0,0.65),0 0 2px rgba(16,185,129,0.25);}}' +\n");
         js.append("        '#btn-voice-toggle.active #voice-led{border-style:solid!important;border-width:2px!important;animation:voice-led-pulse-green 3.8s ease-in-out infinite!important;}' +\n");
         js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:24px;height:11px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
 
-        /* Symmetrical Clock & Glitch-Synced Battery Positioning + Precise Font/Color Inheritance from custom_ui.html */
+        /* Symmetrical Clock on Left, Battery on Right + Exact Match to custom_ui.html */
         js.append("        '#display-clock-hud{position:absolute!important;top:6px!important;left:10px!important;right:auto!important;z-index:3!important;}' +\n");
         js.append("        '#scanner-bat-hud{position:absolute!important;top:6px!important;right:9px!important;left:auto!important;z-index:3!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10px!important;font-weight:700!important;letter-spacing:0.8px!important;color:var(--log-text)!important;opacity:0.88;pointer-events:none;display:inline-flex!important;align-items:center!important;line-height:1;transition:opacity 0.3s ease,color 0.3s ease;}' +\n");
         js.append("        '#scanner-bat-hud *{font-family:inherit!important;font-size:inherit!important;font-weight:inherit!important;letter-spacing:inherit!important;line-height:inherit!important;}' +\n");
@@ -563,7 +610,7 @@ public class MainActivity extends Activity {
         js.append("        '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
         js.append("        '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}' +\n");
 
-        /* Exact Bad-Contact Glitch Animations from custom_ui.html linked to #scanner-bat-hud */
+        /* Sync Bad Contact Glitch Animations directly to #scanner-bat-hud */
         js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-blur,.bc-blur-blink,.bc-wavy-blur) .scanner-display #scanner-bat-hud:not(.disconnected){filter:blur(2.2px)!important;}' +\n");
         js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-deep-blur .scanner-display #scanner-bat-hud:not(.disconnected){filter:blur(2.9px)!important;}' +\n");
         js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-fuzzy,.bc-flicker,.bc-tv-snow) .scanner-display #scanner-bat-hud:not(.disconnected){filter:blur(1.2px)!important;}' +\n");
@@ -738,9 +785,10 @@ public class MainActivity extends Activity {
         js.append("      });\n");
         js.append("    }\n");
 
+        /* Real-Time, Synchronized Voice Readout System (Zero Latency Drift) */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
-        js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = ''; window.__lastSpokenChannel = ''; window.__lastSpokenTime = 0;\n");
+        js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = '';\n");
         js.append("      function speakTextNow(txt) { if (window.AndroidApp) window.AndroidApp.speakChannel(txt); }\n");
         js.append("      var vBtn = document.createElement('button');\n");
         js.append("      vBtn.id = 'btn-voice-toggle'; vBtn.className = 'wake-btn-wrapper'; vBtn.type = 'button';\n");
@@ -757,6 +805,7 @@ public class MainActivity extends Activity {
         js.append("        }\n");
         js.append("      });\n");
         js.append("      ledsLeft.appendChild(vBtn);\n");
+
         js.append("      var logBody = document.getElementById('mini-log-data');\n");
         js.append("      if (logBody) {\n");
         js.append("        function checkTopLogRowForSpeech() {\n");
@@ -778,14 +827,12 @@ public class MainActivity extends Activity {
         js.append("          if (!chName || chName === '---') chName = freqStr;\n");
         js.append("          if (!chName) return;\n");
         js.append("          var rowKey = timeStr + '|' + freqStr + '|' + chName;\n");
-        js.append("          var now = Date.now();\n");
-        js.append("          if (rowKey !== window.__lastSpokenRowKey && (chName !== window.__lastSpokenChannel || (now - window.__lastSpokenTime) > 4500)) {\n");
-        js.append("            window.__lastSpokenRowKey = rowKey; window.__lastSpokenChannel = chName; window.__lastSpokenTime = now;\n");
-        js.append("            setTimeout(function() { if (window.__voiceReadoutEnabled) speakTextNow(chName); }, 250);\n");
+        js.append("          if (rowKey !== window.__lastSpokenRowKey) {\n");
+        js.append("            window.__lastSpokenRowKey = rowKey;\n");
+        js.append("            speakTextNow(chName);\n");
         js.append("          }\n");
         js.append("        }\n");
-        js.append("        new MutationObserver(checkTopLogRowForSpeech).observe(logBody, { childList: true, subtree: true, characterData: true });\n");
-        js.append("        setInterval(checkTopLogRowForSpeech, 1200);\n");
+        js.append("        new MutationObserver(checkTopLogRowForSpeech).observe(logBody, { childList: true, subtree: true });\n");
         js.append("      }\n");
         js.append("    }\n");
 
