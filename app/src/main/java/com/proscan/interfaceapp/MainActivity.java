@@ -72,6 +72,9 @@ public class MainActivity extends Activity {
     private TextToSpeech tts = null;
     private volatile boolean ttsReady = false;
 
+    private String lastSpokenText = "";
+    private long lastSpokenTimestamp = 0;
+
     private synchronized void initTTS() {
         try {
             if (tts != null) {
@@ -117,7 +120,7 @@ public class MainActivity extends Activity {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
-            if (isInitialStickyBroadcast()) return; // Discard Android launch-time status dump
+            if (isInitialStickyBroadcast()) return;
             String act = intent.getAction();
             if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(act)
                     || (Intent.ACTION_HEADSET_PLUG.equals(act) && intent.getIntExtra("state", -1) == 0)) {
@@ -411,6 +414,15 @@ public class MainActivity extends Activity {
             mainHandler.post(() -> {
                 if (text == null || text.trim().isEmpty()) return;
                 final String cleanText = text.trim();
+
+                // Suppress duplicates on the same channel within 6.5 seconds
+                long now = System.currentTimeMillis();
+                if (cleanText.equalsIgnoreCase(lastSpokenText) && (now - lastSpokenTimestamp < 6500)) {
+                    return;
+                }
+                lastSpokenText = cleanText;
+                lastSpokenTimestamp = now;
+
                 if (tts == null || !ttsReady) {
                     initTTS();
                     mainHandler.postDelayed(() -> speakDirect(cleanText), 1000);
@@ -434,7 +446,6 @@ public class MainActivity extends Activity {
                 result = TextToSpeech.ERROR;
             }
 
-            // If Android killed the remote TTS engine overnight, resurrect it immediately
             if (result != TextToSpeech.SUCCESS) {
                 initTTS();
                 mainHandler.postDelayed(() -> {
@@ -785,7 +796,7 @@ public class MainActivity extends Activity {
         js.append("      });\n");
         js.append("    }\n");
 
-        /* Real-Time, Synchronized Voice Readout System (Zero Latency Drift) */
+        /* Real-Time, De-duplicated Voice Readout System */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
         js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = '';\n");
@@ -808,20 +819,17 @@ public class MainActivity extends Activity {
 
         js.append("      var logBody = document.getElementById('mini-log-data');\n");
         js.append("      if (logBody) {\n");
+        js.append("        var speechThrottleTimer = null;\n");
         js.append("        function checkTopLogRowForSpeech() {\n");
-        js.append("          if (window.__stripHitBadgesFromLog) window.__stripHitBadgesFromLog();\n");
         js.append("          if (!window.__voiceReadoutEnabled) return;\n");
+        js.append("          if (speechThrottleTimer) return;\n");
+        js.append("          speechThrottleTimer = setTimeout(function() { speechThrottleTimer = null; }, 400);\n");
         js.append("          var topRow = logBody.querySelector('tr.new-log-row') || logBody.querySelector('tr');\n");
         js.append("          if (!topRow || topRow.children.length < 5) return;\n");
         js.append("          var timeStr = (topRow.children[0].textContent || '').trim();\n");
         js.append("          var freqStr = (topRow.children[1].textContent || '').trim();\n");
         js.append("          var nameTd = topRow.children[4];\n");
-        js.append("          var rawTitle = nameTd.getAttribute('title') || '';\n");
-        js.append("          if (!rawTitle) {\n");
-        js.append("            var cloneTd = nameTd.cloneNode(true);\n");
-        js.append("            cloneTd.querySelectorAll('.freq-hit-badge').forEach(function(b){ b.remove(); });\n");
-        js.append("            rawTitle = cloneTd.textContent || '';\n");
-        js.append("          }\n");
+        js.append("          var rawTitle = nameTd.getAttribute('title') || nameTd.textContent || '';\n");
         js.append("          var closeParen = rawTitle.indexOf(')');\n");
         js.append("          var chName = (closeParen !== -1 ? rawTitle.slice(closeParen + 1) : rawTitle).replace(/^[×xX]\\s*\\d+\\s*/, '').trim();\n");
         js.append("          if (!chName || chName === '---') chName = freqStr;\n");
@@ -832,7 +840,7 @@ public class MainActivity extends Activity {
         js.append("            speakTextNow(chName);\n");
         js.append("          }\n");
         js.append("        }\n");
-        js.append("        new MutationObserver(checkTopLogRowForSpeech).observe(logBody, { childList: true, subtree: true });\n");
+        js.append("        new MutationObserver(checkTopLogRowForSpeech).observe(logBody, { childList: true });\n");
         js.append("      }\n");
         js.append("    }\n");
 
