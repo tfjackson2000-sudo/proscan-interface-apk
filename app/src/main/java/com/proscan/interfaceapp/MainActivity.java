@@ -506,17 +506,48 @@ private void injectEnhancements() {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Mirror Phone Status Bar: Put 24h Clock on Top-Left, Signal Bars in Center, and Glitch-Synced Cloned Battery on Top-Right! */
-        js.append("    var clkEl = document.getElementById('clock-display') || document.querySelector('[id*=\"clock\"]');\n");
+        /* Find the Scanner's 24h Clock Element by ID, Class, or HH:MM:SS text pattern, move Clock to Top-Left, and put Glitch-Synced Battery on Top-Right! */
+        js.append("    var clkEl = window.__cachedScannerClockEl;\n");
+        js.append("    if (!clkEl || !document.body.contains(clkEl)) {\n");
+        js.append("      clkEl = document.getElementById('clock-display') || document.querySelector('[id*=\"clock\"], [class*=\"clock\"]');\n");
+        js.append("      if (!clkEl) {\n");
+        js.append("        var dispBox = document.querySelector('.scanner-display') || document.body;\n");
+        js.append("        var allEls = dispBox.querySelectorAll('span, div');\n");
+        js.append("        for (var c = 0; c < allEls.length; c++) {\n");
+        js.append("          var el = allEls[c];\n");
+        js.append("          if (el.children.length === 0 && /^\\d{2}:\\d{2}:\\d{2}$/.test((el.textContent || '').trim())) {\n");
+        js.append("            clkEl = el; break;\n");
+        js.append("          }\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("      window.__cachedScannerClockEl = clkEl;\n");
+        js.append("    }\n");
         js.append("    if (clkEl && clkEl.parentNode) {\n");
         js.append("      var topBar = clkEl.parentNode;\n");
         js.append("      var batEl = document.getElementById('scanner-bat-hud');\n");
+        js.append("      var cs = window.getComputedStyle(clkEl);\n");
         js.append("      if (!batEl) {\n");
         js.append("        batEl = clkEl.cloneNode(false);\n");
         js.append("        batEl.id = 'scanner-bat-hud';\n");
         js.append("        batEl.innerHTML = '<span class=\"bat-icon-box\"><span class=\"bat-icon-fill\" id=\"scanner-bat-fill\"></span></span><span id=\"scanner-bat-txt\">--%</span>';\n");
-        js.append("        topBar.insertBefore(clkEl, topBar.firstChild);\n");
-        js.append("        topBar.appendChild(batEl);\n");
+        js.append("        if (cs.position === 'absolute') {\n");
+        js.append("          var origRight = cs.right && cs.right !== 'auto' ? cs.right : '10px';\n");
+        js.append("          clkEl.style.setProperty('left', origRight, 'important');\n");
+        js.append("          clkEl.style.setProperty('right', 'auto', 'important');\n");
+        js.append("          batEl.style.setProperty('right', origRight, 'important');\n");
+        js.append("          batEl.style.setProperty('left', 'auto', 'important');\n");
+        js.append("          topBar.appendChild(batEl);\n");
+        js.append("        } else {\n");
+        js.append("          topBar.style.setProperty('display', 'flex', 'important');\n");
+        js.append("          topBar.style.setProperty('justify-content', 'space-between', 'important');\n");
+        js.append("          topBar.style.setProperty('align-items', 'center', 'important');\n");
+        js.append("          topBar.style.setProperty('width', '100%', 'important');\n");
+        js.append("          clkEl.style.setProperty('margin-left', '0', 'important');\n");
+        js.append("          clkEl.style.setProperty('order', '-1', 'important');\n");
+        js.append("          batEl.style.setProperty('order', '99', 'important');\n");
+        js.append("          topBar.insertBefore(clkEl, topBar.firstChild);\n");
+        js.append("          topBar.appendChild(batEl);\n");
+        js.append("        }\n");
         js.append("      } else {\n");
         js.append("        if (batEl.className !== clkEl.className) batEl.className = clkEl.className;\n");
         js.append("      }\n");
@@ -582,8 +613,8 @@ private void injectEnhancements() {
         js.append("      if (btn) { btn.classList.toggle('active', isWakeLockActive); btn.setAttribute('aria-pressed', isWakeLockActive ? 'true' : 'false'); }\n");
         js.append("      if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(isWakeLockActive);\n");
         js.append("    };\n");
-
-        js.append("    window.__syncThemeInMem = function() {\n");
+        // === PASTE MAINACTIVITY PART 3B BELOW THIS LINE ===
+js.append("    window.__syncThemeInMem = function() {\n");
         js.append("      try {\n");
         js.append("        var dump = {};\n");
         js.append("        for (var i = 0; i < localStorage.length; i++) {\n");
@@ -651,7 +682,6 @@ private void injectEnhancements() {
         js.append("      });\n");
         js.append("    }\n");
 
-        /* Upgraded Reliable VOICE Log Reader (Catches every new top row & in-place updates at 0.35f volume!) */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
         js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = ''; window.__lastSpokenChannel = ''; window.__lastSpokenTime = 0;\n");
