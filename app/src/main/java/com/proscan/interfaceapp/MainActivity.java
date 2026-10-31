@@ -23,7 +23,6 @@ import android.os.Looper;
 import android.provider.MediaStore;
 import android.speech.tts.TextToSpeech;
 import android.text.InputType;
-import android.util.Base64;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
@@ -46,7 +45,6 @@ import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -66,7 +64,6 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private AudioManager audioManager;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final ExecutorService captionExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private boolean userWakeLockEnabled = false;
@@ -77,10 +74,6 @@ public class MainActivity extends Activity {
 
     private String lastSpokenText = "";
     private long lastSpokenTimestamp = 0;
-
-    private boolean liveCaptionsEnabled = true;
-    private String whisperApiKey = "";
-    private volatile int currentLiveChunkId = 0;
 
     private synchronized void initTTS() {
         try {
@@ -193,8 +186,6 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
 
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
-        whisperApiKey = prefs.getString("whisper_api_key", "");
-        liveCaptionsEnabled = prefs.getBoolean("live_captions_on", true);
 
         initTTS();
 
@@ -386,139 +377,6 @@ private String getNativeBatteryStatus() {
         });
     }
 
-    private void showApiKeyDialog() {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int) (18 * getResources().getDisplayMetrics().density);
-        layout.setPadding(pad, pad, pad, pad);
-
-        TextView label = new TextView(this);
-        label.setText("Enter Groq or OpenAI Whisper API Key:\n(Recommended: Free Groq key starting with 'gsk_')");
-        layout.addView(label);
-
-        final EditText input = new EditText(this);
-        input.setSingleLine(true);
-        input.setText(whisperApiKey != null ? whisperApiKey : "");
-        layout.addView(input);
-
-        new AlertDialog.Builder(this)
-                .setTitle("Live Scanner AI Captions Key")
-                .setView(layout)
-                .setPositiveButton("Save Key", (dialog, which) -> {
-                    String k = input.getText().toString().trim();
-                    whisperApiKey = k;
-                    prefs.edit().putString("whisper_api_key", k).apply();
-                    Toast.makeText(MainActivity.this, k.isEmpty() ? "AI Captions Key Cleared" : "AI Captions Key Saved!", Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private void transcribeLiveSlice(byte[] audioBytes, final int chunkId) {
-        if (!liveCaptionsEnabled || audioBytes == null || audioBytes.length < 2048) {
-            return;
-        }
-        final String key = (whisperApiKey != null ? whisperApiKey : "").trim();
-        if (key.isEmpty()) {
-            mainHandler.post(() -> {
-                if (webView != null) {
-                    webView.evaluateJavascript("if(window.showLiveCaption)window.showLiveCaption('HOLD CC TO ENTER API KEY');", null);
-                }
-            });
-            return;
-        }
-
-        captionExecutor.execute(() -> {
-            try {
-                if (chunkId != currentLiveChunkId) return;
-                File tempChunk = new File(getCacheDir(), "live_rx.webm");
-                FileOutputStream fos = new FileOutputStream(tempChunk);
-                fos.write(audioBytes);
-                fos.close();
-
-                boolean isOpenAi = key.startsWith("sk-");
-                String endpoint = isOpenAi ? "https://api.openai.com/v1/audio/transcriptions" : "https://api.groq.com/openai/v1/audio/transcriptions";
-                String model = isOpenAi ? "whisper-1" : "whisper-large-v3-turbo";
-
-                String boundary = "===LiveWhisper" + System.currentTimeMillis() + "===";
-                URL url = new URL(endpoint);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(8000);
-                conn.setReadTimeout(10000);
-                conn.setDoOutput(true);
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Authorization", "Bearer " + key);
-                conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
-
-                OutputStream os = conn.getOutputStream();
-                StringBuilder partHead = new StringBuilder();
-                partHead.append("--").append(boundary).append("\r\n");
-                partHead.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n");
-                partHead.append(model).append("\r\n");
-
-                partHead.append("--").append(boundary).append("\r\n");
-                partHead.append("Content-Disposition: form-data; name=\"response_format\"\r\n\r\n");
-                partHead.append("json\r\n");
-
-                partHead.append("--").append(boundary).append("\r\n");
-                partHead.append("Content-Disposition: form-data; name=\"file\"; filename=\"live.webm\"\r\n");
-                partHead.append("Content-Type: audio/webm\r\n\r\n");
-                os.write(partHead.toString().getBytes(StandardCharsets.UTF_8));
-
-                FileInputStream fis = new FileInputStream(tempChunk);
-                byte[] buf = new byte[8192];
-                int r;
-                while ((r = fis.read(buf)) != -1) {
-                    os.write(buf, 0, r);
-                }
-                fis.close();
-
-                os.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
-                os.flush();
-                os.close();
-
-                if (chunkId != currentLiveChunkId) { conn.disconnect(); return; }
-
-                int code = conn.getResponseCode();
-                if (code >= 200 && code < 300) {
-                    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
-                    StringBuilder resp = new StringBuilder();
-                    String line;
-                    while ((line = br.readLine()) != null) resp.append(line);
-                    br.close();
-                    conn.disconnect();
-
-                    JSONObject resObj = new JSONObject(resp.toString());
-                    final String transcript = resObj.optString("text", "").trim();
-                    if (!transcript.isEmpty()) {
-                        mainHandler.post(() -> {
-                            if (chunkId == currentLiveChunkId && webView != null) {
-                                webView.evaluateJavascript("if(window.showLiveCaption)window.showLiveCaption(" + JSONObject.quote(transcript) + ");", null);
-                            }
-                        });
-                    }
-                } else {
-                    final int errCode = code;
-                    InputStream es = conn.getErrorStream();
-                    if (es != null) {
-                        BufferedReader ebr = new BufferedReader(new InputStreamReader(es, StandardCharsets.UTF_8));
-                        StringBuilder esb = new StringBuilder();
-                        String eline;
-                        while ((eline = ebr.readLine()) != null) esb.append(eline);
-                        ebr.close();
-                    }
-                    conn.disconnect();
-                    mainHandler.post(() -> {
-                        if (webView != null) {
-                            String msg = errCode == 401 ? "INVALID API KEY" : ("API ERROR " + errCode);
-                            webView.evaluateJavascript("if(window.showLiveCaption)window.showLiveCaption(" + JSONObject.quote(msg) + ");", null);
-                        }
-                    });
-                }
-            } catch (Exception ignored) {}
-        });
-    }
-
     public class WebAppBridge {
         @JavascriptInterface
         public String getBatteryStatus() {
@@ -600,40 +458,6 @@ private String getNativeBatteryStatus() {
                     }
                 }, 1100);
             }
-        }
-
-        @JavascriptInterface
-        public void transcribeLiveChunk(final String base64Audio) {
-            if (base64Audio == null || base64Audio.isEmpty()) return;
-            try {
-                final byte[] audioBytes = Base64.decode(base64Audio, Base64.DEFAULT);
-                final int chunkId = ++currentLiveChunkId;
-                transcribeLiveSlice(audioBytes, chunkId);
-            } catch (Exception ignored) {}
-        }
-
-        @JavascriptInterface
-        public boolean toggleLiveCaptions() {
-            liveCaptionsEnabled = !liveCaptionsEnabled;
-            prefs.edit().putBoolean("live_captions_on", liveCaptionsEnabled).apply();
-            mainHandler.post(() -> {
-                if (liveCaptionsEnabled && (whisperApiKey == null || whisperApiKey.trim().isEmpty())) {
-                    showApiKeyDialog();
-                } else {
-                    Toast.makeText(MainActivity.this, liveCaptionsEnabled ? "Live AI Captions: ON" : "Live AI Captions: OFF", Toast.LENGTH_SHORT).show();
-                }
-            });
-            return liveCaptionsEnabled;
-        }
-
-        @JavascriptInterface
-        public boolean getLiveCaptionsState() {
-            return liveCaptionsEnabled;
-        }
-
-        @JavascriptInterface
-        public void openApiKeyDialog() {
-            mainHandler.post(() -> showApiKeyDialog());
         }
 
         @JavascriptInterface
@@ -765,9 +589,8 @@ private void showBothSystemBarsNow() {
         js.append("        '#device-wrapper{transition:opacity 0.18s ease!important;}' +\n");
         js.append("        '#device-wrapper.flipping-out{opacity:0!important;}' +\n");
 
-        /* Second Row: Clean Grid of 6 Buttons */
-        js.append("        '.scanner-nav-6{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:4px!important;height:28px!important;}' +\n");
-        js.append("        '.scanner-nav-6 .btn{font-size:8.5px!important;letter-spacing:-0.2px!important;padding:2px 1px!important;white-space:nowrap!important;}' +\n");
+        /* Second Row: Clean 5-Button Layout [ LOG IN ] [ ARCHIVE ] [ RADIO ] [ BRAND ] [ GUIDE ] */
+        js.append("        '.scanner-nav-5{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;}' +\n");
 
         js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:7px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
         js.append("        '.freq-hit-badge, #mini-log-table .freq-hit-badge, #mini-log-table td:nth-child(5) .freq-hit-badge, #mini-log-table td:nth-child(5) span[class*=\"hit\"], #mini-log-table td:nth-child(5) span[class*=\"badge\"]{display:none!important;visibility:hidden!important;width:0!important;height:0!important;padding:0!important;margin:0!important;border:none!important;overflow:hidden!important;font-size:0!important;}' +\n");
@@ -802,24 +625,20 @@ private void showBothSystemBarsNow() {
         js.append("        '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
         js.append("        '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}' +\n");
 
-        /* Live AI Closed Captions display window on scanner LCD */
-        js.append("        '#scanner-live-caption{position:absolute!important;bottom:7px!important;left:8px!important;right:8px!important;z-index:22!important;background:rgba(0,0,0,0.85)!important;border:1px solid var(--log-text,#38bdf8)!important;border-radius:5px!important;padding:3px 6px!important;font-family:\"JetBrains Mono\",monospace!important;font-size:9.5px!important;font-weight:800!important;color:var(--log-text,#38bdf8)!important;text-align:center!important;pointer-events:none!important;opacity:0;transition:opacity 0.25s ease!important;text-shadow:0 0 4px currentColor!important;letter-spacing:0.4px!important;box-shadow:0 2px 8px rgba(0,0,0,0.9)!important;word-break:break-word!important;}' +\n");
-        js.append("        '#scanner-live-caption.visible{opacity:1!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-blur,.bc-blur-blink,.bc-wavy-blur) .scanner-display #scanner-bat-hud:not(.disconnected){filter:blur(2.2px)!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-deep-blur .scanner-display #scanner-bat-hud:not(.disconnected){filter:blur(2.9px)!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-fuzzy,.bc-flicker,.bc-tv-snow) .scanner-display #scanner-bat-hud:not(.disconnected){filter:blur(1.2px)!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wobble .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcWobbleSub 0.46s steps(2,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-fuzzy .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcFuzzySub 0.58s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-flicker .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcFlickerSub 0.62s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-tv-off .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcTvOffSub 1.35s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-fast-blink,.bc-blur-blink) .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcFastBlinkSub 0.64s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-wavy,.bc-wavy-blur) .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcWavySub 0.82s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wavy-blink .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcWavySub 0.78s ease-in-out forwards,bcFastBlinkSub 0.78s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-tv-snow .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcSnowDropSub 0.86s steps(2,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-snow-wavy .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcWavySub 0.86s ease-in-out forwards,bcSnowDropSub 0.86s steps(2,end) forwards!important;}' +\n");
 
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-blur,.bc-blur-blink,.bc-wavy-blur) .scanner-display :is(#scanner-bat-hud,#scanner-live-caption):not(.disconnected){filter:blur(2.2px)!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-deep-blur .scanner-display :is(#scanner-bat-hud,#scanner-live-caption):not(.disconnected){filter:blur(2.9px)!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-fuzzy,.bc-flicker,.bc-tv-snow) .scanner-display :is(#scanner-bat-hud,#scanner-live-caption):not(.disconnected){filter:blur(1.2px)!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wobble .scanner-display :is(#scanner-bat-hud,#scanner-live-caption):not(.disconnected){animation:bcWobbleSub 0.46s steps(2,end) forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-fuzzy .scanner-display :is(#scanner-bat-hud,#scanner-live-caption):not(.disconnected){animation:bcFuzzySub 0.58s ease-in-out forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-flicker .scanner-display :is(#scanner-bat-hud,#scanner-live-caption):not(.disconnected){animation:bcFlickerSub 0.62s steps(1,end) forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-tv-off .scanner-display :is(#scanner-bat-hud,#scanner-live-caption):not(.disconnected){animation:bcTvOffSub 1.35s ease-in-out forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-fast-blink,.bc-blur-blink) .scanner-display :is(#scanner-bat-hud,#scanner-live-caption):not(.disconnected){animation:bcFastBlinkSub 0.64s steps(1,end) forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-wavy,.bc-wavy-blur) .scanner-display :is(#scanner-bat-hud,#scanner-live-caption):not(.disconnected){animation:bcWavySub 0.82s ease-in-out forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wavy-blink .scanner-display :is(#scanner-bat-hud,#scanner-live-caption):not(.disconnected){animation:bcWavySub 0.78s ease-in-out forwards,bcFastBlinkSub 0.78s steps(1,end) forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-tv-snow .scanner-display :is(#scanner-bat-hud,#scanner-live-caption):not(.disconnected){animation:bcSnowDropSub 0.86s steps(2,end) forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-snow-wavy .scanner-display :is(#scanner-bat-hud,#scanner-live-caption):not(.disconnected){animation:bcWavySub 0.86s ease-in-out forwards,bcSnowDropSub 0.86s steps(2,end) forwards!important;}' +\n");
-
-        js.append("        'html.tv-off :is(#scanner-bat-hud,#scanner-live-caption),.scanner-display.tv-shutting-down :is(#scanner-bat-hud,#scanner-live-caption){filter:grayscale(1) brightness(2.5)!important;animation:crtPowerOffImgF 0.38s cubic-bezier(0.4,0,0.2,1) forwards!important;}' +\n");
+        js.append("        'html.tv-off #scanner-bat-hud,.scanner-display.tv-shutting-down #scanner-bat-hud{filter:grayscale(1) brightness(2.5)!important;animation:crtPowerOffImgF 0.38s cubic-bezier(0.4,0,0.2,1) forwards!important;}' +\n");
 
         js.append("        '.scanner-display.tv-boot-scart #scanner-bat-hud{animation:scartBootImgF 0.78s cubic-bezier(0.22,1,0.36,1) forwards!important;}' +\n");
         js.append("        '.scanner-display.tv-boot-rf #scanner-bat-hud{animation:rfBootImgF 0.88s steps(3,end) forwards!important;}' +\n");
@@ -841,12 +660,6 @@ private void showBothSystemBarsNow() {
         js.append("        batEl.id = 'scanner-bat-hud';\n");
         js.append("        batEl.innerHTML = '<span class=\"bat-icon-box\"><span class=\"bat-icon-fill\" id=\"scanner-bat-fill\"></span></span><span id=\"scanner-bat-txt\">--%</span>';\n");
         js.append("        dispBox.appendChild(batEl);\n");
-        js.append("      }\n");
-        js.append("      var liveCapEl = document.getElementById('scanner-live-caption');\n");
-        js.append("      if (!liveCapEl) {\n");
-        js.append("        liveCapEl = document.createElement('div');\n");
-        js.append("        liveCapEl.id = 'scanner-live-caption';\n");
-        js.append("        dispBox.appendChild(liveCapEl);\n");
         js.append("      }\n");
         js.append("      if (clkEl && batEl) {\n");
         js.append("        if (clkEl.classList.contains('disconnected')) batEl.classList.add('disconnected');\n");
@@ -942,12 +755,12 @@ js.append("    window.__stripHitBadgesFromLog = function() {\n");
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
 
-        /* Second Row: Converted to a clean grid of 6 buttons [ AUTH ] [ ARCHIVE ] [ RADIO ] [ BRAND ] [ GUIDE ] [ CC ] */
+        /* Clean 5-Button Row [ LOG IN ] [ ARCHIVE ] [ RADIO ] [ BRAND ] [ GUIDE ] */
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
         js.append("      var rowParent = loginBtn.parentNode;\n");
-        js.append("      if (rowParent) rowParent.className = 'scanner-nav-6';\n");
+        js.append("      if (rowParent) rowParent.classList.add('scanner-nav-5');\n");
         js.append("      var newAuthBtn = loginBtn.cloneNode(true);\n");
         js.append("      newAuthBtn.__mergedAuthHooked = true;\n");
         js.append("      rowParent.replaceChild(newAuthBtn, loginBtn);\n");
@@ -981,41 +794,6 @@ js.append("    window.__stripHitBadgesFromLog = function() {\n");
         js.append("        var wrap = document.getElementById('device-wrapper'); if (wrap) wrap.classList.add('flipping-out');\n");
         js.append("        setTimeout(function() { if (window.AndroidApp) window.AndroidApp.openBroadcastRadio(); }, 160);\n");
         js.append("      });\n");
-
-        /* Add CC button as the 6th button in this second row */
-        js.append("      var liveCcBtn = document.createElement('button');\n");
-        js.append("      liveCcBtn.id = 'btn-scanner-cc'; liveCcBtn.className = 'btn'; liveCcBtn.type = 'button';\n");
-        js.append("      function syncLiveCcLabel(active) {\n");
-        js.append("        liveCcBtn.classList.toggle('active', active);\n");
-        js.append("        liveCcBtn.innerText = active ? 'CC: ON' : 'CC: OFF';\n");
-        js.append("      }\n");
-        js.append("      if (window.AndroidApp && window.AndroidApp.getLiveCaptionsState) {\n");
-        js.append("        syncLiveCcLabel(window.AndroidApp.getLiveCaptionsState());\n");
-        js.append("      } else { liveCcBtn.innerText = 'CC: ON'; }\n");
-        js.append("      var liveCcTimer = null, liveCcLong = false;\n");
-        js.append("      liveCcBtn.addEventListener('pointerdown', function() {\n");
-        js.append("        clearTimeout(liveCcTimer); liveCcLong = false;\n");
-        js.append("        liveCcTimer = setTimeout(function() {\n");
-        js.append("          liveCcTimer = null; liveCcLong = true;\n");
-        js.append("          if (navigator.vibrate) navigator.vibrate(35);\n");
-        js.append("          if (window.AndroidApp && window.AndroidApp.openApiKeyDialog) {\n");
-        js.append("            window.AndroidApp.openApiKeyDialog();\n");
-        js.append("          }\n");
-        js.append("        }, 500);\n");
-        js.append("      });\n");
-        js.append("      liveCcBtn.addEventListener('pointerup', function() {\n");
-        js.append("        var wasTap = liveCcTimer !== null; clearTimeout(liveCcTimer); liveCcTimer = null;\n");
-        js.append("        if (wasTap && !liveCcLong) {\n");
-        js.append("          if (navigator.vibrate) navigator.vibrate(20);\n");
-        js.append("          if (window.AndroidApp && window.AndroidApp.toggleLiveCaptions) {\n");
-        js.append("            var st = window.AndroidApp.toggleLiveCaptions();\n");
-        js.append("            syncLiveCcLabel(st);\n");
-        js.append("          }\n");
-        js.append("        }\n");
-        js.append("      });\n");
-        js.append("      liveCcBtn.addEventListener('pointerleave', function() { clearTimeout(liveCcTimer); liveCcTimer = null; });\n");
-        js.append("      liveCcBtn.addEventListener('pointercancel', function() { clearTimeout(liveCcTimer); liveCcTimer = null; });\n");
-        js.append("      rowParent.appendChild(liveCcBtn);\n");
         js.append("    }\n");
 
         /* Top LEDs Left: Clean, uncrowded layout with just VOICE and WAKE */
@@ -1065,74 +843,6 @@ js.append("    window.__stripHitBadgesFromLog = function() {\n");
         js.append("        }\n");
         js.append("        new MutationObserver(checkTopLogRowForSpeech).observe(logBody, { childList: true });\n");
         js.append("      }\n");
-        js.append("    }\n");
-
-        // Live Audio Transmission Slicing Engine Hook
-        js.append("    window.showLiveCaption = function(txt) {\n");
-        js.append("      if (!txt || !txt.trim()) return;\n");
-        js.append("      var el = document.getElementById('scanner-live-caption');\n");
-        js.append("      if (el) {\n");
-        js.append("        el.innerText = 'CC: \"' + txt.trim() + '\"';\n");
-        js.append("        el.classList.add('visible');\n");
-        js.append("        clearTimeout(window.__liveCapHideTimer);\n");
-        js.append("        window.__liveCapHideTimer = setTimeout(function() {\n");
-        js.append("          el.classList.remove('visible');\n");
-        js.append("        }, 8500);\n");
-        js.append("      }\n");
-        js.append("    };\n");
-
-        js.append("    var rxLed = document.getElementById('rx-led');\n");
-        js.append("    if (rxLed && !window.__liveRxCaptureHooked) {\n");
-        js.append("      window.__liveRxCaptureHooked = true;\n");
-        js.append("      window.__liveMediaRecorder = null;\n");
-        js.append("      window.__liveChunks = [];\n");
-        js.append("      function handleRxStateForLiveCapture() {\n");
-        js.append("        var isRxActive = rxLed.classList.contains('active');\n");
-        js.append("        if (isRxActive) {\n");
-        js.append("          var capBox = document.getElementById('scanner-live-caption');\n");
-        js.append("          if (capBox) capBox.classList.remove('visible');\n");
-        js.append("          if (!window.__liveMediaRecorder) {\n");
-        js.append("            var player = document.getElementById('audio_player');\n");
-        js.append("            if (player && !player.paused) {\n");
-        js.append("              try {\n");
-        js.append("                var stream = player.captureStream ? player.captureStream() : (player.mozCaptureStream ? player.mozCaptureStream() : null);\n");
-        js.append("                if (stream) {\n");
-        js.append("                  window.__liveChunks = [];\n");
-        js.append("                  var mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';\n");
-        js.append("                  window.__liveMediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);\n");
-        js.append("                  window.__liveMediaRecorder.ondataavailable = function(ev) {\n");
-        js.append("                    if (ev.data && ev.data.size > 0) window.__liveChunks.push(ev.data);\n");
-        js.append("                  };\n");
-        js.append("                  window.__liveMediaRecorder.onstop = function() {\n");
-        js.append("                    if (window.__liveChunks.length > 0) {\n");
-        js.append("                      var b = new Blob(window.__liveChunks, { type: 'audio/webm' });\n");
-        js.append("                      var rdr = new FileReader();\n");
-        js.append("                      rdr.onloadend = function() {\n");
-        js.append("                        var b64 = (rdr.result || '').split(',')[1];\n");
-        js.append("                        if (b64 && window.AndroidApp && window.AndroidApp.transcribeLiveChunk) {\n");
-        js.append("                          window.AndroidApp.transcribeLiveChunk(b64);\n");
-        js.append("                        }\n");
-        js.append("                      };\n");
-        js.append("                      rdr.readAsDataURL(b);\n");
-        js.append("                    }\n");
-        js.append("                  };\n");
-        js.append("                  window.__liveMediaRecorder.start();\n");
-        js.append("                }\n");
-        js.append("              } catch(e) {}\n");
-        js.append("            }\n");
-        js.append("          }\n");
-        js.append("        } else {\n");
-        js.append("          if (window.__liveMediaRecorder && window.__liveMediaRecorder.state === 'recording') {\n");
-        js.append("            setTimeout(function() {\n");
-        js.append("              if (window.__liveMediaRecorder && window.__liveMediaRecorder.state === 'recording') {\n");
-        js.append("                try { window.__liveMediaRecorder.stop(); } catch(e) {}\n");
-        js.append("                window.__liveMediaRecorder = null;\n");
-        js.append("              }\n");
-        js.append("            }, 300);\n");
-        js.append("          }\n");
-        js.append("        }\n");
-        js.append("      }\n");
-        js.append("      new MutationObserver(handleRxStateForLiveCapture).observe(rxLed, { attributes: true, attributeFilter: ['class'] });\n");
         js.append("    }\n");
 
         js.append("    var logTb = document.getElementById('mini-log-data');\n");
