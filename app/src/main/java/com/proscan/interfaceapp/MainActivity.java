@@ -415,18 +415,27 @@ private String getNativeBatteryStatus() {
     }
 
     private void transcribeLiveSlice(byte[] audioBytes, final int chunkId) {
-        if (!liveCaptionsEnabled || whisperApiKey == null || whisperApiKey.trim().isEmpty() || audioBytes == null || audioBytes.length < 2048) {
+        if (!liveCaptionsEnabled || audioBytes == null || audioBytes.length < 2048) {
             return;
         }
+        final String key = (whisperApiKey != null ? whisperApiKey : "").trim();
+        if (key.isEmpty()) {
+            mainHandler.post(() -> {
+                if (webView != null) {
+                    webView.evaluateJavascript("if(window.showLiveCaption)window.showLiveCaption('HOLD CC TO ENTER API KEY');", null);
+                }
+            });
+            return;
+        }
+
         captionExecutor.execute(() -> {
             try {
                 if (chunkId != currentLiveChunkId) return;
-                File tempChunk = new File(getCacheDir(), "live_slice.webm");
+                File tempChunk = new File(getCacheDir(), "live_rx.webm");
                 FileOutputStream fos = new FileOutputStream(tempChunk);
                 fos.write(audioBytes);
                 fos.close();
 
-                String key = whisperApiKey.trim();
                 boolean isOpenAi = key.startsWith("sk-");
                 String endpoint = isOpenAi ? "https://api.openai.com/v1/audio/transcriptions" : "https://api.groq.com/openai/v1/audio/transcriptions";
                 String model = isOpenAi ? "whisper-1" : "whisper-large-v3-turbo";
@@ -435,7 +444,7 @@ private String getNativeBatteryStatus() {
                 URL url = new URL(endpoint);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setConnectTimeout(8000);
-                conn.setReadTimeout(8000);
+                conn.setReadTimeout(10000);
                 conn.setDoOutput(true);
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Authorization", "Bearer " + key);
@@ -489,7 +498,22 @@ private String getNativeBatteryStatus() {
                         });
                     }
                 } else {
+                    final int errCode = code;
+                    InputStream es = conn.getErrorStream();
+                    if (es != null) {
+                        BufferedReader ebr = new BufferedReader(new InputStreamReader(es, StandardCharsets.UTF_8));
+                        StringBuilder esb = new StringBuilder();
+                        String eline;
+                        while ((eline = ebr.readLine()) != null) esb.append(eline);
+                        ebr.close();
+                    }
                     conn.disconnect();
+                    mainHandler.post(() -> {
+                        if (webView != null) {
+                            String msg = errCode == 401 ? "INVALID API KEY" : ("API ERROR " + errCode);
+                            webView.evaluateJavascript("if(window.showLiveCaption)window.showLiveCaption(" + JSONObject.quote(msg) + ");", null);
+                        }
+                    });
                 }
             } catch (Exception ignored) {}
         });
@@ -740,7 +764,11 @@ private void showBothSystemBarsNow() {
         js.append("      st.textContent = '' +\n");
         js.append("        '#device-wrapper{transition:opacity 0.18s ease!important;}' +\n");
         js.append("        '#device-wrapper.flipping-out{opacity:0!important;}' +\n");
-        js.append("        '.scanner-nav-5{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;}' +\n");
+
+        /* Second Row: Clean Grid of 6 Buttons */
+        js.append("        '.scanner-nav-6{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:4px!important;height:28px!important;}' +\n");
+        js.append("        '.scanner-nav-6 .btn{font-size:8.5px!important;letter-spacing:-0.2px!important;padding:2px 1px!important;white-space:nowrap!important;}' +\n");
+
         js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:7px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
         js.append("        '.freq-hit-badge, #mini-log-table .freq-hit-badge, #mini-log-table td:nth-child(5) .freq-hit-badge, #mini-log-table td:nth-child(5) span[class*=\"hit\"], #mini-log-table td:nth-child(5) span[class*=\"badge\"]{display:none!important;visibility:hidden!important;width:0!important;height:0!important;padding:0!important;margin:0!important;border:none!important;overflow:hidden!important;font-size:0!important;}' +\n");
         js.append("        '#mini-log-table th,#mini-log-table td{padding:3px 2px 3px 4px!important;}' +\n");
@@ -750,7 +778,7 @@ private void showBothSystemBarsNow() {
         js.append("        '#mini-log-table th:nth-child(4),#mini-log-table td:nth-child(4){width:14%!important;}' +\n");
         js.append("        '#mini-log-table th:nth-child(5),#mini-log-table td:nth-child(5){width:34%!important;}' +\n");
         js.append("        '#mini-log-table tbody tr{cursor:pointer;}#mini-log-table tbody tr:active{background:rgba(255,255,255,0.15)!important;}' +\n");
-        js.append("        '.top-leds-left{gap:8px!important;}' +\n");
+        js.append("        '.top-leds-left{gap:10px!important;}' +\n");
         js.append("        '#voice-switch-track{width:26px;height:11px;border-radius:999px;background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.16);box-shadow:inset 0 1px 3px rgba(0,0,0,0.85),0 1px 0 rgba(255,255,255,0.08);padding:1px;display:flex;align-items:center;position:relative;flex-shrink:0;}' +\n");
         js.append("        '#voice-switch-thumb{width:11px;height:7px;border-radius:999px;background:var(--btn-bg);border:var(--btn-border);box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.2);transform:translateX(0);transition:transform 0.22s cubic-bezier(0.4,0,0.2,1);display:flex;align-items:center;justify-content:center;}' +\n");
         js.append("        '#voice-switch-thumb::after{content:\"\";width:2px;height:3px;border-radius:1px;background:rgba(255,220,220,0.85);}' +\n");
@@ -758,9 +786,12 @@ private void showBothSystemBarsNow() {
         js.append("        '#voice-led{flex-shrink:0;width:10px;height:10px;border-radius:50%;background-color:var(--led-off-bg,#1a1a1a);border:var(--led-off-border,2px solid #000);box-shadow:var(--led-off-shadow,inset 1px 1px 3px rgba(0,0,0,0.8),0 1px 1px rgba(255,255,255,0.1));transition:all 0.3s ease;}' +\n");
         js.append("        '@keyframes voice-led-pulse-green{0%,100%{background-color:#10b981;border-color:#a7f3d0;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.9),0 0 0 1px rgba(0,0,0,0.65),0 0 8px #10b981,0 0 14px rgba(16,185,129,0.75);}50%{background-color:#065f46;border-color:#059669;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.35),0 0 0 1px rgba(0,0,0,0.65),0 0 2px rgba(16,185,129,0.25);}}' +\n");
         js.append("        '#btn-voice-toggle.active #voice-led{border-style:solid!important;border-width:2px!important;animation:voice-led-pulse-green 3.8s ease-in-out infinite!important;}' +\n");
-        js.append("        '#btn-live-cc{display:inline-flex;align-items:center;gap:3px;padding:2px 5px;border-radius:4px;background:var(--btn-bg);border:var(--btn-border);color:var(--toggle-color);font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;cursor:pointer;touch-action:manipulation;box-shadow:var(--btn-shadow);}' +\n");
-        js.append("        '#btn-live-cc.active{color:#38bdf8;border-color:#38bdf8;box-shadow:0 0 6px rgba(56,189,248,0.5);}' +\n");
         js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:24px;height:11px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
+
+        /* Vertically Stacked Brand Name on Scanner (No overlap with RX LED) */
+        js.append("        '.brand-henus{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:1px!important;line-height:1!important;white-space:nowrap!important;}' +\n");
+        js.append("        '.brand-henus .henus-mark{font-size:10px!important;letter-spacing:1.5px!important;padding:0 4px!important;border-left:1.5px solid var(--brand-accent,#e11d48)!important;border-right:1.5px solid var(--brand-accent,#e11d48)!important;text-transform:uppercase!important;}' +\n");
+        js.append("        '.brand-henus .henus-sub{font-size:6.5px!important;letter-spacing:2px!important;line-height:1!important;margin-top:1px!important;}' +\n");
 
         js.append("        '#display-clock-hud{position:absolute!important;top:6px!important;left:10px!important;right:auto!important;z-index:3!important;}' +\n");
         js.append("        '#scanner-bat-hud{position:absolute!important;top:6px!important;right:9px!important;left:auto!important;z-index:3!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10px!important;font-weight:700!important;letter-spacing:0.8px!important;color:var(--log-text)!important;opacity:0.88;pointer-events:none;display:inline-flex!important;align-items:center!important;line-height:1;transition:opacity 0.3s ease,color 0.3s ease;}' +\n");
@@ -772,7 +803,7 @@ private void showBothSystemBarsNow() {
         js.append("        '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}' +\n");
 
         /* Live AI Closed Captions display window on scanner LCD */
-        js.append("        '#scanner-live-caption{position:absolute!important;bottom:7px!important;left:8px!important;right:8px!important;z-index:22!important;background:rgba(0,0,0,0.85)!important;border:1px solid var(--log-text,#38bdf8)!important;border-radius:5px!important;padding:3px 6px!important;font-family:\"JetBrains Mono\",monospace!important;font-size:9.5px!important;font-weight:800!important;color:var(--log-text,#38bdf8)!important;text-align:center!important;pointer-events:none!important;opacity:0;transition:opacity 0.25s ease!important;text-shadow:0 0 4px currentColor!important;letter-spacing:0.4px!important;box-shadow:0 2px 8px rgba(0,0,0,0.9)!important;}' +\n");
+        js.append("        '#scanner-live-caption{position:absolute!important;bottom:7px!important;left:8px!important;right:8px!important;z-index:22!important;background:rgba(0,0,0,0.85)!important;border:1px solid var(--log-text,#38bdf8)!important;border-radius:5px!important;padding:3px 6px!important;font-family:\"JetBrains Mono\",monospace!important;font-size:9.5px!important;font-weight:800!important;color:var(--log-text,#38bdf8)!important;text-align:center!important;pointer-events:none!important;opacity:0;transition:opacity 0.25s ease!important;text-shadow:0 0 4px currentColor!important;letter-spacing:0.4px!important;box-shadow:0 2px 8px rgba(0,0,0,0.9)!important;word-break:break-word!important;}' +\n");
         js.append("        '#scanner-live-caption.visible{opacity:1!important;}' +\n");
 
         js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-blur,.bc-blur-blink,.bc-wavy-blur) .scanner-display :is(#scanner-bat-hud,#scanner-live-caption):not(.disconnected){filter:blur(2.2px)!important;}' +\n");
@@ -911,11 +942,12 @@ js.append("    window.__stripHitBadgesFromLog = function() {\n");
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
 
+        /* Second Row: Converted to a clean grid of 6 buttons [ AUTH ] [ ARCHIVE ] [ RADIO ] [ BRAND ] [ GUIDE ] [ CC ] */
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
         js.append("      var rowParent = loginBtn.parentNode;\n");
-        js.append("      if (rowParent) rowParent.classList.add('scanner-nav-5');\n");
+        js.append("      if (rowParent) rowParent.className = 'scanner-nav-6';\n");
         js.append("      var newAuthBtn = loginBtn.cloneNode(true);\n");
         js.append("      newAuthBtn.__mergedAuthHooked = true;\n");
         js.append("      rowParent.replaceChild(newAuthBtn, loginBtn);\n");
@@ -949,31 +981,10 @@ js.append("    window.__stripHitBadgesFromLog = function() {\n");
         js.append("        var wrap = document.getElementById('device-wrapper'); if (wrap) wrap.classList.add('flipping-out');\n");
         js.append("        setTimeout(function() { if (window.AndroidApp) window.AndroidApp.openBroadcastRadio(); }, 160);\n");
         js.append("      });\n");
-        js.append("    }\n");
 
-        js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
-        js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
-        js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = '';\n");
-        js.append("      function speakTextNow(txt) { if (window.AndroidApp) window.AndroidApp.speakChannel(txt); }\n");
-        js.append("      var vBtn = document.createElement('button');\n");
-        js.append("      vBtn.id = 'btn-voice-toggle'; vBtn.className = 'wake-btn-wrapper'; vBtn.type = 'button';\n");
-        js.append("      vBtn.innerHTML = '<div class=\"wake-switch-col\"><div id=\"voice-switch-track\"><div id=\"voice-switch-thumb\"></div></div><span class=\"rx-label\">VOICE</span></div><div id=\"voice-led\"></div>';\n");
-        js.append("      vBtn.addEventListener('click', function() {\n");
-        js.append("        window.__voiceReadoutEnabled = !window.__voiceReadoutEnabled;\n");
-        js.append("        vBtn.classList.toggle('active', window.__voiceReadoutEnabled);\n");
-        js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
-        js.append("        if (window.__voiceReadoutEnabled) {\n");
-        js.append("          speakTextNow('Voice readout on');\n");
-        js.append("          if (typeof showDisplayHud === 'function') showDisplayHud('VOICE READOUT: ON', 1400);\n");
-        js.append("        } else if (typeof showDisplayHud === 'function') {\n");
-        js.append("          showDisplayHud('VOICE READOUT: OFF', 1400);\n");
-        js.append("        }\n");
-        js.append("      });\n");
-        js.append("      ledsLeft.appendChild(vBtn);\n");
-
-        // Live Closed Captions Button (Tap = Toggle CC, Hold = Set Whisper API Key)
+        /* Add CC button as the 6th button in this second row */
         js.append("      var liveCcBtn = document.createElement('button');\n");
-        js.append("      liveCcBtn.id = 'btn-live-cc'; liveCcBtn.type = 'button';\n");
+        js.append("      liveCcBtn.id = 'btn-scanner-cc'; liveCcBtn.className = 'btn'; liveCcBtn.type = 'button';\n");
         js.append("      function syncLiveCcLabel(active) {\n");
         js.append("        liveCcBtn.classList.toggle('active', active);\n");
         js.append("        liveCcBtn.innerText = active ? 'CC: ON' : 'CC: OFF';\n");
@@ -1004,7 +1015,29 @@ js.append("    window.__stripHitBadgesFromLog = function() {\n");
         js.append("      });\n");
         js.append("      liveCcBtn.addEventListener('pointerleave', function() { clearTimeout(liveCcTimer); liveCcTimer = null; });\n");
         js.append("      liveCcBtn.addEventListener('pointercancel', function() { clearTimeout(liveCcTimer); liveCcTimer = null; });\n");
-        js.append("      ledsLeft.appendChild(liveCcBtn);\n");
+        js.append("      rowParent.appendChild(liveCcBtn);\n");
+        js.append("    }\n");
+
+        /* Top LEDs Left: Clean, uncrowded layout with just VOICE and WAKE */
+        js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
+        js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
+        js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = '';\n");
+        js.append("      function speakTextNow(txt) { if (window.AndroidApp) window.AndroidApp.speakChannel(txt); }\n");
+        js.append("      var vBtn = document.createElement('button');\n");
+        js.append("      vBtn.id = 'btn-voice-toggle'; vBtn.className = 'wake-btn-wrapper'; vBtn.type = 'button';\n");
+        js.append("      vBtn.innerHTML = '<div class=\"wake-switch-col\"><div id=\"voice-switch-track\"><div id=\"voice-switch-thumb\"></div></div><span class=\"rx-label\">VOICE</span></div><div id=\"voice-led\"></div>';\n");
+        js.append("      vBtn.addEventListener('click', function() {\n");
+        js.append("        window.__voiceReadoutEnabled = !window.__voiceReadoutEnabled;\n");
+        js.append("        vBtn.classList.toggle('active', window.__voiceReadoutEnabled);\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("        if (window.__voiceReadoutEnabled) {\n");
+        js.append("          speakTextNow('Voice readout on');\n");
+        js.append("          if (typeof showDisplayHud === 'function') showDisplayHud('VOICE READOUT: ON', 1400);\n");
+        js.append("        } else if (typeof showDisplayHud === 'function') {\n");
+        js.append("          showDisplayHud('VOICE READOUT: OFF', 1400);\n");
+        js.append("        }\n");
+        js.append("      });\n");
+        js.append("      ledsLeft.appendChild(vBtn);\n");
 
         // Speech Detector with Duplicate Suppression
         js.append("      var logBody = document.getElementById('mini-log-data');\n");
