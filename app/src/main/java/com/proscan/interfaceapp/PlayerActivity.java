@@ -84,12 +84,15 @@ public class PlayerActivity extends Activity {
     private String initialStartMode = "archive";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ExecutorService audioFetchExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService captionExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private TextToSpeech tts = null;
     private boolean ttsReady = false;
     private MediaPlayer nativePlayer = null;
     private Equalizer speechEqualizer = null;
     private boolean clarityFilterEnabled = false;
+    private boolean captionsEnabled = true;
+    private String whisperApiKey = "";
     private boolean isFetchingDrive = false;
     private boolean isLiveRadioStream = false;
     private volatile int currentStreamReqId = 0;
@@ -116,13 +119,10 @@ public class PlayerActivity extends Activity {
             for (short i = 0; i < bands; i++) {
                 int hz = eq.getCenterFreq(i) / 1000;
                 if (hz < 320) {
-                    // Cut low rumble, motor drone, power hum (-7.0 dB)
                     eq.setBandLevel(i, (short) Math.max(minEq, -700));
                 } else if (hz >= 1000 && hz <= 3600) {
-                    // Boost speech presence & consonant clarity (+6.5 dB)
                     eq.setBandLevel(i, (short) Math.min(maxEq, 650));
                 } else if (hz > 4500) {
-                    // Attenuate harsh FM squelch hiss & static (-6.0 dB)
                     eq.setBandLevel(i, (short) Math.max(minEq, -600));
                 } else {
                     eq.setBandLevel(i, (short) 0);
@@ -294,6 +294,8 @@ public class PlayerActivity extends Activity {
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
         wakeLockOn = prefs.getBoolean("wake_lock_on", true);
         clarityFilterEnabled = prefs.getBoolean("clarity_filter_on", false);
+        captionsEnabled = prefs.getBoolean("captions_on", true);
+        whisperApiKey = prefs.getString("whisper_api_key", "");
 
         serverBaseUrl = getIntent().getStringExtra("server_url");
         if (serverBaseUrl == null) serverBaseUrl = "";
@@ -503,10 +505,11 @@ private String getNativeBatteryStatus() {
                 "Edit Selected Station (" + (curName != null && !curName.isEmpty() ? curName : "Station") + ")",
                 "Save Stations JSON to Downloads (proscan_radio_stations.json)",
                 "Load Stations JSON from Downloads",
-                "Reset Stations to Default UK List"
+                "Reset Stations to Default UK List",
+                "Set Whisper AI API Key (Groq / OpenAI)"
         };
         new AlertDialog.Builder(this)
-                .setTitle("Radio Station & JSON Manager")
+                .setTitle("Radio & AI Captions Manager")
                 .setItems(items, (d, which) -> {
                     if (which == 0) {
                         openAddOrEditStationDialog(curIdx, curName, curFreq, curUrl);
@@ -523,7 +526,37 @@ private String getNativeBatteryStatus() {
                         if (playerWeb != null) {
                             playerWeb.evaluateJavascript("if(window.__resetDefaultRadioStations)window.__resetDefaultRadioStations();", null);
                         }
+                    } else if (which == 4) {
+                        showApiKeyDialog();
                     }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showApiKeyDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        layout.setPadding(pad, pad, pad, pad);
+
+        TextView label = new TextView(this);
+        label.setText("Enter Groq or OpenAI Whisper API Key:\n(Recommended: Free Groq key starting with 'gsk_')");
+        layout.addView(label);
+
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setText(whisperApiKey != null ? whisperApiKey : "");
+        layout.addView(input);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Whisper AI Captions Key")
+                .setView(layout)
+                .setPositiveButton("Save Key", (dialog, which) -> {
+                    String k = input.getText().toString().trim();
+                    whisperApiKey = k;
+                    prefs.edit().putString("whisper_api_key", k).apply();
+                    Toast.makeText(PlayerActivity.this, k.isEmpty() ? "AI Captions Key Cleared" : "AI Captions Key Saved!", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -577,12 +610,14 @@ private String getNativeBatteryStatus() {
         js.append("    '.radio-row.selected{outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(255,255,255,0.14)!important;font-weight:800!important;}' +\n");
         js.append("    '.unread-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--log-text,#39ff14);margin-right:4px;vertical-align:middle;}' +\n");
         js.append("    '.top-row-6{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:4px!important;height:28px!important;}' +\n");
-        js.append("    '.top-row-6 .btn{font-size:8.5px!important;letter-spacing:-0.2px!important;padding:1px 2px!important;}' +\n");
+        js.append("    '.top-row-6 .btn{font-size:8px!important;letter-spacing:-0.3px!important;padding:1px!important;}' +\n");
         js.append("    '.filter-row-5{display:grid!important;grid-template-columns:88px 1fr 62px 32px 46px!important;gap:5px!important;height:27px!important;}' +\n");
         js.append("    '.radio-crud-bar{display:none;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;height:27px;}' +\n");
         js.append("    '.brand-henus{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:1px!important;line-height:1!important;white-space:nowrap!important;}' +\n");
         js.append("    '.brand-henus .henus-mark{font-size:10px!important;letter-spacing:1.5px!important;padding:0 4px!important;border-left:1.5px solid var(--brand-accent,#38bdf8)!important;border-right:1.5px solid var(--brand-accent,#38bdf8)!important;text-transform:uppercase!important;}' +\n");
         js.append("    '.brand-henus .henus-sub{font-size:6.5px!important;letter-spacing:2px!important;line-height:1!important;margin-top:1px!important;}' +\n");
+        js.append("    '#track-main-readout{transition:color 0.2s ease;letter-spacing:0.4px;}' +\n");
+        js.append("    '#track-main-readout.is-caption{font-style:italic;color:var(--log-text,#38bdf8)!important;}' +\n");
         js.append("    '#deck-vinyl{background:radial-gradient(circle at 46% 54%,#1e2229 0%,#0c0e12 85%)!important;}' +\n");
         js.append("    '.tt-platter{position:absolute!important;left:90px!important;top:38px!important;width:140px!important;height:140px!important;box-shadow:0 8px 20px rgba(0,0,0,0.95),0 0 0 3px #18181b!important;}' +\n");
         js.append("    '.tt-record{width:128px!important;height:128px!important;}' +\n");
@@ -755,7 +790,7 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("      });\n");
         js.append("    }\n");
 
-        // Dedicated 1-Click Audio Clarity DSP Filter Button
+        // 1-Click Audio Clarity DSP Filter Button
         js.append("    var dspBtn = document.createElement('button');\n");
         js.append("    dspBtn.id = 'btn-dsp-filter';\n");
         js.append("    dspBtn.className = 'btn';\n");
@@ -775,6 +810,43 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("      }\n");
         js.append("    });\n");
         js.append("    topRow.appendChild(dspBtn);\n");
+
+        // AI Closed Captions Button (Tap = Toggle CC, Hold = Set Whisper API Key)
+        js.append("    var ccBtn = document.createElement('button');\n");
+        js.append("    ccBtn.id = 'btn-cc-toggle';\n");
+        js.append("    ccBtn.className = 'btn';\n");
+        js.append("    ccBtn.type = 'button';\n");
+        js.append("    function syncCcLabel(active) {\n");
+        js.append("      ccBtn.classList.toggle('active', active);\n");
+        js.append("      ccBtn.innerText = active ? 'CC: ON' : 'CC: OFF';\n");
+        js.append("    }\n");
+        js.append("    if (window.PlayerBridge && window.PlayerBridge.getCaptionsState) {\n");
+        js.append("      syncCcLabel(window.PlayerBridge.getCaptionsState());\n");
+        js.append("    } else { ccBtn.innerText = 'CC: ON'; }\n");
+        js.append("    var ccTimer = null, ccLong = false;\n");
+        js.append("    ccBtn.addEventListener('pointerdown', function() {\n");
+        js.append("      clearTimeout(ccTimer); ccLong = false;\n");
+        js.append("      ccTimer = setTimeout(function() {\n");
+        js.append("        ccTimer = null; ccLong = true;\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(35);\n");
+        js.append("        if (window.PlayerBridge && window.PlayerBridge.openApiKeyDialog) {\n");
+        js.append("          window.PlayerBridge.openApiKeyDialog();\n");
+        js.append("        }\n");
+        js.append("      }, 500);\n");
+        js.append("    });\n");
+        js.append("    ccBtn.addEventListener('pointerup', function() {\n");
+        js.append("      var wasTap = ccTimer !== null; clearTimeout(ccTimer); ccTimer = null;\n");
+        js.append("      if (wasTap && !ccLong) {\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("        if (window.PlayerBridge && window.PlayerBridge.toggleCaptions) {\n");
+        js.append("          var st = window.PlayerBridge.toggleCaptions();\n");
+        js.append("          syncCcLabel(st);\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("    ccBtn.addEventListener('pointerleave', function() { clearTimeout(ccTimer); ccTimer = null; });\n");
+        js.append("    ccBtn.addEventListener('pointercancel', function() { clearTimeout(ccTimer); ccTimer = null; });\n");
+        js.append("    topRow.appendChild(ccBtn);\n");
         js.append("  }\n");
 
         js.append("  var defaultStations = [\n");
@@ -835,7 +907,6 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  window.__radioIdx = 0;\n");
         js.append("  window.__activeRadioUrl = '';\n");
 
-        // Always plays live radio via native Android MediaPlayer with locks so screen sleep never stops it
         js.append("  window.__startHybridLiveStream = function(url) {\n");
         js.append("    window.__stopAllRadioAndNativeAudio();\n");
         js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) {\n");
@@ -1085,7 +1156,18 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("    }\n");
         js.append("    drawProSigintScope();\n");
         js.append("  }\n");
-js.append("  window.selectRadioStationOnly = function(idx) {\n");
+js.append("  window.onCaptionReceived = function(txt) {\n");
+        js.append("    if (!txt || !txt.trim()) return;\n");
+        js.append("    var clean = txt.trim();\n");
+        js.append("    var ro = document.getElementById('track-main-readout');\n");
+        js.append("    if (ro) { ro.classList.add('is-caption'); ro.innerText = 'CC: \"' + clean + '\"'; }\n");
+        js.append("    var bCh = document.getElementById('badge-ch-name');\n");
+        js.append("    if (bCh) bCh.innerText = 'CC: ' + clean;\n");
+        js.append("    var cLbl = document.getElementById('cassette-lbl-left');\n");
+        js.append("    if (cLbl) cLbl.innerText = clean;\n");
+        js.append("  };\n");
+
+        js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= window.__radioStations.length) return;\n");
         js.append("    window.__radioIdx = idx;\n");
         js.append("    var stObj = window.__radioStations[idx];\n");
@@ -1181,7 +1263,8 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= filteredRecs.length) return;\n");
         js.append("    curIdx = idx;\n");
         js.append("    var r = filteredRecs[idx];\n");
-        js.append("    document.getElementById('track-main-readout').innerText = 'READY: ' + r.name + ' • ' + r.freq;\n");
+        js.append("    var ro = document.getElementById('track-main-readout');\n");
+        js.append("    if (ro) { ro.classList.remove('is-caption'); ro.innerText = 'READY: ' + r.name + ' • ' + r.freq; }\n");
         js.append("    document.getElementById('cassette-lbl-left').innerText = r.name;\n");
         js.append("    document.getElementById('cassette-lbl-right').innerText = r.freq + ' (' + r.timeStr + ')';\n");
         js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
@@ -1279,6 +1362,8 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    var r = filteredRecs[idx];\n");
         js.append("    var id = r.fileId || r.fileName;\n");
         js.append("    window.__activePlayingRecordKey = id;\n");
+        js.append("    var ro = document.getElementById('track-main-readout');\n");
+        js.append("    if (ro) { ro.classList.remove('is-caption'); ro.innerText = r.name + ' • ' + r.freq; }\n");
         js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
         js.append("    if (bCh) bCh.innerText = 'PLAYING: ' + r.name + ' (' + r.timeStr + ')';\n");
         js.append("    if (bFr) bFr.innerText = r.freq;\n");
@@ -1455,6 +1540,82 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         return current;
     }
 
+    private void transcribeAudioFile(final File audioFile, final int reqId) {
+        if (!captionsEnabled || whisperApiKey == null || whisperApiKey.trim().isEmpty() || audioFile == null || !audioFile.exists()) {
+            return;
+        }
+        captionExecutor.execute(() -> {
+            try {
+                if (reqId != currentStreamReqId) return;
+                String key = whisperApiKey.trim();
+                boolean isOpenAi = key.startsWith("sk-");
+                String endpoint = isOpenAi ? "https://api.openai.com/v1/audio/transcriptions" : "https://api.groq.com/openai/v1/audio/transcriptions";
+                String model = isOpenAi ? "whisper-1" : "whisper-large-v3-turbo";
+
+                String boundary = "===WhisperBoundary" + System.currentTimeMillis() + "===";
+                URL url = new URL(endpoint);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(8000);
+                conn.setReadTimeout(8000);
+                conn.setDoOutput(true);
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Authorization", "Bearer " + key);
+                conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+
+                OutputStream os = conn.getOutputStream();
+                StringBuilder partHead = new StringBuilder();
+                partHead.append("--").append(boundary).append("\r\n");
+                partHead.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n");
+                partHead.append(model).append("\r\n");
+
+                partHead.append("--").append(boundary).append("\r\n");
+                partHead.append("Content-Disposition: form-data; name=\"response_format\"\r\n\r\n");
+                partHead.append("json\r\n");
+
+                partHead.append("--").append(boundary).append("\r\n");
+                partHead.append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.mp3\"\r\n");
+                partHead.append("Content-Type: audio/mpeg\r\n\r\n");
+                os.write(partHead.toString().getBytes(StandardCharsets.UTF_8));
+
+                FileInputStream fis = new FileInputStream(audioFile);
+                byte[] buf = new byte[8192];
+                int r;
+                while ((r = fis.read(buf)) != -1) {
+                    os.write(buf, 0, r);
+                }
+                fis.close();
+
+                os.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+                os.flush();
+                os.close();
+
+                if (reqId != currentStreamReqId) { conn.disconnect(); return; }
+
+                int code = conn.getResponseCode();
+                if (code >= 200 && code < 300) {
+                    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                    StringBuilder resp = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) resp.append(line);
+                    br.close();
+                    conn.disconnect();
+
+                    JSONObject resObj = new JSONObject(resp.toString());
+                    final String transcript = resObj.optString("text", "").trim();
+                    if (!transcript.isEmpty()) {
+                        mainHandler.post(() -> {
+                            if (reqId == currentStreamReqId && playerWeb != null) {
+                                playerWeb.evaluateJavascript("if(window.onCaptionReceived)window.onCaptionReceived(" + JSONObject.quote(transcript) + ");", null);
+                            }
+                        });
+                    }
+                } else {
+                    conn.disconnect();
+                }
+            } catch (Exception ignored) {}
+        });
+    }
+
     private void playLiveRadioUrlNatively(final String streamUrl) {
         stopNativePlayer();
         acquirePlaybackLocks();
@@ -1536,7 +1697,12 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
                 is.close();
                 conn.disconnect();
                 if (reqId != currentStreamReqId) return;
+
                 final float[] env = extractMp3AmplitudeEnvelope(tempMp3);
+
+                // Start Whisper AI transcription in the background
+                transcribeAudioFile(tempMp3, reqId);
+
                 mainHandler.post(() -> {
                     if (reqId != currentStreamReqId) return;
                     try {
@@ -1660,6 +1826,30 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         @JavascriptInterface
         public boolean getClarityFilterState() {
             return clarityFilterEnabled;
+        }
+
+        @JavascriptInterface
+        public boolean toggleCaptions() {
+            captionsEnabled = !captionsEnabled;
+            prefs.edit().putBoolean("captions_on", captionsEnabled).apply();
+            mainHandler.post(() -> {
+                if (captionsEnabled && (whisperApiKey == null || whisperApiKey.trim().isEmpty())) {
+                    showApiKeyDialog();
+                } else {
+                    Toast.makeText(PlayerActivity.this, captionsEnabled ? "AI Captions: ON" : "AI Captions: OFF", Toast.LENGTH_SHORT).show();
+                }
+            });
+            return captionsEnabled;
+        }
+
+        @JavascriptInterface
+        public boolean getCaptionsState() {
+            return captionsEnabled;
+        }
+
+        @JavascriptInterface
+        public void openApiKeyDialog() {
+            mainHandler.post(() -> showApiKeyDialog());
         }
 
         @JavascriptInterface
@@ -1991,6 +2181,7 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         } catch (Exception ignored) {}
         mainHandler.removeCallbacks(autoSyncRunnable);
         stopNativePlayer();
+        releasePlaybackLocks();
         try {
             if (tts != null) { tts.stop(); tts.shutdown(); }
             if (playerWeb != null) { playerWeb.loadUrl("about:blank"); playerWeb.destroy(); }
