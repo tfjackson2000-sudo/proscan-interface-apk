@@ -5,11 +5,13 @@ package com.proscan.interfaceapp;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
+import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
@@ -17,12 +19,14 @@ import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
+import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.MediaStore;
 import android.speech.tts.TextToSpeech;
 import android.text.InputType;
@@ -74,6 +78,8 @@ public class PlayerActivity extends Activity {
     private WebView playerWeb;
     private SharedPreferences prefs;
     private AudioManager audioManager;
+    private PowerManager.WakeLock cpuWakeLock = null;
+    private WifiManager.WifiLock wifiLock = null;
     private boolean wakeLockOn = true;
     private String serverBaseUrl = "";
     private String initialStartMode = "archive";
@@ -87,6 +93,43 @@ public class PlayerActivity extends Activity {
     private boolean isLiveRadioStream = false;
     private volatile int currentStreamReqId = 0;
     private float[] currentEnvelope = new float[0];
+
+    private synchronized void acquirePlaybackLocks() {
+        try {
+            if (cpuWakeLock == null) {
+                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (pm != null) {
+                    cpuWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "proscan:radio_cpu_lock");
+                    cpuWakeLock.setReferenceCounted(false);
+                }
+            }
+            if (cpuWakeLock != null && !cpuWakeLock.isHeld()) {
+                cpuWakeLock.acquire(12 * 60 * 60 * 1000L);
+            }
+            if (wifiLock == null) {
+                WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                if (wm != null) {
+                    int mode = Build.VERSION.SDK_INT >= 29 ? WifiManager.WIFI_MODE_FULL_LOW_LATENCY : WifiManager.WIFI_MODE_FULL;
+                    wifiLock = wm.createWifiLock(mode, "proscan:radio_wifi_lock");
+                    wifiLock.setReferenceCounted(false);
+                }
+            }
+            if (wifiLock != null && !wifiLock.isHeld()) {
+                wifiLock.acquire();
+            }
+            Intent svc = new Intent(this, AudioKeepAliveService.class);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(svc);
+            else startService(svc);
+        } catch (Exception ignored) {}
+    }
+
+    private synchronized void releasePlaybackLocks() {
+        try {
+            if (cpuWakeLock != null && cpuWakeLock.isHeld()) cpuWakeLock.release();
+            if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
+            stopService(new Intent(this, AudioKeepAliveService.class));
+        } catch (Exception ignored) {}
+    }
 
     private void forceStopAllPlayerAudioOnDisconnect() {
         boolean wasPlaying = isLiveRadioStream || (nativePlayer != null && nativePlayer.isPlaying());
@@ -134,8 +177,8 @@ public class PlayerActivity extends Activity {
                         || t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
                         || t == AudioDeviceInfo.TYPE_WIRED_HEADSET
                         || t == AudioDeviceInfo.TYPE_USB_HEADSET
-                        || t == 26 /* TYPE_BLE_HEADSET */
-                        || t == 27 /* TYPE_BLE_SPEAKER */) {
+                        || t == 26
+                        || t == 27) {
                     forceStopAllPlayerAudioOnDisconnect();
                     break;
                 }
@@ -229,6 +272,10 @@ public class PlayerActivity extends Activity {
             public void setKeepScreenOn(boolean keepScreenOn) {
                 super.setKeepScreenOn(wakeLockOn);
             }
+            @Override
+            protected void onWindowVisibilityChanged(int visibility) {
+                super.onWindowVisibilityChanged(View.VISIBLE);
+            }
         };
         playerWeb.setBackgroundColor(Color.BLACK);
         applyPlayerWakeLock(wakeLockOn);
@@ -259,6 +306,8 @@ public class PlayerActivity extends Activity {
         setContentView(playerWeb);
         playerWeb.loadUrl("file:///android_asset/player_ui.html");
     }
+
+PART 2 OF 4
 
     private String getNativeBatteryStatus() {
         try {
@@ -312,38 +361,56 @@ public class PlayerActivity extends Activity {
             prefs.edit().putString("radio_stations_json", stationsJson).apply();
             JSONArray arr = new JSONArray(stationsJson);
             byte[] bytes = arr.toString(2).getBytes(StandardCharsets.UTF_8);
+            boolean written = false;
 
             if (Build.VERSION.SDK_INT >= 29) {
                 try {
-                    getContentResolver().delete(
+                    Uri targetUri = null;
+                    Cursor cursor = getContentResolver().query(
                             MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            new String[]{MediaStore.MediaColumns._ID},
                             MediaStore.MediaColumns.DISPLAY_NAME + "=?",
-                            new String[]{"proscan_radio_stations.json"}
+                            new String[]{"proscan_radio_stations.json"},
+                            null
                     );
-                } catch (Exception ignored) {}
-
-                ContentValues values = new ContentValues();
-                values.put(MediaStore.MediaColumns.DISPLAY_NAME, "proscan_radio_stations.json");
-                values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-
-                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-                if (uri != null) {
-                    OutputStream os = getContentResolver().openOutputStream(uri);
-                    if (os != null) {
-                        os.write(bytes);
-                        os.close();
+                    if (cursor != null) {
+                        if (cursor.moveToFirst()) {
+                            long id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID));
+                            targetUri = ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id);
+                        }
+                        cursor.close();
                     }
-                }
-            } else {
+
+                    if (targetUri == null) {
+                        ContentValues values = new ContentValues();
+                        values.put(MediaStore.MediaColumns.DISPLAY_NAME, "proscan_radio_stations.json");
+                        values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                        targetUri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                    }
+
+                    if (targetUri != null) {
+                        OutputStream os = getContentResolver().openOutputStream(targetUri, "wt");
+                        if (os != null) {
+                            os.write(bytes);
+                            os.close();
+                            written = true;
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            if (!written) {
                 File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                if (!dir.exists()) dir.mkdirs();
                 File file = new File(dir, "proscan_radio_stations.json");
                 FileOutputStream fos = new FileOutputStream(file);
                 fos.write(bytes);
                 fos.close();
+                written = true;
             }
 
-            if (showToast) {
+            if (showToast && written) {
                 Toast.makeText(this, "Saved to Downloads/proscan_radio_stations.json", Toast.LENGTH_SHORT).show();
             }
         } catch (Exception e) {
@@ -459,7 +526,7 @@ public class PlayerActivity extends Activity {
         js.append("    '@keyframes smoothFadeIn{0%{opacity:0;}100%{opacity:1;}}' +\n");
         js.append("    '#device-wrapper{animation:smoothFadeIn 0.25s ease-out forwards;transition:opacity 0.2s ease!important;}' +\n");
         js.append("    '#device-wrapper.fading-out{opacity:0!important;}' +\n");
-        js.append("    '.scanner-display{height:245px!important;}.top-controls-container{height:26px!important;}.buttons-box{gap:8px!important;}#mech-bay{height:224px!important;}' +\n");
+        js.append("    '.scanner-display{height:245px!important;}.top-controls-container{height:28px!important;}.buttons-box{gap:8px!important;}#mech-bay{height:224px!important;}' +\n");
         js.append("    '#playlist-box{overflow-y:scroll!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior:contain!important;}' +\n");
         js.append("    '.rec-row{touch-action:pan-y!important;}' +\n");
         js.append("    '.rec-row.selected{outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(255,255,255,0.14)!important;font-weight:800!important;}' +\n");
@@ -470,6 +537,9 @@ public class PlayerActivity extends Activity {
         js.append("    '.top-row-5{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:28px!important;}' +\n");
         js.append("    '.filter-row-5{display:grid!important;grid-template-columns:88px 1fr 62px 32px 46px!important;gap:5px!important;height:27px!important;}' +\n");
         js.append("    '.radio-crud-bar{display:none;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;height:27px;}' +\n");
+        js.append("    '.brand-henus{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:1px!important;line-height:1!important;white-space:nowrap!important;}' +\n");
+        js.append("    '.brand-henus .henus-mark{font-size:10px!important;letter-spacing:1.5px!important;padding:0 4px!important;border-left:1.5px solid var(--brand-accent,#38bdf8)!important;border-right:1.5px solid var(--brand-accent,#38bdf8)!important;text-transform:uppercase!important;}' +\n");
+        js.append("    '.brand-henus .henus-sub{font-size:6.5px!important;letter-spacing:2px!important;line-height:1!important;margin-top:1px!important;}' +\n");
         js.append("    '#deck-vinyl{background:radial-gradient(circle at 46% 54%,#1e2229 0%,#0c0e12 85%)!important;}' +\n");
         js.append("    '.tt-platter{position:absolute!important;left:90px!important;top:38px!important;width:140px!important;height:140px!important;box-shadow:0 8px 20px rgba(0,0,0,0.95),0 0 0 3px #18181b!important;}' +\n");
         js.append("    '.tt-record{width:128px!important;height:128px!important;}' +\n");
@@ -506,6 +576,8 @@ public class PlayerActivity extends Activity {
         js.append("    '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
         js.append("    '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("  document.head.appendChild(st);\n");
+
+PART 3 OF 4
 
         js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  if (pClk && !document.getElementById('player-bat-hud')) {\n");
@@ -594,9 +666,6 @@ public class PlayerActivity extends Activity {
 
         js.append("  window.__stopAllRadioAndNativeAudio = function() {\n");
         js.append("    window.__streamLaunchToken = (window.__streamLaunchToken || 0) + 1;\n");
-        js.append("    if (window.__webStreamAudio) {\n");
-        js.append("      try { window.__webStreamAudio.pause(); window.__webStreamAudio.removeAttribute('src'); window.__webStreamAudio.load(); } catch(e){}\n");
-        js.append("    }\n");
         js.append("    if (window.PlayerBridge && window.PlayerBridge.stopAudio) {\n");
         js.append("      window.PlayerBridge.stopAudio();\n");
         js.append("    }\n");
@@ -705,27 +774,11 @@ public class PlayerActivity extends Activity {
         js.append("  window.__radioIdx = 0;\n");
         js.append("  window.__activeRadioUrl = '';\n");
 
-        js.append("  window.__webStreamAudio = new Audio();\n");
-        js.append("  window.__webStreamAudio.crossOrigin = 'anonymous';\n");
         js.append("  window.__startHybridLiveStream = function(url) {\n");
         js.append("    window.__stopAllRadioAndNativeAudio();\n");
-        js.append("    var myToken = window.__streamLaunchToken;\n");
-        js.append("    if (url.indexOf('.m3u8') === -1) {\n");
-        js.append("      window.__webStreamAudio.src = url;\n");
-        js.append("      var p = window.__webStreamAudio.play();\n");
-        js.append("      if (p && p.then) {\n");
-        js.append("        p.then(function() {\n");
-        js.append("          if (window.__streamLaunchToken !== myToken) { window.__webStreamAudio.pause(); return; }\n");
-        js.append("          if (window.PlayerBridge && window.PlayerBridge.setWebStreamActive) window.PlayerBridge.setWebStreamActive(true);\n");
-        js.append("          if (window.onNativePlayStarted) window.onNativePlayStarted();\n");
-        js.append("        }).catch(function() {\n");
-        js.append("          if (window.__streamLaunchToken !== myToken) return;\n");
-        js.append("          if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) window.PlayerBridge.playLiveStreamUrl(url);\n");
-        js.append("        });\n");
-        js.append("        return;\n");
-        js.append("      }\n");
+        js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) {\n");
+        js.append("      window.PlayerBridge.playLiveStreamUrl(url);\n");
         js.append("    }\n");
-        js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) window.PlayerBridge.playLiveStreamUrl(url);\n");
         js.append("  };\n");
 
         js.append("  window.__seenOnPrevVisit = JSON.parse(localStorage.getItem('proscan_seen_visit_ids_v1') || '{}');\n");
@@ -906,6 +959,8 @@ public class PlayerActivity extends Activity {
         js.append("      }\n");
         js.append("    });\n");
         js.append("  };\n");
+
+PART 4 OF 4
 
         js.append("  var oldCanvas = document.getElementById('hack-canvas');\n");
         js.append("  if (oldCanvas) {\n");
@@ -1262,6 +1317,7 @@ public class PlayerActivity extends Activity {
     }
 
     private void stopNativePlayer() {
+        releasePlaybackLocks();
         currentStreamReqId++;
         mainHandler.removeCallbacks(progressTicker);
         isLiveRadioStream = false;
@@ -1341,6 +1397,7 @@ public class PlayerActivity extends Activity {
 
     private void playLiveRadioUrlNatively(final String streamUrl) {
         stopNativePlayer();
+        acquirePlaybackLocks();
         final int reqId = ++currentStreamReqId;
         audioFetchExecutor.execute(() -> {
             final String resolvedUrl = resolveRedirects(streamUrl);
@@ -1391,6 +1448,7 @@ public class PlayerActivity extends Activity {
 
     private void playDriveFileIdNatively(final String fileId) {
         stopNativePlayer();
+        acquirePlaybackLocks();
         final int reqId = ++currentStreamReqId;
         final String urlStr = "https://drive.usercontent.google.com/download?id=" + fileId + "&export=download";
         audioFetchExecutor.execute(() -> {
