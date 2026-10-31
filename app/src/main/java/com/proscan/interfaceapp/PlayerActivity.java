@@ -16,6 +16,7 @@ import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.media.audiofx.Equalizer;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
@@ -87,10 +88,55 @@ public class PlayerActivity extends Activity {
     private TextToSpeech tts = null;
     private boolean ttsReady = false;
     private MediaPlayer nativePlayer = null;
+    private Equalizer speechEqualizer = null;
+    private boolean clarityFilterEnabled = false;
     private boolean isFetchingDrive = false;
     private boolean isLiveRadioStream = false;
     private volatile int currentStreamReqId = 0;
     private float[] currentEnvelope = new float[0];
+
+    private synchronized void setupEqualizer(int audioSessionId) {
+        releaseEqualizer();
+        try {
+            speechEqualizer = new Equalizer(0, audioSessionId);
+            speechEqualizer.setEnabled(clarityFilterEnabled);
+            if (clarityFilterEnabled) {
+                configureSpeechBands(speechEqualizer);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void configureSpeechBands(Equalizer eq) {
+        if (eq == null) return;
+        try {
+            short bands = eq.getNumberOfBands();
+            short[] range = eq.getBandLevelRange();
+            short minEq = range[0];
+            short maxEq = range[1];
+            for (short i = 0; i < bands; i++) {
+                int hz = eq.getCenterFreq(i) / 1000;
+                if (hz < 320) {
+                    // Cut low rumble, motor drone, power hum (-7.0 dB)
+                    eq.setBandLevel(i, (short) Math.max(minEq, -700));
+                } else if (hz >= 1000 && hz <= 3600) {
+                    // Boost speech presence & consonant clarity (+6.5 dB)
+                    eq.setBandLevel(i, (short) Math.min(maxEq, 650));
+                } else if (hz > 4500) {
+                    // Attenuate harsh FM squelch hiss & static (-6.0 dB)
+                    eq.setBandLevel(i, (short) Math.max(minEq, -600));
+                } else {
+                    eq.setBandLevel(i, (short) 0);
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private synchronized void releaseEqualizer() {
+        if (speechEqualizer != null) {
+            try { speechEqualizer.release(); } catch (Exception ignored) {}
+            speechEqualizer = null;
+        }
+    }
 
     private synchronized void acquirePlaybackLocks() {
         try {
@@ -247,6 +293,7 @@ public class PlayerActivity extends Activity {
 
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
         wakeLockOn = prefs.getBoolean("wake_lock_on", true);
+        clarityFilterEnabled = prefs.getBoolean("clarity_filter_on", false);
 
         serverBaseUrl = getIntent().getStringExtra("server_url");
         if (serverBaseUrl == null) serverBaseUrl = "";
@@ -529,7 +576,8 @@ private String getNativeBatteryStatus() {
         js.append("    '.radio-row.playing{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;}' +\n");
         js.append("    '.radio-row.selected{outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(255,255,255,0.14)!important;font-weight:800!important;}' +\n");
         js.append("    '.unread-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--log-text,#39ff14);margin-right:4px;vertical-align:middle;}' +\n");
-        js.append("    '.top-row-5{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:28px!important;}' +\n");
+        js.append("    '.top-row-6{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:4px!important;height:28px!important;}' +\n");
+        js.append("    '.top-row-6 .btn{font-size:8.5px!important;letter-spacing:-0.2px!important;padding:1px 2px!important;}' +\n");
         js.append("    '.filter-row-5{display:grid!important;grid-template-columns:88px 1fr 62px 32px 46px!important;gap:5px!important;height:27px!important;}' +\n");
         js.append("    '.radio-crud-bar{display:none;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;height:27px;}' +\n");
         js.append("    '.brand-henus{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:1px!important;line-height:1!important;white-space:nowrap!important;}' +\n");
@@ -666,9 +714,9 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  var backBtn = document.getElementById('btn-back-radio');\n");
         js.append("  var topRow = backBtn ? backBtn.parentNode : null;\n");
         js.append("  if (topRow && !document.getElementById('btn-switch-radio-archive')) {\n");
-        js.append("    topRow.className = 'top-row-5';\n");
+        js.append("    topRow.className = 'top-row-6';\n");
         js.append("    var newScannerBtn = backBtn.cloneNode(true);\n");
-        js.append("    newScannerBtn.innerHTML = '&#9664; SCANNER';\n");
+        js.append("    newScannerBtn.innerHTML = '&#9664; SCAN';\n");
         js.append("    topRow.replaceChild(newScannerBtn, backBtn);\n");
         js.append("    newScannerBtn.addEventListener('click', function() {\n");
         js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
@@ -706,6 +754,27 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("        document.getElementById('cont-status-hud').innerText = lbl;\n");
         js.append("      });\n");
         js.append("    }\n");
+
+        // Dedicated 1-Click Audio Clarity DSP Filter Button
+        js.append("    var dspBtn = document.createElement('button');\n");
+        js.append("    dspBtn.id = 'btn-dsp-filter';\n");
+        js.append("    dspBtn.className = 'btn';\n");
+        js.append("    dspBtn.type = 'button';\n");
+        js.append("    function syncDspLabel(active) {\n");
+        js.append("      dspBtn.classList.toggle('active', active);\n");
+        js.append("      dspBtn.innerText = active ? 'DSP: ON' : 'DSP: OFF';\n");
+        js.append("    }\n");
+        js.append("    if (window.PlayerBridge && window.PlayerBridge.getClarityFilterState) {\n");
+        js.append("      syncDspLabel(window.PlayerBridge.getClarityFilterState());\n");
+        js.append("    } else { dspBtn.innerText = 'DSP: OFF'; }\n");
+        js.append("    dspBtn.addEventListener('click', function() {\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.toggleClarityFilter) {\n");
+        js.append("        var state = window.PlayerBridge.toggleClarityFilter();\n");
+        js.append("        syncDspLabel(state);\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("    topRow.appendChild(dspBtn);\n");
         js.append("  }\n");
 
         js.append("  var defaultStations = [\n");
@@ -766,7 +835,7 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  window.__radioIdx = 0;\n");
         js.append("  window.__activeRadioUrl = '';\n");
 
-        // Route live stream directly to native player so screen lock never kills audio
+        // Always plays live radio via native Android MediaPlayer with locks so screen sleep never stops it
         js.append("  window.__startHybridLiveStream = function(url) {\n");
         js.append("    window.__stopAllRadioAndNativeAudio();\n");
         js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) {\n");
@@ -1307,6 +1376,7 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
     }
 
     private void stopNativePlayer() {
+        releaseEqualizer();
         releasePlaybackLocks();
         currentStreamReqId++;
         mainHandler.removeCallbacks(progressTicker);
@@ -1415,6 +1485,7 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
                             try { mp.stop(); mp.release(); } catch (Exception ignored) {}
                             return;
                         }
+                        setupEqualizer(mp.getAudioSessionId());
                         mp.start();
                         if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
                         mainHandler.post(progressTicker);
@@ -1490,6 +1561,7 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
                                 try { mp.stop(); mp.release(); } catch (Exception ignored) {}
                                 return;
                             }
+                            setupEqualizer(mp.getAudioSessionId());
                             mp.start();
                             if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
                             mainHandler.post(progressTicker);
@@ -1566,6 +1638,29 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
 
         @JavascriptInterface
         public String getBatteryStatus() { return getNativeBatteryStatus(); }
+
+        @JavascriptInterface
+        public boolean toggleClarityFilter() {
+            clarityFilterEnabled = !clarityFilterEnabled;
+            prefs.edit().putBoolean("clarity_filter_on", clarityFilterEnabled).apply();
+            mainHandler.post(() -> {
+                if (speechEqualizer != null) {
+                    try {
+                        speechEqualizer.setEnabled(clarityFilterEnabled);
+                        if (clarityFilterEnabled) {
+                            configureSpeechBands(speechEqualizer);
+                        }
+                    } catch (Exception ignored) {}
+                }
+                Toast.makeText(PlayerActivity.this, clarityFilterEnabled ? "Audio Clarity: ON (Speech Boost & De-Hiss)" : "Audio Clarity: OFF", Toast.LENGTH_SHORT).show();
+            });
+            return clarityFilterEnabled;
+        }
+
+        @JavascriptInterface
+        public boolean getClarityFilterState() {
+            return clarityFilterEnabled;
+        }
 
         @JavascriptInterface
         public void setWakeLock(final boolean keepOn) {
