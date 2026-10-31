@@ -1,5 +1,3 @@
-
-
 package com.proscan.interfaceapp;
 
 import android.app.Activity;
@@ -306,10 +304,7 @@ public class PlayerActivity extends Activity {
         setContentView(playerWeb);
         playerWeb.loadUrl("file:///android_asset/player_ui.html");
     }
-
-PART 2 OF 4
-
-    private String getNativeBatteryStatus() {
+private String getNativeBatteryStatus() {
         try {
             IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
             Intent b = registerReceiver(null, ifilter);
@@ -576,10 +571,7 @@ PART 2 OF 4
         js.append("    '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
         js.append("    '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("  document.head.appendChild(st);\n");
-
-PART 3 OF 4
-
-        js.append("  var pClk = document.getElementById('player-clock-hud');\n");
+js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  if (pClk && !document.getElementById('player-bat-hud')) {\n");
         js.append("    var topBar = pClk.parentNode;\n");
         js.append("    var pBat = document.createElement('span');\n");
@@ -774,6 +766,7 @@ PART 3 OF 4
         js.append("  window.__radioIdx = 0;\n");
         js.append("  window.__activeRadioUrl = '';\n");
 
+        // Route live stream directly to native player so screen lock never kills audio
         js.append("  window.__startHybridLiveStream = function(url) {\n");
         js.append("    window.__stopAllRadioAndNativeAudio();\n");
         js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) {\n");
@@ -960,8 +953,6 @@ PART 3 OF 4
         js.append("    });\n");
         js.append("  };\n");
 
-PART 4 OF 4
-
         js.append("  var oldCanvas = document.getElementById('hack-canvas');\n");
         js.append("  if (oldCanvas) {\n");
         js.append("    var hCanvas = oldCanvas.cloneNode(true);\n");
@@ -1025,8 +1016,7 @@ PART 4 OF 4
         js.append("    }\n");
         js.append("    drawProSigintScope();\n");
         js.append("  }\n");
-
-        js.append("  window.selectRadioStationOnly = function(idx) {\n");
+js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= window.__radioStations.length) return;\n");
         js.append("    window.__radioIdx = idx;\n");
         js.append("    var stObj = window.__radioStations[idx];\n");
