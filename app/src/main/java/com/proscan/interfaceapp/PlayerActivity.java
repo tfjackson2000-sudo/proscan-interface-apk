@@ -16,6 +16,7 @@ import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.media.audiofx.Equalizer;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
@@ -87,10 +88,52 @@ public class PlayerActivity extends Activity {
     private TextToSpeech tts = null;
     private boolean ttsReady = false;
     private MediaPlayer nativePlayer = null;
+    private Equalizer speechEqualizer = null;
+    private boolean clarityFilterEnabled = false;
     private boolean isFetchingDrive = false;
     private boolean isLiveRadioStream = false;
     private volatile int currentStreamReqId = 0;
     private float[] currentEnvelope = new float[0];
+
+    private synchronized void setupEqualizer(int audioSessionId) {
+        releaseEqualizer();
+        try {
+            speechEqualizer = new Equalizer(0, audioSessionId);
+            speechEqualizer.setEnabled(clarityFilterEnabled);
+            if (clarityFilterEnabled) {
+                configureSpeechBands(speechEqualizer);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void configureSpeechBands(Equalizer eq) {
+        if (eq == null) return;
+        try {
+            short bands = eq.getNumberOfBands();
+            short[] range = eq.getBandLevelRange();
+            short minEq = range[0];
+            short maxEq = range[1];
+            for (short i = 0; i < bands; i++) {
+                int hz = eq.getCenterFreq(i) / 1000;
+                if (hz < 320) {
+                    eq.setBandLevel(i, (short) Math.max(minEq, -700));
+                } else if (hz >= 1000 && hz <= 3600) {
+                    eq.setBandLevel(i, (short) Math.min(maxEq, 650));
+                } else if (hz > 4500) {
+                    eq.setBandLevel(i, (short) Math.max(minEq, -600));
+                } else {
+                    eq.setBandLevel(i, (short) 0);
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private synchronized void releaseEqualizer() {
+        if (speechEqualizer != null) {
+            try { speechEqualizer.release(); } catch (Exception ignored) {}
+            speechEqualizer = null;
+        }
+    }
 
     private synchronized void acquirePlaybackLocks() {
         try {
@@ -247,6 +290,7 @@ public class PlayerActivity extends Activity {
 
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
         wakeLockOn = prefs.getBoolean("wake_lock_on", true);
+        clarityFilterEnabled = prefs.getBoolean("clarity_filter_on", false);
 
         serverBaseUrl = getIntent().getStringExtra("server_url");
         if (serverBaseUrl == null) serverBaseUrl = "";
@@ -521,7 +565,7 @@ private String getNativeBatteryStatus() {
         js.append("    '@keyframes smoothFadeIn{0%{opacity:0;}100%{opacity:1;}}' +\n");
         js.append("    '#device-wrapper{animation:smoothFadeIn 0.25s ease-out forwards;transition:opacity 0.2s ease!important;}' +\n");
         js.append("    '#device-wrapper.fading-out{opacity:0!important;}' +\n");
-        js.append("    '.scanner-display{height:256px!important;}.top-controls-container{height:28px!important;}.buttons-box{gap:8px!important;}#mech-bay{height:220px!important;}' +\n");
+        js.append("    '.scanner-display{height:252px!important;}.top-controls-container{height:28px!important;}.buttons-box{gap:7px!important;}#mech-bay{height:216px!important;}' +\n");
         js.append("    '#playlist-box{overflow-y:scroll!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior:contain!important;}' +\n");
         js.append("    '.rec-row{touch-action:pan-y!important;}' +\n");
         js.append("    '.rec-row.selected{outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(255,255,255,0.14)!important;font-weight:800!important;}' +\n");
@@ -529,20 +573,27 @@ private String getNativeBatteryStatus() {
         js.append("    '.radio-row.playing{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;}' +\n");
         js.append("    '.radio-row.selected{outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(255,255,255,0.14)!important;font-weight:800!important;}' +\n");
 
-        /* Top Navigation: 3 Large, Spacious Buttons [ SCANNER ] [ RADIO ] [ DECK ] */
-        js.append("    '.player-nav-row{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important;height:32px!important;}' +\n");
-        js.append("    '.player-nav-row .btn{font-size:11.5px!important;font-weight:900!important;padding:2px 4px!important;letter-spacing:0.3px!important;}' +\n");
+        /* Row 1: 4 Full-Size Large Buttons [ SCANNER ] [ RADIO ] [ DECK ] [ DSP ] */
+        js.append("    '.player-nav-row{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:5px!important;height:30px!important;}' +\n");
+        js.append("    '.player-nav-row .btn{font-size:11px!important;font-weight:900!important;padding:2px 4px!important;letter-spacing:0.2px!important;}' +\n");
 
-        /* Bottom Controls: Two Giant Chunky Buttons [ PLAY ] and [ STOP ] */
-        js.append("    '.btn-row-4{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;height:38px!important;margin-top:2px!important;}' +\n");
+        /* Row 2: Two Giant Full-Width Buttons [ PLAY ] and [ STOP ] */
+        js.append("    '.btn-row-4{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;height:38px!important;}' +\n");
         js.append("    '#btn-play, #btn-stop{font-size:13px!important;font-weight:900!important;letter-spacing:0.8px!important;}' +\n");
         js.append("    '#btn-prev, #btn-next{display:none!important;}' +\n");
 
-        /* Completely Hide Dates, Filter, All, Refresh, Drive, and Edit Bars */
-        js.append("    '#date-select, #search-box, #btn-filter-unread, #btn-refresh, #btn-open-gdrive, .filter-row, .filter-row-5, .radio-crud-bar{display:none!important;}' +\n");
-        js.append("    '#btn-mode-cont, #btn-mode-tts, #cont-status-hud{display:none!important;}' +\n");
+        /* Clean Archive Filter Bar */
+        js.append("    '.filter-row-archive{display:grid!important;grid-template-columns:1fr!important;height:28px!important;}' +\n");
+        js.append("    '#search-box{width:100%!important;height:100%!important;font-size:10.5px!important;}' +\n");
 
-        /* Vertically Stacked Brand Name */
+        /* Radio Station Management Row */
+        js.append("    '.radio-crud-bar{display:none;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:28px!important;}' +\n");
+        js.append("    '.radio-crud-bar .btn{font-size:9.5px!important;font-weight:800!important;padding:2px!important;}' +\n");
+
+        /* Completely Hide Unwanted Buttons */
+        js.append("    '#date-select, #btn-filter-unread, #btn-refresh, #btn-open-gdrive, #btn-mode-cont, #btn-mode-tts, #cont-status-hud{display:none!important;}' +\n");
+
+        /* Vertically Stacked Brand */
         js.append("    '.brand-henus{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:1px!important;line-height:1!important;white-space:nowrap!important;}' +\n");
         js.append("    '.brand-henus .henus-mark{font-size:10px!important;letter-spacing:1.5px!important;padding:0 4px!important;border-left:1.5px solid var(--brand-accent,#38bdf8)!important;border-right:1.5px solid var(--brand-accent,#38bdf8)!important;text-transform:uppercase!important;}' +\n");
         js.append("    '.brand-henus .henus-sub{font-size:6.5px!important;letter-spacing:2px!important;line-height:1!important;margin-top:1px!important;}' +\n");
@@ -675,7 +726,7 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("    }\n");
         js.append("  };\n");
 
-        /* Build Clean 3-Button Top Row: [ SCANNER ] [ RADIO ] [ DECK ] */
+        /* Build Clean 4-Button Top Row: [ SCANNER ] [ RADIO ] [ DECK ] [ DSP ] */
         js.append("  var origBackBtn = document.getElementById('btn-back-radio');\n");
         js.append("  var origTopRow = origBackBtn ? origBackBtn.parentNode : null;\n");
         js.append("  if (origTopRow && !document.getElementById('btn-switch-radio-archive')) {\n");
@@ -703,10 +754,82 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("      window.setAppMode(!window.__isBroadcastRadioMode);\n");
         js.append("    });\n");
 
+        /* DSP Audio Clarity Button */
+        js.append("    var dspBtn = document.createElement('button');\n");
+        js.append("    dspBtn.id = 'btn-dsp-filter';\n");
+        js.append("    dspBtn.className = 'btn';\n");
+        js.append("    dspBtn.type = 'button';\n");
+        js.append("    function syncDspLabel(active) {\n");
+        js.append("      dspBtn.classList.toggle('active', active);\n");
+        js.append("      dspBtn.innerText = active ? 'DSP: ON' : 'DSP: OFF';\n");
+        js.append("    }\n");
+        js.append("    if (window.PlayerBridge && window.PlayerBridge.getClarityFilterState) {\n");
+        js.append("      syncDspLabel(window.PlayerBridge.getClarityFilterState());\n");
+        js.append("    } else { dspBtn.innerText = 'DSP: OFF'; }\n");
+        js.append("    dspBtn.addEventListener('click', function() {\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.toggleClarityFilter) {\n");
+        js.append("        var state = window.PlayerBridge.toggleClarityFilter();\n");
+        js.append("        syncDspLabel(state);\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("    origTopRow.appendChild(dspBtn);\n");
+
+        /* Remove unneeded buttons */
         js.append("    var oldContBtn = document.getElementById('btn-mode-cont');\n");
         js.append("    if (oldContBtn) oldContBtn.remove();\n");
         js.append("    var oldTtsBtn = document.getElementById('btn-mode-tts');\n");
         js.append("    if (oldTtsBtn) oldTtsBtn.remove();\n");
+        js.append("  }\n");
+
+        /* Clean Archive Filter & Radio Station Management Bar */
+        js.append("  var fRow = document.getElementById('date-select').parentNode;\n");
+        js.append("  if (fRow && !document.getElementById('radio-crud-row')) {\n");
+        js.append("    fRow.className = 'filter-row-archive';\n");
+        js.append("    var rBar = document.createElement('div');\n");
+        js.append("    rBar.id = 'radio-crud-row'; rBar.className = 'radio-crud-bar';\n");
+        js.append("    rBar.innerHTML = '<button class=\"btn\" type=\"button\" id=\"btn-rad-add\">+ ADD</button><button class=\"btn\" type=\"button\" id=\"btn-rad-edit\">JSON / EDIT</button><button class=\"btn\" type=\"button\" id=\"btn-rad-up\">&#9650; UP</button><button class=\"btn\" type=\"button\" id=\"btn-rad-dn\">&#9660; DN</button><button class=\"btn\" type=\"button\" id=\"btn-rad-del\">DEL</button>';\n");
+        js.append("    fRow.parentNode.appendChild(rBar);\n");
+
+        js.append("    document.getElementById('btn-rad-add').addEventListener('click', function() {\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.showStationDialog) window.PlayerBridge.showStationDialog(-1, '', '', '');\n");
+        js.append("    });\n");
+        js.append("    document.getElementById('btn-rad-edit').addEventListener('click', function() {\n");
+        js.append("      var stObj = window.__radioStations[window.__radioIdx] || {};\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.openStationJsonMenu) {\n");
+        js.append("        window.PlayerBridge.openStationJsonMenu(window.__radioIdx, stObj.name || '', stObj.freq || '', stObj.url || '');\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("    document.getElementById('btn-rad-up').addEventListener('click', function() {\n");
+        js.append("      var idx = window.__radioIdx;\n");
+        js.append("      if (idx <= 0 || idx >= window.__radioStations.length) return;\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(15);\n");
+        js.append("      var tmp = window.__radioStations[idx - 1];\n");
+        js.append("      window.__radioStations[idx - 1] = window.__radioStations[idx];\n");
+        js.append("      window.__radioStations[idx] = tmp;\n");
+        js.append("      window.__radioIdx = idx - 1;\n");
+        js.append("      window.__saveRadioStations(false);\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("    });\n");
+        js.append("    document.getElementById('btn-rad-dn').addEventListener('click', function() {\n");
+        js.append("      var idx = window.__radioIdx;\n");
+        js.append("      if (idx < 0 || idx >= window.__radioStations.length - 1) return;\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(15);\n");
+        js.append("      var tmp = window.__radioStations[idx + 1];\n");
+        js.append("      window.__radioStations[idx + 1] = window.__radioStations[idx];\n");
+        js.append("      window.__radioStations[idx] = tmp;\n");
+        js.append("      window.__radioIdx = idx + 1;\n");
+        js.append("      window.__saveRadioStations(false);\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("    });\n");
+        js.append("    document.getElementById('btn-rad-del').addEventListener('click', function() {\n");
+        js.append("      if (window.__radioStations.length <= 1) return;\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("      window.__radioStations.splice(window.__radioIdx, 1);\n");
+        js.append("      if (window.__radioIdx >= window.__radioStations.length) window.__radioIdx = window.__radioStations.length - 1;\n");
+        js.append("      window.__saveRadioStations(false);\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("    });\n");
         js.append("  }\n");
 
         js.append("  var defaultStations = [\n");
@@ -763,11 +886,25 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("    window.selectRadioStationOnly(0);\n");
         js.append("  };\n");
 
+        js.append("  window.onNativeStationSaved = function(editIdx, name, freq, url) {\n");
+        js.append("    if (!name || !url) return;\n");
+        js.append("    var item = { name: name.trim(), freq: (freq || 'LIVE').trim(), band: 'USER', url: url.trim() };\n");
+        js.append("    if (editIdx >= 0 && editIdx < window.__radioStations.length) {\n");
+        js.append("      window.__radioStations[editIdx] = item;\n");
+        js.append("      window.__radioIdx = editIdx;\n");
+        js.append("    } else {\n");
+        js.append("      window.__radioStations.unshift(item);\n");
+        js.append("      window.__radioIdx = 0;\n");
+        js.append("    }\n");
+        js.append("    window.__saveRadioStations(false);\n");
+        js.append("    window.renderPlaylist();\n");
+        js.append("    window.selectRadioStationOnly(window.__radioIdx);\n");
+        js.append("  };\n");
+
         js.append("  window.__isBroadcastRadioMode = false;\n");
         js.append("  window.__radioIdx = 0;\n");
         js.append("  window.__activeRadioUrl = '';\n");
 
-        // Always plays live radio via native Android MediaPlayer with locks so screen sleep never stops it
         js.append("  window.__startHybridLiveStream = function(url) {\n");
         js.append("    window.__stopAllRadioAndNativeAudio();\n");
         js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) {\n");
@@ -977,6 +1114,8 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("      var swBtn = document.getElementById('btn-switch-radio-archive');\n");
         js.append("      var subBrand = document.getElementById('brand-sub-mode');\n");
         js.append("      var hdr = document.querySelector('.screen-log-header');\n");
+        js.append("      var fRowEl = document.getElementById('date-select').parentNode;\n");
+        js.append("      var cRowEl = document.getElementById('radio-crud-row');\n");
         js.append("      if (window.__isBroadcastRadioMode) {\n");
         js.append("        if (swBtn) swBtn.innerHTML = 'ARCHIVE';\n");
         js.append("        if (subBrand) subBrand.innerText = 'TUNER';\n");
@@ -985,6 +1124,8 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("          hdr.style.gridTemplateColumns = '36px 68px 48px 1fr';\n");
         js.append("          hdr.innerHTML = '<span>CH</span><span>BAND</span><span>MODE</span><span>STATION NAME</span>';\n");
         js.append("        }\n");
+        js.append("        if (fRowEl) fRowEl.style.display = 'none';\n");
+        js.append("        if (cRowEl) cRowEl.style.display = 'grid';\n");
         js.append("        window.renderPlaylist();\n");
         js.append("        window.selectRadioStationOnly(window.__radioIdx || 0);\n");
         js.append("      } else {\n");
@@ -995,6 +1136,8 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("          hdr.style.gridTemplateColumns = '62px 52px 58px 34px 1fr';\n");
         js.append("          hdr.innerHTML = '<span>DATE</span><span>TIME</span><span>FREQ</span><span>DUR</span><span>NAME</span>';\n");
         js.append("        }\n");
+        js.append("        if (fRowEl) fRowEl.style.display = 'grid';\n");
+        js.append("        if (cRowEl) cRowEl.style.display = 'none';\n");
         js.append("        window.__activePlayingFileId = '';\n");
         js.append("        window.renderPlaylist();\n");
         js.append("        if (curIdx >= 0 && curIdx < filteredRecs.length) {\n");
@@ -1021,7 +1164,7 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    curIdx = idx;\n");
         js.append("    var r = filteredRecs[idx];\n");
         js.append("    var ro = document.getElementById('track-main-readout');\n");
-        js.append("    if (ro) ro.innerText = 'READY: ' + r.name + ' • ' + r.freq;\n");
+        js.append("    if (ro) ro.innerText = r.name + ' • ' + r.freq;\n");
         js.append("    document.getElementById('cassette-lbl-left').innerText = r.name;\n");
         js.append("    document.getElementById('cassette-lbl-right').innerText = r.freq + ' (' + r.timeStr + ')';\n");
         js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
@@ -1065,7 +1208,11 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("      return;\n");
         js.append("    }\n");
 
-        js.append("    filteredRecs = allRecs.slice();\n");
+        js.append("    var q = (document.getElementById('search-box').value || '').trim().toLowerCase();\n");
+        js.append("    filteredRecs = allRecs.filter(function(r) {\n");
+        js.append("      if (q && !r.name.toLowerCase().includes(q) && !r.freq.toLowerCase().includes(q) && !r.timeStr.toLowerCase().includes(q)) return false;\n");
+        js.append("      return true;\n");
+        js.append("    });\n");
         js.append("    document.getElementById('rec-count-hud').innerText = filteredRecs.length + ' RECORDINGS';\n");
         js.append("    if (!filteredRecs.length) {\n");
         js.append("      box.innerHTML = '<div style=\"padding:14px;text-align:center;opacity:0.6;font-size:10px;\">No recordings found.</div>';\n");
@@ -1140,10 +1287,16 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
 
         js.append("  var oldStopBtn = document.getElementById('btn-stop');\n");
         js.append("  if (oldStopBtn) {\n");
-        js.append("    oldStopBtn.addEventListener('click', function() {\n");
+        js.append("    var newStopBtn = oldStopBtn.cloneNode(true);\n");
+        js.append("    oldStopBtn.parentNode.replaceChild(newStopBtn, oldStopBtn);\n");
+        js.append("    newStopBtn.addEventListener('click', function() {\n");
         js.append("      window.__stopAllRadioAndNativeAudio();\n");
         js.append("    });\n");
         js.append("  }\n");
+
+        /* Live Instant Search Filter for Archive */
+        js.append("  var sBox = document.getElementById('search-box');\n");
+        js.append("  if (sBox) sBox.addEventListener('input', function() { window.renderPlaylist(); });\n");
 
         if (openInRadio) {
             js.append("  window.setAppMode(true, true);\n");
@@ -1154,6 +1307,7 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
     }
 
     private void stopNativePlayer() {
+        releaseEqualizer();
         releasePlaybackLocks();
         currentStreamReqId++;
         mainHandler.removeCallbacks(progressTicker);
@@ -1262,6 +1416,7 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
                             try { mp.stop(); mp.release(); } catch (Exception ignored) {}
                             return;
                         }
+                        setupEqualizer(mp.getAudioSessionId());
                         mp.start();
                         if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
                         mainHandler.post(progressTicker);
@@ -1339,6 +1494,7 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
                                 try { mp.stop(); mp.release(); } catch (Exception ignored) {}
                                 return;
                             }
+                            setupEqualizer(mp.getAudioSessionId());
                             mp.start();
                             if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
                             mainHandler.post(progressTicker);
@@ -1417,6 +1573,29 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         public String getBatteryStatus() { return getNativeBatteryStatus(); }
 
         @JavascriptInterface
+        public boolean toggleClarityFilter() {
+            clarityFilterEnabled = !clarityFilterEnabled;
+            prefs.edit().putBoolean("clarity_filter_on", clarityFilterEnabled).apply();
+            mainHandler.post(() -> {
+                if (speechEqualizer != null) {
+                    try {
+                        speechEqualizer.setEnabled(clarityFilterEnabled);
+                        if (clarityFilterEnabled) {
+                            configureSpeechBands(speechEqualizer);
+                        }
+                    } catch (Exception ignored) {}
+                }
+                Toast.makeText(PlayerActivity.this, clarityFilterEnabled ? "Audio Clarity: ON (Voice Boost & De-Hiss)" : "Audio Clarity: OFF", Toast.LENGTH_SHORT).show();
+            });
+            return clarityFilterEnabled;
+        }
+
+        @JavascriptInterface
+        public boolean getClarityFilterState() {
+            return clarityFilterEnabled;
+        }
+
+        @JavascriptInterface
         public void setWakeLock(final boolean keepOn) {
             mainHandler.post(() -> {
                 applyPlayerWakeLock(keepOn);
@@ -1445,7 +1624,6 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
 
         @JavascriptInterface
         public void refreshRecordings() {
-            mainHandler.post(() -> Toast.makeText(PlayerActivity.this, "Syncing latest files from Google Drive...", Toast.LENGTH_SHORT).show());
             loadLiveGoogleDriveRecordings();
         }
 
