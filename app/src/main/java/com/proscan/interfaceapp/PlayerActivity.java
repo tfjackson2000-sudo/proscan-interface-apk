@@ -1,4 +1,3 @@
-
 package com.proscan.interfaceapp;
 
 import android.app.Activity;
@@ -531,8 +530,7 @@ public class PlayerActivity extends Activity {
                 .setNegativeButton("Cancel", null)
                 .show();
     }
-
-    private void injectReactiveDecksAndTheme() {
+private void injectReactiveDecksAndTheme() {
         String backupJson = prefs.getString("last_backup_json", "");
         String safeBackup = JSONObject.quote(backupJson);
         String savedStationsJson = prefs.getString("radio_stations_json", "");
@@ -927,7 +925,6 @@ public class PlayerActivity extends Activity {
         js.append("  window.__radioIdx = 0;\n");
         js.append("  window.__activeRadioUrl = '';\n");
 
-        // Always plays live radio via native Android MediaPlayer with locks so screen sleep never stops it
         js.append("  window.__startHybridLiveStream = function(url) {\n");
         js.append("    window.__stopAllRadioAndNativeAudio();\n");
         js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) {\n");
@@ -1348,267 +1345,7 @@ public class PlayerActivity extends Activity {
 
         if (playerWeb != null) playerWeb.evaluateJavascript(js.toString(), null);
     }
-
-    private void stopNativePlayer() {
-        releaseEqualizer();
-        releasePlaybackLocks();
-        currentStreamReqId++;
-        mainHandler.removeCallbacks(progressTicker);
-        isLiveRadioStream = false;
-        if (nativePlayer != null) {
-            try { if (nativePlayer.isPlaying()) nativePlayer.stop(); } catch (Exception ignored) {}
-            try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
-            nativePlayer = null;
-        }
-    }
-
-    private float[] extractMp3AmplitudeEnvelope(File mp3File) {
-        int buckets = 240;
-        float[] env = new float[buckets];
-        try {
-            long len = mp3File.length();
-            if (len <= 512) return env;
-            FileInputStream fis = new FileInputStream(mp3File);
-            byte[] data = new byte[(int) Math.min(len, 2 * 1024 * 1024)];
-            int read = fis.read(data);
-            fis.close();
-            if (read <= 256) return env;
-            int startOffset = Math.min(read / 10, 1024);
-            int sliceLen = Math.max(1, (read - startOffset) / buckets);
-            float minVal = Float.MAX_VALUE, maxVal = Float.MIN_VALUE;
-            for (int b = 0; b < buckets; b++) {
-                int s = startOffset + b * sliceLen;
-                int end = Math.min(read - 1, s + sliceLen);
-                long energy = 0;
-                int zeroPad = 0;
-                for (int i = s; i < end; i++) {
-                    int v = data[i] & 0xFF;
-                    if (v == 0x00 || v == 0xFF || v == 0xAA || v == 0x55) zeroPad++;
-                    energy += Math.abs((data[i] & 0xFF) - (data[i + 1] & 0xFF));
-                }
-                int count = Math.max(1, end - s);
-                float padRatio = (float) zeroPad / (float) count;
-                float rawScore = ((float) energy / (float) count) * (1.0f - padRatio * 0.85f);
-                env[b] = rawScore;
-                if (rawScore < minVal) minVal = rawScore;
-                if (rawScore > maxVal) maxVal = rawScore;
-            }
-            float range = Math.max(1f, maxVal - minVal);
-            for (int b = 0; b < buckets; b++) {
-                float norm = (env[b] - minVal) / range;
-                norm = (float) Math.pow(norm, 1.55);
-                env[b] = Math.min(1f, Math.max(0.02f, norm));
-            }
-        } catch (Exception ignored) {}
-        return env;
-    }
-
-    private String resolveRedirects(String urlStr) {
-        String current = urlStr;
-        for (int hop = 0; hop < 6; hop++) {
-            try {
-                HttpURLConnection conn = (HttpURLConnection) new URL(current).openConnection();
-                conn.setInstanceFollowRedirects(false);
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                int code = conn.getResponseCode();
-                if (code >= 300 && code < 400) {
-                    String loc = conn.getHeaderField("Location");
-                    conn.disconnect();
-                    if (loc == null || loc.isEmpty()) break;
-                    current = new URL(new URL(current), loc).toString();
-                } else {
-                    conn.disconnect();
-                    break;
-                }
-            } catch (Exception e) {
-                break;
-            }
-        }
-        return current;
-    }
-
-    private void playLiveRadioUrlNatively(final String streamUrl) {
-        stopNativePlayer();
-        acquirePlaybackLocks();
-        final int reqId = ++currentStreamReqId;
-        audioFetchExecutor.execute(() -> {
-            final String resolvedUrl = resolveRedirects(streamUrl);
-            if (reqId != currentStreamReqId) return;
-            mainHandler.post(() -> {
-                if (reqId != currentStreamReqId) return;
-                try {
-                    if (nativePlayer != null) {
-                        try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
-                        nativePlayer = null;
-                    }
-                    isLiveRadioStream = true;
-                    nativePlayer = new MediaPlayer();
-                    if (Build.VERSION.SDK_INT >= 21) {
-                        nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
-                                .setUsage(AudioAttributes.USAGE_MEDIA)
-                                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                                .build());
-                    }
-                    Map<String, String> headers = new HashMap<>();
-                    headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                    nativePlayer.setDataSource(PlayerActivity.this, Uri.parse(resolvedUrl), headers);
-                    nativePlayer.setOnPreparedListener(mp -> {
-                        if (reqId != currentStreamReqId) {
-                            try { mp.stop(); mp.release(); } catch (Exception ignored) {}
-                            return;
-                        }
-                        setupEqualizer(mp.getAudioSessionId());
-                        mp.start();
-                        if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
-                        mainHandler.post(progressTicker);
-                    });
-                    nativePlayer.setOnErrorListener((mp, what, extra) -> {
-                        if (reqId == currentStreamReqId) {
-                            stopNativePlayer();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM OFFLINE');", null);
-                        }
-                        return true;
-                    });
-                    nativePlayer.prepareAsync();
-                } catch (Exception e) {
-                    if (reqId == currentStreamReqId && playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
-                    }
-                }
-            });
-        });
-    }
-
-    private void playDriveFileIdNatively(final String fileId) {
-        stopNativePlayer();
-        acquirePlaybackLocks();
-        final int reqId = ++currentStreamReqId;
-        final String urlStr = "https://drive.usercontent.google.com/download?id=" + fileId + "&export=download";
-        audioFetchExecutor.execute(() -> {
-            try {
-                File tempMp3 = new File(getCacheDir(), "active_track.mp3");
-                URL url = new URL(urlStr);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(9000);
-                conn.setReadTimeout(9000);
-                conn.setInstanceFollowRedirects(true);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                InputStream is = conn.getInputStream();
-                FileOutputStream fos = new FileOutputStream(tempMp3);
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = is.read(buf)) != -1) {
-                    if (reqId != currentStreamReqId) {
-                        fos.close(); is.close(); conn.disconnect();
-                        return;
-                    }
-                    fos.write(buf, 0, n);
-                }
-                fos.close();
-                is.close();
-                conn.disconnect();
-                if (reqId != currentStreamReqId) return;
-
-                final float[] env = extractMp3AmplitudeEnvelope(tempMp3);
-
-                mainHandler.post(() -> {
-                    if (reqId != currentStreamReqId) return;
-                    try {
-                        if (nativePlayer != null) {
-                            try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
-                            nativePlayer = null;
-                        }
-                        isLiveRadioStream = false;
-                        currentEnvelope = env;
-                        nativePlayer = new MediaPlayer();
-                        if (Build.VERSION.SDK_INT >= 21) {
-                            nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
-                                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                    .build());
-                        }
-                        FileInputStream fis = new FileInputStream(tempMp3);
-                        nativePlayer.setDataSource(fis.getFD());
-                        fis.close();
-                        nativePlayer.setOnPreparedListener(mp -> {
-                            if (reqId != currentStreamReqId) {
-                                try { mp.stop(); mp.release(); } catch (Exception ignored) {}
-                                return;
-                            }
-                            setupEqualizer(mp.getAudioSessionId());
-                            mp.start();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
-                            mainHandler.post(progressTicker);
-                        });
-                        nativePlayer.setOnCompletionListener(mp -> {
-                            stopNativePlayer();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayEnded)window.onNativePlayEnded();", null);
-                        });
-                        nativePlayer.prepareAsync();
-                    } catch (Exception e) {
-                        if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('PLAY ERROR');", null);
-                    }
-                });
-            } catch (Exception e) {
-                mainHandler.post(() -> {
-                    if (reqId == currentStreamReqId && playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
-                    }
-                });
-            }
-        });
-    }
-
-    private void openAddOrEditStationDialog(final int editIdx, String curName, String curFreq, String curUrl) {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int) (18 * getResources().getDisplayMetrics().density);
-        layout.setPadding(pad, pad, pad, pad);
-
-        TextView l1 = new TextView(this);
-        l1.setText("Station Name (e.g. BBC Radio 5 Live):");
-        layout.addView(l1);
-        final EditText nameInput = new EditText(this);
-        nameInput.setText(curName != null ? curName : "");
-        layout.addView(nameInput);
-
-        TextView l2 = new TextView(this);
-        l2.setText("\nFreq / Band Label (e.g. 909 AM or DAB+):");
-        layout.addView(l2);
-        final EditText freqInput = new EditText(this);
-        freqInput.setText(curFreq != null && !curFreq.isEmpty() ? curFreq : "DAB+");
-        layout.addView(freqInput);
-
-        TextView l3 = new TextView(this);
-        l3.setText("\nDirect Stream URL (.mp3 / .aac / .m3u8):");
-        layout.addView(l3);
-        final EditText urlInput = new EditText(this);
-        urlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        urlInput.setText(curUrl != null ? curUrl : "");
-        layout.addView(urlInput);
-
-        new AlertDialog.Builder(this)
-                .setTitle(editIdx >= 0 ? "Edit Radio Station" : "Add Radio Station")
-                .setView(layout)
-                .setPositiveButton("Save Station", (d, w) -> {
-                    String n = nameInput.getText().toString().trim();
-                    String f = freqInput.getText().toString().trim();
-                    String u = urlInput.getText().toString().trim();
-                    if (n.isEmpty() || u.isEmpty()) {
-                        Toast.makeText(PlayerActivity.this, "Name and Stream URL required", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    String jsCall = "if(window.onNativeStationSaved)window.onNativeStationSaved("
-                            + editIdx + "," + JSONObject.quote(n) + "," + JSONObject.quote(f) + "," + JSONObject.quote(u) + ");";
-                    if (playerWeb != null) playerWeb.evaluateJavascript(jsCall, null);
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    public class PlayerBridge {
+public class PlayerBridge {
         @JavascriptInterface
         public String getServerUrl() { return serverBaseUrl; }
 
@@ -1641,4 +1378,336 @@ public class PlayerActivity extends Activity {
         @JavascriptInterface
         public void setWakeLock(final boolean keepOn) {
             mainHandler.post(() -> {
-                
+                applyPlayerWakeLock(keepOn);
+                Toast.makeText(PlayerActivity.this, keepOn ? "Screen Wake: ON (All Modes)" : "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
+            });
+        }
+
+        @JavascriptInterface
+        public void setWebStreamActive(final boolean active) {
+            mainHandler.post(() -> {
+                isLiveRadioStream = active;
+                mainHandler.removeCallbacks(progressTicker);
+                if (active) mainHandler.post(progressTicker);
+            });
+        }
+
+        @JavascriptInterface
+        public void saveStationsJson(final String jsonStr, final boolean showToast) {
+            mainHandler.post(() -> saveRadioStationsJsonToDownloads(jsonStr, showToast));
+        }
+
+        @JavascriptInterface
+        public void openStationJsonMenu(final int curIdx, final String name, final String freq, final String url) {
+            mainHandler.post(() -> showStationMenuDialog(curIdx, name, freq, url));
+        }
+
+        @JavascriptInterface
+        public void refreshRecordings() {
+            loadLiveGoogleDriveRecordings();
+        }
+
+        @JavascriptInterface
+        public void playDriveIdDirect(final String fileId) {
+            mainHandler.post(() -> playDriveFileIdNatively(fileId));
+        }
+
+        @JavascriptInterface
+        public void playLiveStreamUrl(final String url) {
+            mainHandler.post(() -> playLiveRadioUrlNatively(url));
+        }
+
+        @JavascriptInterface
+        public void showStationDialog(final int editIdx, final String name, final String freq, final String url) {
+            mainHandler.post(() -> openAddOrEditStationDialog(editIdx, name, freq, url));
+        }
+
+        @JavascriptInterface
+        public void seekToSeconds(final int sec) {
+            mainHandler.post(() -> {
+                try { if (nativePlayer != null && !isLiveRadioStream) nativePlayer.seekTo(sec * 1000); } catch (Exception ignored) {}
+            });
+        }
+
+        @JavascriptInterface
+        public void stopAudio() { mainHandler.post(() -> stopNativePlayer()); }
+
+        @JavascriptInterface
+        public void togglePause() {
+            mainHandler.post(() -> {
+                try {
+                    if (nativePlayer != null) {
+                        if (nativePlayer.isPlaying()) {
+                            nativePlayer.pause();
+                            if (playerWeb != null) playerWeb.evaluateJavascript("if(typeof setPlayingUI==='function')setPlayingUI(false);renderPlaylist();", null);
+                        } else {
+                            nativePlayer.start();
+                            if (playerWeb != null) playerWeb.evaluateJavascript("if(typeof setPlayingUI==='function')setPlayingUI(true);renderPlaylist();", null);
+                            mainHandler.post(progressTicker);
+                        }
+                    }
+                } catch (Exception ignored) {}
+            });
+        }
+
+        @JavascriptInterface
+        public void openGoogleDriveFolder() {
+            mainHandler.post(() -> {
+                try {
+                    Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://drive.google.com/drive/folders/" + GDRIVE_ROOT_FOLDER_ID));
+                    startActivity(i);
+                } catch (Exception ignored) {}
+            });
+        }
+
+        @JavascriptInterface
+        public void speakCaption(final String text) {
+            mainHandler.post(() -> {
+                if (tts != null && ttsReady && text != null && !text.trim().isEmpty()) {
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        Bundle params = new Bundle();
+                        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.35f);
+                        tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, params, "player_tts");
+                    } else {
+                        tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, null);
+                    }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void showSystemBars() {
+            mainHandler.post(() -> {
+                showBothSystemBarsNow();
+                mainHandler.postDelayed(() -> hideSystemUI(), 4500);
+            });
+        }
+
+        @JavascriptInterface
+        public void minimizeApp() {
+            mainHandler.post(() -> moveTaskToBack(true));
+        }
+
+        @JavascriptInterface
+        public void exitEntireApp() {
+            mainHandler.post(() -> {
+                stopNativePlayer();
+                try { stopService(new Intent(PlayerActivity.this, AudioKeepAliveService.class)); } catch (Exception ignored) {}
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    finishAffinity();
+                    finishAndRemoveTask();
+                } else {
+                    finishAffinity();
+                }
+                System.exit(0);
+            });
+        }
+
+        @JavascriptInterface
+        public void closePlayer() {
+            mainHandler.post(() -> {
+                stopNativePlayer();
+                finish();
+                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+            });
+        }
+    }
+
+    private String fetchUrlText(String urlStr) {
+        try {
+            String sep = urlStr.contains("?") ? "&" : "?";
+            URL url = new URL(urlStr + sep + "_t=" + System.currentTimeMillis());
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(9000);
+            conn.setReadTimeout(9000);
+            conn.setUseCaches(false);
+            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
+            conn.setRequestProperty("Pragma", "no-cache");
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) sb.append(line).append("\n");
+            reader.close();
+            conn.disconnect();
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private Map<String, String> parseDriveFolderAllItems(String folderId) {
+        Map<String, String> map = new LinkedHashMap<>();
+        if (folderId == null || folderId.isEmpty()) return map;
+        String html1 = fetchUrlText("https://drive.google.com/embeddedfolderview?id=" + folderId);
+        if (!html1.isEmpty()) {
+            Pattern p1 = Pattern.compile("id=\"entry-([A-Za-z0-9_-]{15,})\"[\\s\\S]*?<div class=\"flip-entry-title\">([^<]+)</div>");
+            Matcher m1 = p1.matcher(html1);
+            while (m1.find()) {
+                map.put(m1.group(2).trim().replace("&amp;", "&").replace("&#39;", "'").replace("&quot;", "\""), m1.group(1).trim());
+            }
+        }
+        String html2 = fetchUrlText("https://drive.google.com/drive/folders/" + folderId);
+        if (!html2.isEmpty()) {
+            String unescaped = html2.replace("\\u0022", "\"").replace("\\\"", "\"");
+            Pattern p2 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"([^\"]+\\.mp3)\"");
+            Matcher m2 = p2.matcher(unescaped);
+            while (m2.find()) map.put(m2.group(2).trim().replace("&amp;", "&").replace("&#39;", "'"), m2.group(1).trim());
+            Pattern p3 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"(\\d{2}-\\d{2}-\\d{2}|Scan)\"");
+            Matcher m3 = p3.matcher(unescaped);
+            while (m3.find()) map.put(m3.group(2).trim(), m3.group(1).trim());
+        }
+        return map;
+    }
+
+    private static class RecItem implements Comparable<RecItem> {
+        String fileId, fileName, dateStr, timeStr, freq, dur, name, sortKey;
+        @Override
+        public int compareTo(RecItem o) { return o.sortKey.compareTo(this.sortKey); }
+    }
+
+    private RecItem parseMp3Filename(String dateFolder, String fileName, String fileId) {
+        String base = fileName.endsWith(".mp3") ? fileName.substring(0, fileName.length() - 4) : fileName;
+        Pattern pat = Pattern.compile("^(.*?)\\s+-\\s+(\\d+\\.\\d+)\\s+-\\s+(\\d{2})-(\\d{2})-(\\d{2})(?:.*?TO\\s+(\\d{2})-(\\d{2})-(\\d{2}))?");
+        Matcher m = pat.matcher(base);
+        RecItem item = new RecItem();
+        item.fileId = fileId;
+        item.fileName = fileName;
+        item.dateStr = dateFolder;
+        if (m.find()) {
+            item.name = m.group(1).trim();
+            item.freq = m.group(2).trim();
+            String h1 = m.group(3), m1 = m.group(4), s1 = m.group(5);
+            item.timeStr = h1 + ":" + m1 + ":" + s1;
+            item.dur = "00:03";
+            if (m.group(6) != null) {
+                try {
+                    int t1 = Integer.parseInt(h1) * 3600 + Integer.parseInt(m1) * 60 + Integer.parseInt(s1);
+                    int t2 = Integer.parseInt(m.group(6)) * 3600 + Integer.parseInt(m.group(7)) * 60 + Integer.parseInt(m.group(8));
+                    int diff = t2 - t1;
+                    if (diff < 0) diff += 86400;
+                    item.dur = String.format(Locale.US, "%02d:%02d", diff / 60, diff % 60);
+                } catch (Exception ignored) {}
+            }
+        } else {
+            String[] parts = base.split(" - ");
+            item.name = parts.length > 0 ? parts[0].trim() : base;
+            item.freq = parts.length > 1 ? parts[1].trim() : "---.----";
+            item.timeStr = parts.length > 2 ? parts[2].replace('-', ':').trim() : "00:00:00";
+            item.dur = "--:--";
+        }
+        String[] dp = dateFolder.split("-");
+        String isoDate = dp.length == 3 ? (dp[2] + "-" + dp[0] + "-" + dp[1]) : dateFolder;
+        item.sortKey = isoDate + " " + item.timeStr + " " + fileName;
+        return item;
+    }
+
+    private void loadLiveGoogleDriveRecordings() {
+        if (isFetchingDrive) return;
+        isFetchingDrive = true;
+        executor.execute(() -> {
+            try {
+                Map<String, String> rootItems = parseDriveFolderAllItems(GDRIVE_ROOT_FOLDER_ID);
+                List<String> dateFolders = new ArrayList<>();
+                for (String title : rootItems.keySet()) {
+                    if (title.matches("\\d{2}-\\d{2}-\\d{2}")) dateFolders.add(title);
+                }
+                Collections.sort(dateFolders, (a, b) -> {
+                    String[] pa = a.split("-"), pb = b.split("-");
+                    String ka = pa.length == 3 ? (pa[2] + pa[0] + pa[1]) : a;
+                    String kb = pb.length == 3 ? (pb[2] + pb[0] + pb[1]) : b;
+                    return kb.compareTo(ka);
+                });
+                List<RecItem> allItems = new ArrayList<>();
+                int maxDates = Math.min(dateFolders.size(), 3);
+                for (int i = 0; i < maxDates; i++) {
+                    String dFolder = dateFolders.get(i);
+                    String dId = rootItems.get(dFolder);
+                    if (dId == null) continue;
+                    Map<String, String> dateChildren = parseDriveFolderAllItems(dId);
+                    for (Map.Entry<String, String> e : dateChildren.entrySet()) {
+                        if (e.getKey().toLowerCase().endsWith(".mp3")) {
+                            allItems.add(parseMp3Filename(dFolder, e.getKey(), e.getValue()));
+                        } else {
+                            Map<String, String> subChildren = parseDriveFolderAllItems(e.getValue());
+                            for (Map.Entry<String, String> se : subChildren.entrySet()) {
+                                if (se.getKey().toLowerCase().endsWith(".mp3")) {
+                                    allItems.add(parseMp3Filename(dFolder, se.getKey(), se.getValue()));
+                                }
+                            }
+                        }
+                    }
+                }
+                Collections.sort(allItems);
+                JSONArray arr = new JSONArray();
+                for (RecItem it : allItems) {
+                    JSONObject o = new JSONObject();
+                    o.put("fileId", it.fileId);
+                    o.put("fileName", it.fileName);
+                    o.put("dateStr", it.dateStr);
+                    o.put("timeStr", it.timeStr);
+                    o.put("freq", it.freq);
+                    o.put("dur", it.dur);
+                    o.put("name", it.name);
+                    arr.put(o);
+                }
+                final String escapedJson = JSONObject.quote(arr.toString());
+                mainHandler.post(() -> {
+                    isFetchingDrive = false;
+                    if (playerWeb != null) {
+                        playerWeb.evaluateJavascript("if(window.onDriveRecordingsLoaded)window.onDriveRecordingsLoaded(" + escapedJson + ");", null);
+                    }
+                });
+            } catch (Exception ignored) {
+                isFetchingDrive = false;
+            }
+        });
+    }
+
+    private void hideSystemUI() {
+        try {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN
+            );
+            if (Build.VERSION.SDK_INT >= 30) {
+                WindowInsetsController ic = getWindow().getInsetsController();
+                if (ic != null) {
+                    ic.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    ic.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (playerWeb != null) {
+            playerWeb.evaluateJavascript("if(window.markCurrentListAsVisited)window.markCurrentListAsVisited();", null);
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
+        try {
+            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
+                audioManager.unregisterAudioDeviceCallback(btDeviceCallback);
+            }
+        } catch (Exception ignored) {}
+        mainHandler.removeCallbacks(autoSyncRunnable);
+        stopNativePlayer();
+        releasePlaybackLocks();
+        try {
+            if (tts != null) { tts.stop(); tts.shutdown(); }
+            if (playerWeb != null) { playerWeb.loadUrl("about:blank"); playerWeb.destroy(); }
+        } catch (Exception ignored) {}
+        super.onDestroy();
+    }
+}
