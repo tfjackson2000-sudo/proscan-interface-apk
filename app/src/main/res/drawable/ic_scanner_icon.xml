@@ -1,0 +1,80 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Dark Circular Outer Badge -->
+    <path
+        android:fillColor="#12151a"
+        android:pathData="M54,2 A52,52 0 1,1 53.9,2 Z" />
+
+    <!-- Outer Chrome Ring -->
+    <path
+        android:strokeColor="#38bdf8"
+        android:strokeWidth="2.5"
+        android:pathData="M54,4 A50,50 0 1,1 53.9,4 Z" />
+
+    <!-- Handheld Rubber Ducky Antenna -->
+    <path
+        android:fillColor="#1e2229"
+        android:strokeColor="#090b0e"
+        android:strokeWidth="1"
+        android:pathData="M34,10 L40,10 L39,30 L35,30 Z" />
+    <path
+        android:fillColor="#38bdf8"
+        android:pathData="M34,10 A3,3 0 0,1 40,10 Z" />
+
+    <!-- Rotary Volume/Squelch Knob -->
+    <path
+        android:fillColor="#334155"
+        android:strokeColor="#090b0e"
+        android:strokeWidth="1"
+        android:pathData="M68,18 L78,18 L78,30 L68,30 Z" />
+
+    <!-- Heavy Duty Scanner Body Chassis -->
+    <path
+        android:fillColor="#1e242b"
+        android:strokeColor="#000000"
+        android:strokeWidth="2"
+        android:pathData="M26,30 L82,30 A6,6 0 0,1 88,36 L88,94 A8,8 0 0,1 80,102 L28,102 A8,8 0 0,1 20,94 L20,36 A6,6 0 0,1 26,30 Z" />
+
+    <!-- Rubber Side Grips -->
+    <path
+        android:fillColor="#090b0e"
+        android:pathData="M19,42 L22,42 L22,86 L19,86 Z M86,42 L89,42 L89,86 L86,86 Z" />
+
+    <!-- Backlit Green Scanner LCD Screen Bezel -->
+    <path
+        android:fillColor="#000000"
+        android:strokeColor="#334155"
+        android:strokeWidth="1.2"
+        android:pathData="M27,37 L81,37 A3,3 0 0,1 84,40 L84,62 A3,3 0 0,1 81,65 L27,65 A3,3 0 0,1 24,62 L24,40 A3,3 0 0,1 27,37 Z" />
+
+    <!-- Glowing Phosphor LCD Display -->
+    <path
+        android:fillColor="#052e16"
+        android:pathData="M27,39 L81,39 L81,63 L27,63 Z" />
+
+    <!-- LCD Frequency & Channel Readout -->
+    <path
+        android:fillColor="#22c55e"
+        android:pathData="M30,44 L36,44 L36,46 L30,46 Z M30,49 L46,49 L46,53 L30,53 Z M50,49 L74,49 L74,53 L50,53 Z M30,56 L62,56 L62,59 L30,59 Z" />
+
+    <!-- Signal Strength Meter Bars -->
+    <path
+        android:fillColor="#38bdf8"
+        android:pathData="M72,43 L74,43 L74,46 L72,46 Z M75,41 L77,41 L77,46 L75,46 Z M78,39 L80,39 L80,46 L78,46 Z" />
+
+    <!-- Speaker Grille Slats -->
+    <path
+        android:strokeColor="#090b0e"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M32,71 L76,71 M30,75 L78,75 M32,79 L76,79 M34,83 L74,83" />
+
+    <!-- Numeric Keypad (3x3 Matrix) -->
+    <path
+        android:fillColor="#334155"
+        android:pathData="M30,88 A2,2 0 1,1 30,88.1 Z M42,88 A2,2 0 1,1 42,88.1 Z M54,88 A2,2 0 1,1 54,88.1 Z M66,88 A2,2 0 1,1 66,88.1 Z M78,88 A2,2 0 1,1 78,88.1 Z M36,95 A2,2 0 1,1 36,95.1 Z M48,95 A2,2 0 1,1 48,95.1 Z M60,95 A2,2 0 1,1 60,95.1 Z M72,95 A2,2 0 1,1 72,95.1 Z" />
+</vector>
