@@ -571,10 +571,11 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '.scanner-display{height:252px!important;}.top-controls-container{height:28px!important;}.buttons-box{gap:7px!important;}#mech-bay{height:216px!important;}' +\n");
         js.append("    '#playlist-box{overflow-y:scroll!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior:contain!important;}' +\n");
         js.append("    '.rec-row{touch-action:pan-y!important;}' +\n");
-        js.append("    '.rec-row.selected{outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(255,255,255,0.14)!important;font-weight:800!important;}' +\n");
+        js.append("    '.rec-row.playing, .rec-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
+        js.append("    '.rec-row.selected:not(.playing){outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(0,0,0,0.16)!important;color:var(--log-text)!important;font-weight:800!important;}' +\n");
         js.append("    '.radio-row{display:grid!important;grid-template-columns:36px 68px 48px 1fr!important;gap:4px!important;padding:4px 6px!important;border-bottom:1px solid var(--log-cell-border)!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10px!important;color:var(--log-text)!important;align-items:center!important;text-align:left!important;cursor:pointer!important;touch-action:pan-y!important;}' +\n");
-        js.append("    '.radio-row.playing{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;}' +\n");
-        js.append("    '.radio-row.selected{outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(255,255,255,0.14)!important;font-weight:800!important;}' +\n");
+        js.append("    '.radio-row.playing, .radio-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
+        js.append("    '.radio-row.selected:not(.playing){outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(0,0,0,0.16)!important;color:var(--log-text)!important;font-weight:800!important;}' +\n");
 
         /* Top Row Navigation: 5 Buttons in Archive Mode, 3 Full-Width Buttons in Radio Mode */
         js.append("    '.player-nav-row{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:30px!important;}' +\n");
@@ -725,8 +726,20 @@ private void injectReactiveDecksAndTheme() {
         js.append("    exBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
         js.append("  }\n");
 
+        /* Stop all native audio AND immediately stop deck animations & reset VU meters */
         js.append("  window.__stopAllRadioAndNativeAudio = function() {\n");
         js.append("    window.__streamLaunchToken = (window.__streamLaunchToken || 0) + 1;\n");
+        js.append("    window.__audioLevel = 0;\n");
+        js.append("    if (typeof setPlayingUI === 'function') setPlayingUI(false);\n");
+        js.append("    var arm = document.querySelector('.tt-tonearm');\n");
+        js.append("    if (arm) arm.style.transform = 'rotate(6deg)';\n");
+        js.append("    ['cd-vu-l','r2r-vu-l','r2r-vu-r'].forEach(function(id){\n");
+        js.append("      var ndl = document.getElementById(id);\n");
+        js.append("      if (ndl) ndl.style.transform = 'rotate(-35deg)';\n");
+        js.append("    });\n");
+        js.append("    document.querySelectorAll('#reactive-vu-strip .rvu-seg').forEach(function(seg) {\n");
+        js.append("      seg.style.background = '#1e293b'; seg.style.boxShadow = 'none';\n");
+        js.append("    });\n");
         js.append("    if (window.PlayerBridge && window.PlayerBridge.stopAudio) {\n");
         js.append("      window.PlayerBridge.stopAudio();\n");
         js.append("    }\n");
@@ -1351,6 +1364,13 @@ private void injectReactiveDecksAndTheme() {
         js.append("    oldStopBtn.parentNode.replaceChild(newStopBtn, oldStopBtn);\n");
         js.append("    newStopBtn.addEventListener('click', function() {\n");
         js.append("      window.__stopAllRadioAndNativeAudio();\n");
+        js.append("      if (window.__isBroadcastRadioMode) {\n");
+        js.append("        window.selectRadioStationOnly(window.__radioIdx || 0);\n");
+        js.append("      } else {\n");
+        js.append("        window.__activePlayingFileId = '';\n");
+        js.append("        if (curIdx >= 0 && curIdx < filteredRecs.length) window.selectIndexOnly(curIdx);\n");
+        js.append("      }\n");
+        js.append("      window.renderPlaylist();\n");
         js.append("    });\n");
         js.append("  }\n");
 
