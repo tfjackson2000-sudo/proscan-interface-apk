@@ -576,8 +576,9 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '.radio-row.playing{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;}' +\n");
         js.append("    '.radio-row.selected{outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(255,255,255,0.14)!important;font-weight:800!important;}' +\n");
 
-        /* Top Row Navigation: 5 Large Buttons in Archive Mode */
+        /* Top Row Navigation: 5 Buttons in Archive Mode, 3 Full-Width Buttons in Radio Mode */
         js.append("    '.player-nav-row{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:30px!important;}' +\n");
+        js.append("    '.player-nav-row.radio-mode-nav{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important;}' +\n");
         js.append("    '.player-nav-row .btn{font-size:10.5px!important;font-weight:900!important;padding:2px 3px!important;letter-spacing:0.1px!important;}' +\n");
 
         /* Transport Row: Giant Full-Width Buttons [ PLAY ] and [ STOP ] */
@@ -1132,6 +1133,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("      window.__stopAllRadioAndNativeAudio();\n");
         js.append("      setPlayingUI(false);\n");
         js.append("      var swBtn = document.getElementById('btn-switch-radio-archive');\n");
+        js.append("      var navRowEl = swBtn ? swBtn.parentNode : document.querySelector('.player-nav-row');\n");
         js.append("      var subBrand = document.getElementById('brand-sub-mode');\n");
         js.append("      var hdr = document.querySelector('.screen-log-header');\n");
         js.append("      var fRowEl = document.getElementById('date-select').parentNode;\n");
@@ -1139,6 +1141,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("      var cModeBtn = document.getElementById('btn-mode-cont');\n");
         js.append("      var dspBtnEl = document.getElementById('btn-dsp-filter');\n");
         js.append("      if (window.__isBroadcastRadioMode) {\n");
+        js.append("        if (navRowEl) navRowEl.classList.add('radio-mode-nav');\n");
         js.append("        if (swBtn) swBtn.innerHTML = 'ARCHIVE';\n");
         js.append("        if (subBrand) subBrand.innerText = 'TUNER';\n");
         js.append("        document.getElementById('deck-mode-hud').innerText = 'BROADCAST // DAB+ FM TUNER';\n");
@@ -1154,6 +1157,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("        window.renderPlaylist();\n");
         js.append("        window.selectRadioStationOnly(window.__radioIdx || 0);\n");
         js.append("      } else {\n");
+        js.append("        if (navRowEl) navRowEl.classList.remove('radio-mode-nav');\n");
         js.append("        if (swBtn) swBtn.innerHTML = 'RADIO &#9654;';\n");
         js.append("        if (subBrand) subBrand.innerText = 'ARCHIVE';\n");
         js.append("        if (typeof applyDeck === 'function') applyDeck(deckIdx);\n");
