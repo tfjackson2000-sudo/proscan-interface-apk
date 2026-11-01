@@ -406,7 +406,6 @@ public class PlayerActivity extends Activity {
             if (Build.VERSION.SDK_INT >= 29) {
                 Uri collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
 
-                // Clean up any stale or conflicting files with this name to prevent duplicate-file limits
                 try {
                     Cursor c = getContentResolver().query(
                             collection,
@@ -1345,7 +1344,266 @@ private void injectReactiveDecksAndTheme() {
 
         if (playerWeb != null) playerWeb.evaluateJavascript(js.toString(), null);
     }
-public class PlayerBridge {
+private void stopNativePlayer() {
+        releaseEqualizer();
+        releasePlaybackLocks();
+        currentStreamReqId++;
+        mainHandler.removeCallbacks(progressTicker);
+        isLiveRadioStream = false;
+        if (nativePlayer != null) {
+            try { if (nativePlayer.isPlaying()) nativePlayer.stop(); } catch (Exception ignored) {}
+            try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
+            nativePlayer = null;
+        }
+    }
+
+    private float[] extractMp3AmplitudeEnvelope(File mp3File) {
+        int buckets = 240;
+        float[] env = new float[buckets];
+        try {
+            long len = mp3File.length();
+            if (len <= 512) return env;
+            FileInputStream fis = new FileInputStream(mp3File);
+            byte[] data = new byte[(int) Math.min(len, 2 * 1024 * 1024)];
+            int read = fis.read(data);
+            fis.close();
+            if (read <= 256) return env;
+            int startOffset = Math.min(read / 10, 1024);
+            int sliceLen = Math.max(1, (read - startOffset) / buckets);
+            float minVal = Float.MAX_VALUE, maxVal = Float.MIN_VALUE;
+            for (int b = 0; b < buckets; b++) {
+                int s = startOffset + b * sliceLen;
+                int end = Math.min(read - 1, s + sliceLen);
+                long energy = 0;
+                int zeroPad = 0;
+                for (int i = s; i < end; i++) {
+                    int v = data[i] & 0xFF;
+                    if (v == 0x00 || v == 0xFF || v == 0xAA || v == 0x55) zeroPad++;
+                    energy += Math.abs((data[i] & 0xFF) - (data[i + 1] & 0xFF));
+                }
+                int count = Math.max(1, end - s);
+                float padRatio = (float) zeroPad / (float) count;
+                float rawScore = ((float) energy / (float) count) * (1.0f - padRatio * 0.85f);
+                env[b] = rawScore;
+                if (rawScore < minVal) minVal = rawScore;
+                if (rawScore > maxVal) maxVal = rawScore;
+            }
+            float range = Math.max(1f, maxVal - minVal);
+            for (int b = 0; b < buckets; b++) {
+                float norm = (env[b] - minVal) / range;
+                norm = (float) Math.pow(norm, 1.55);
+                env[b] = Math.min(1f, Math.max(0.02f, norm));
+            }
+        } catch (Exception ignored) {}
+        return env;
+    }
+
+    private String resolveRedirects(String urlStr) {
+        String current = urlStr;
+        for (int hop = 0; hop < 6; hop++) {
+            try {
+                HttpURLConnection conn = (HttpURLConnection) new URL(current).openConnection();
+                conn.setInstanceFollowRedirects(false);
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+                int code = conn.getResponseCode();
+                if (code >= 300 && code < 400) {
+                    String loc = conn.getHeaderField("Location");
+                    conn.disconnect();
+                    if (loc == null || loc.isEmpty()) break;
+                    current = new URL(new URL(current), loc).toString();
+                } else {
+                    conn.disconnect();
+                    break;
+                }
+            } catch (Exception e) {
+                break;
+            }
+        }
+        return current;
+    }
+
+    private void playLiveRadioUrlNatively(final String streamUrl) {
+        stopNativePlayer();
+        acquirePlaybackLocks();
+        final int reqId = ++currentStreamReqId;
+        audioFetchExecutor.execute(() -> {
+            final String resolvedUrl = resolveRedirects(streamUrl);
+            if (reqId != currentStreamReqId) return;
+            mainHandler.post(() -> {
+                if (reqId != currentStreamReqId) return;
+                try {
+                    if (nativePlayer != null) {
+                        try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
+                        nativePlayer = null;
+                    }
+                    isLiveRadioStream = true;
+                    nativePlayer = new MediaPlayer();
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                                .build());
+                    }
+                    Map<String, String> headers = new HashMap<>();
+                    headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+                    nativePlayer.setDataSource(PlayerActivity.this, Uri.parse(resolvedUrl), headers);
+                    nativePlayer.setOnPreparedListener(mp -> {
+                        if (reqId != currentStreamReqId) {
+                            try { mp.stop(); mp.release(); } catch (Exception ignored) {}
+                            return;
+                        }
+                        setupEqualizer(mp.getAudioSessionId());
+                        mp.start();
+                        if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
+                        mainHandler.post(progressTicker);
+                    });
+                    nativePlayer.setOnErrorListener((mp, what, extra) -> {
+                        if (reqId == currentStreamReqId) {
+                            stopNativePlayer();
+                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM OFFLINE');", null);
+                        }
+                        return true;
+                    });
+                    nativePlayer.prepareAsync();
+                } catch (Exception e) {
+                    if (reqId == currentStreamReqId && playerWeb != null) {
+                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
+                    }
+                }
+            });
+        });
+    }
+
+    private void playDriveFileIdNatively(final String fileId) {
+        stopNativePlayer();
+        acquirePlaybackLocks();
+        final int reqId = ++currentStreamReqId;
+        final String urlStr = "https://drive.usercontent.google.com/download?id=" + fileId + "&export=download";
+        audioFetchExecutor.execute(() -> {
+            try {
+                File tempMp3 = new File(getCacheDir(), "active_track.mp3");
+                URL url = new URL(urlStr);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(9000);
+                conn.setReadTimeout(9000);
+                conn.setInstanceFollowRedirects(true);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+                InputStream is = conn.getInputStream();
+                FileOutputStream fos = new FileOutputStream(tempMp3);
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = is.read(buf)) != -1) {
+                    if (reqId != currentStreamReqId) {
+                        fos.close(); is.close(); conn.disconnect();
+                        return;
+                    }
+                    fos.write(buf, 0, n);
+                }
+                fos.close();
+                is.close();
+                conn.disconnect();
+                if (reqId != currentStreamReqId) return;
+
+                final float[] env = extractMp3AmplitudeEnvelope(tempMp3);
+
+                mainHandler.post(() -> {
+                    if (reqId != currentStreamReqId) return;
+                    try {
+                        if (nativePlayer != null) {
+                            try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
+                            nativePlayer = null;
+                        }
+                        isLiveRadioStream = false;
+                        currentEnvelope = env;
+                        nativePlayer = new MediaPlayer();
+                        if (Build.VERSION.SDK_INT >= 21) {
+                            nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
+                                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                    .build());
+                        }
+                        FileInputStream fis = new FileInputStream(tempMp3);
+                        nativePlayer.setDataSource(fis.getFD());
+                        fis.close();
+                        nativePlayer.setOnPreparedListener(mp -> {
+                            if (reqId != currentStreamReqId) {
+                                try { mp.stop(); mp.release(); } catch (Exception ignored) {}
+                                return;
+                            }
+                            setupEqualizer(mp.getAudioSessionId());
+                            mp.start();
+                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
+                            mainHandler.post(progressTicker);
+                        });
+                        nativePlayer.setOnCompletionListener(mp -> {
+                            stopNativePlayer();
+                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayEnded)window.onNativePlayEnded();", null);
+                        });
+                        nativePlayer.prepareAsync();
+                    } catch (Exception e) {
+                        if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('PLAY ERROR');", null);
+                    }
+                });
+            } catch (Exception e) {
+                mainHandler.post(() -> {
+                    if (reqId == currentStreamReqId && playerWeb != null) {
+                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
+                    }
+                });
+            }
+        });
+    }
+
+    private void openAddOrEditStationDialog(final int editIdx, String curName, String curFreq, String curUrl) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        layout.setPadding(pad, pad, pad, pad);
+
+        TextView l1 = new TextView(this);
+        l1.setText("Station Name (e.g. BBC Radio 5 Live):");
+        layout.addView(l1);
+        final EditText nameInput = new EditText(this);
+        nameInput.setText(curName != null ? curName : "");
+        layout.addView(nameInput);
+
+        TextView l2 = new TextView(this);
+        l2.setText("\nFreq / Band Label (e.g. 909 AM or DAB+):");
+        layout.addView(l2);
+        final EditText freqInput = new EditText(this);
+        freqInput.setText(curFreq != null && !curFreq.isEmpty() ? curFreq : "DAB+");
+        layout.addView(freqInput);
+
+        TextView l3 = new TextView(this);
+        l3.setText("\nDirect Stream URL (.mp3 / .aac / .m3u8):");
+        layout.addView(l3);
+        final EditText urlInput = new EditText(this);
+        urlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        urlInput.setText(curUrl != null ? curUrl : "");
+        layout.addView(urlInput);
+
+        new AlertDialog.Builder(this)
+                .setTitle(editIdx >= 0 ? "Edit Radio Station" : "Add Radio Station")
+                .setView(layout)
+                .setPositiveButton("Save Station", (d, w) -> {
+                    String n = nameInput.getText().toString().trim();
+                    String f = freqInput.getText().toString().trim();
+                    String u = urlInput.getText().toString().trim();
+                    if (n.isEmpty() || u.isEmpty()) {
+                        Toast.makeText(PlayerActivity.this, "Name and Stream URL required", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    String jsCall = "if(window.onNativeStationSaved)window.onNativeStationSaved("
+                            + editIdx + "," + JSONObject.quote(n) + "," + JSONObject.quote(f) + "," + JSONObject.quote(u) + ");";
+                    if (playerWeb != null) playerWeb.evaluateJavascript(jsCall, null);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    public class PlayerBridge {
         @JavascriptInterface
         public String getServerUrl() { return serverBaseUrl; }
 
