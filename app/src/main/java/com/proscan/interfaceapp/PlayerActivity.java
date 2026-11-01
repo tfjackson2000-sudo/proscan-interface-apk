@@ -506,8 +506,7 @@ private String getNativeBatteryStatus() {
                 "+ Add New Station",
                 "Edit Selected (" + (curName != null && !curName.isEmpty() ? curName : "Station") + ")",
                 "Save Stations JSON to Downloads (proscan_radio_stations.json)",
-                "Load Stations JSON from Downloads",
-                "Reset Stations to Default UK List"
+                "Load Stations JSON from Downloads"
         };
         new AlertDialog.Builder(this)
                 .setTitle("Radio Station Manager")
@@ -525,10 +524,6 @@ private String getNativeBatteryStatus() {
                         intent.addCategory(Intent.CATEGORY_OPENABLE);
                         intent.setType("*/*");
                         startActivityForResult(intent, REQ_LOAD_RADIO_JSON);
-                    } else if (which == 4) {
-                        if (playerWeb != null) {
-                            playerWeb.evaluateJavascript("if(window.__resetDefaultRadioStations)window.__resetDefaultRadioStations();", null);
-                        }
                     }
                 })
                 .setNegativeButton("Cancel", null)
@@ -582,25 +577,25 @@ private String getNativeBatteryStatus() {
         js.append("    '.radio-row.playing{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;}' +\n");
         js.append("    '.radio-row.selected{outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(255,255,255,0.14)!important;font-weight:800!important;}' +\n");
 
-        /* Row 1: 4 Full-Size Large Buttons [ SCANNER ] [ RADIO ] [ DECK ] [ DSP ] */
-        js.append("    '.player-nav-row{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:5px!important;height:30px!important;}' +\n");
-        js.append("    '.player-nav-row .btn{font-size:11px!important;font-weight:900!important;padding:2px 4px!important;letter-spacing:0.2px!important;}' +\n");
+        /* Top Row Navigation: 5 Large Buttons in Archive Mode */
+        js.append("    '.player-nav-row{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:30px!important;}' +\n");
+        js.append("    '.player-nav-row .btn{font-size:10.5px!important;font-weight:900!important;padding:2px 3px!important;letter-spacing:0.1px!important;}' +\n");
 
-        /* Row 2: Two Giant Full-Width Buttons [ PLAY ] and [ STOP ] */
+        /* Transport Row: Giant Full-Width Buttons [ PLAY ] and [ STOP ] */
         js.append("    '.btn-row-4{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;height:38px!important;}' +\n");
         js.append("    '#btn-play, #btn-stop{font-size:13px!important;font-weight:900!important;letter-spacing:0.8px!important;}' +\n");
         js.append("    '#btn-prev, #btn-next{display:none!important;}' +\n");
 
-        /* Clean Archive Filter Bar */
+        /* Archive Mode: Clean Search Filter Input */
         js.append("    '.filter-row-archive{display:grid!important;grid-template-columns:1fr!important;height:28px!important;}' +\n");
         js.append("    '#search-box{width:100%!important;height:100%!important;font-size:10.5px!important;}' +\n");
 
-        /* Radio Bottom Management Bar [ MANAGE ] [ ▲ UP ] [ ▼ DN ] [ DEL ] */
+        /* Radio Mode: Clean Management Row [ MANAGE ] [ ▲ UP ] [ ▼ DN ] [ DEL ] */
         js.append("    '.radio-crud-bar{display:none;grid-template-columns:2fr 1fr 1fr 1fr!important;gap:5px!important;height:28px!important;}' +\n");
         js.append("    '.radio-crud-bar .btn{font-size:9.5px!important;font-weight:800!important;padding:2px!important;}' +\n");
 
-        /* Completely Hide Unwanted Buttons */
-        js.append("    '#date-select, #btn-filter-unread, #btn-refresh, #btn-open-gdrive, #btn-mode-cont, #btn-mode-tts, #cont-status-hud{display:none!important;}' +\n");
+        /* Completely Hide Unwanted Elements */
+        js.append("    '#date-select, #btn-filter-unread, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
 
         /* Vertically Stacked Brand */
         js.append("    '.brand-henus{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:1px!important;line-height:1!important;white-space:nowrap!important;}' +\n");
@@ -735,7 +730,7 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("    }\n");
         js.append("  };\n");
 
-        /* Build Clean 4-Button Top Row: [ SCANNER ] [ RADIO ] [ DECK ] [ DSP ] */
+        /* Build Clean 5-Button Top Row: [ SCANNER ] [ RADIO ] [ DECK ] [ CONT ] [ DSP ] */
         js.append("  var origBackBtn = document.getElementById('btn-back-radio');\n");
         js.append("  var origTopRow = origBackBtn ? origBackBtn.parentNode : null;\n");
         js.append("  if (origTopRow && !document.getElementById('btn-switch-radio-archive')) {\n");
@@ -763,6 +758,25 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("      window.setAppMode(!window.__isBroadcastRadioMode);\n");
         js.append("    });\n");
 
+        /* Continuous / Loop Mode Button (CONT: OFF -> CONT: ON -> LOOP: 1) */
+        js.append("    var oldContBtn = document.getElementById('btn-mode-cont');\n");
+        js.append("    if (oldContBtn) {\n");
+        js.append("      var cBtn = oldContBtn.cloneNode(true);\n");
+        js.append("      cBtn.id = 'btn-mode-cont';\n");
+        js.append("      oldContBtn.parentNode.replaceChild(cBtn, oldContBtn);\n");
+        js.append("      window.__playModeState = 0;\n");
+        js.append("      window.__isLoopMode = false;\n");
+        js.append("      cBtn.addEventListener('click', function() {\n");
+        js.append("        window.__playModeState = (window.__playModeState + 1) % 3;\n");
+        js.append("        isCont = (window.__playModeState === 1);\n");
+        js.append("        window.__isLoopMode = (window.__playModeState === 2);\n");
+        js.append("        cBtn.classList.toggle('active', window.__playModeState !== 0);\n");
+        js.append("        var lbl = window.__playModeState === 0 ? 'CONT: OFF' : (window.__playModeState === 1 ? 'CONT: ON' : 'LOOP: 1');\n");
+        js.append("        cBtn.innerText = lbl;\n");
+        js.append("        if (typeof showDisplayHud === 'function') showDisplayHud('PLAY MODE: ' + lbl, 1300);\n");
+        js.append("      });\n");
+        js.append("    }\n");
+
         /* DSP Audio Clarity Button */
         js.append("    var dspBtn = document.createElement('button');\n");
         js.append("    dspBtn.id = 'btn-dsp-filter';\n");
@@ -784,9 +798,6 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("    });\n");
         js.append("    origTopRow.appendChild(dspBtn);\n");
 
-        /* Remove unneeded buttons */
-        js.append("    var oldContBtn = document.getElementById('btn-mode-cont');\n");
-        js.append("    if (oldContBtn) oldContBtn.remove();\n");
         js.append("    var oldTtsBtn = document.getElementById('btn-mode-tts');\n");
         js.append("    if (oldTtsBtn) oldTtsBtn.remove();\n");
         js.append("  }\n");
@@ -882,14 +893,6 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("        window.selectRadioStationOnly(0);\n");
         js.append("      }\n");
         js.append("    } catch(e) {}\n");
-        js.append("  };\n");
-
-        js.append("  window.__resetDefaultRadioStations = function() {\n");
-        js.append("    window.__radioStations = defaultStations.slice();\n");
-        js.append("    window.__radioIdx = 0;\n");
-        js.append("    window.__saveRadioStations(false);\n");
-        js.append("    window.renderPlaylist();\n");
-        js.append("    window.selectRadioStationOnly(0);\n");
         js.append("  };\n");
 
         js.append("  window.__isBroadcastRadioMode = false;\n");
@@ -1108,6 +1111,8 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("      var hdr = document.querySelector('.screen-log-header');\n");
         js.append("      var fRowEl = document.getElementById('date-select').parentNode;\n");
         js.append("      var cRowEl = document.getElementById('radio-crud-row');\n");
+        js.append("      var cModeBtn = document.getElementById('btn-mode-cont');\n");
+        js.append("      var dspBtnEl = document.getElementById('btn-dsp-filter');\n");
         js.append("      if (window.__isBroadcastRadioMode) {\n");
         js.append("        if (swBtn) swBtn.innerHTML = 'ARCHIVE';\n");
         js.append("        if (subBrand) subBrand.innerText = 'TUNER';\n");
@@ -1118,6 +1123,8 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("        }\n");
         js.append("        if (fRowEl) fRowEl.style.display = 'none';\n");
         js.append("        if (cRowEl) cRowEl.style.display = 'grid';\n");
+        js.append("        if (cModeBtn) cModeBtn.style.display = 'none';\n");
+        js.append("        if (dspBtnEl) dspBtnEl.style.display = 'none';\n");
         js.append("        window.renderPlaylist();\n");
         js.append("        window.selectRadioStationOnly(window.__radioIdx || 0);\n");
         js.append("      } else {\n");
@@ -1130,6 +1137,8 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("        }\n");
         js.append("        if (fRowEl) fRowEl.style.display = 'grid';\n");
         js.append("        if (cRowEl) cRowEl.style.display = 'none';\n");
+        js.append("        if (cModeBtn) cModeBtn.style.display = 'flex';\n");
+        js.append("        if (dspBtnEl) dspBtnEl.style.display = 'flex';\n");
         js.append("        window.__activePlayingFileId = '';\n");
         js.append("        window.renderPlaylist();\n");
         js.append("        if (curIdx >= 0 && curIdx < filteredRecs.length) {\n");
@@ -1199,6 +1208,7 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("      return;\n");
         js.append("    }\n");
 
+        /* Search Filter Active on Archive Mode Only */
         js.append("    var q = (document.getElementById('search-box').value || '').trim().toLowerCase();\n");
         js.append("    filteredRecs = allRecs.filter(function(r) {\n");
         js.append("      if (q && !r.name.toLowerCase().includes(q) && !r.freq.toLowerCase().includes(q) && !r.timeStr.toLowerCase().includes(q)) return false;\n");
@@ -1241,11 +1251,14 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    origPlayIndex(idx);\n");
         js.append("  };\n");
 
+        /* Continuous & Single Track Loop Mode Logic */
         js.append("  window.onNativePlayEnded = function() {\n");
         js.append("    setPlayingUI(false);\n");
         js.append("    if (window.__isBroadcastRadioMode) { renderPlaylist(); return; }\n");
         js.append("    window.__activePlayingFileId = '';\n");
         js.append("    renderPlaylist();\n");
+        js.append("    if (window.__isLoopMode && curIdx >= 0) playIndex(curIdx);\n");
+        js.append("    else if (isCont && curIdx > 0) playIndex(curIdx - 1);\n");
         js.append("  };\n");
 
         js.append("  var oldPlayBtn = document.getElementById('btn-play');\n");
