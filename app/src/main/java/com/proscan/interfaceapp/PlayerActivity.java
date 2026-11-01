@@ -1,3 +1,4 @@
+
 package com.proscan.interfaceapp;
 
 import android.app.Activity;
@@ -348,7 +349,8 @@ public class PlayerActivity extends Activity {
         setContentView(playerWeb);
         playerWeb.loadUrl("file:///android_asset/player_ui.html");
     }
-private String getNativeBatteryStatus() {
+
+    private String getNativeBatteryStatus() {
         try {
             IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
             Intent b = registerReceiver(null, ifilter);
@@ -586,16 +588,17 @@ private String getNativeBatteryStatus() {
         js.append("    '#btn-play, #btn-stop{font-size:13px!important;font-weight:900!important;letter-spacing:0.8px!important;}' +\n");
         js.append("    '#btn-prev, #btn-next{display:none!important;}' +\n");
 
-        /* Archive Mode: Clean Search Filter Input */
-        js.append("    '.filter-row-archive{display:grid!important;grid-template-columns:1fr!important;height:28px!important;}' +\n");
+        /* Archive Mode: Search Input + [ ALL / NEW / UNPLAY ] Filter Button */
+        js.append("    '.filter-row-archive{display:grid!important;grid-template-columns:1fr 78px!important;gap:5px!important;height:28px!important;}' +\n");
         js.append("    '#search-box{width:100%!important;height:100%!important;font-size:10.5px!important;}' +\n");
+        js.append("    '#btn-filter-unread{font-size:9.5px!important;font-weight:900!important;padding:2px 4px!important;letter-spacing:0.2px!important;}' +\n");
 
         /* Radio Mode: Clean Management Row [ MANAGE ] [ ▲ UP ] [ ▼ DN ] [ DEL ] */
         js.append("    '.radio-crud-bar{display:none;grid-template-columns:2fr 1fr 1fr 1fr!important;gap:5px!important;height:28px!important;}' +\n");
         js.append("    '.radio-crud-bar .btn{font-size:9.5px!important;font-weight:800!important;padding:2px!important;}' +\n");
 
-        /* Completely Hide Unwanted Elements */
-        js.append("    '#date-select, #btn-filter-unread, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
+        /* Completely Hide Unwanted Elements (Note: #btn-filter-unread is restored!) */
+        js.append("    '#date-select, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
 
         /* Vertically Stacked Brand */
         js.append("    '.brand-henus{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:1px!important;line-height:1!important;white-space:nowrap!important;}' +\n");
@@ -638,7 +641,8 @@ private String getNativeBatteryStatus() {
         js.append("    '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
         js.append("    '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("  document.head.appendChild(st);\n");
-js.append("  var pClk = document.getElementById('player-clock-hud');\n");
+
+        js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  if (pClk && !document.getElementById('player-bat-hud')) {\n");
         js.append("    var topBar = pClk.parentNode;\n");
         js.append("    var pBat = document.createElement('span');\n");
@@ -802,10 +806,34 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("    if (oldTtsBtn) oldTtsBtn.remove();\n");
         js.append("  }\n");
 
-        /* Archive Filter Row & Radio Management Bar (MANAGE, UP, DN, DEL) */
+        /* Archive Filter Row ([Search Box] + [ALL / NEW / UNPLAY]) & Radio Management Bar (MANAGE, UP, DN, DEL) */
+        js.append("  window.__archiveFilterMode = 0;\n"); // 0 = ALL, 1 = NEW, 2 = UNPLAY
         js.append("  var fRow = document.getElementById('date-select').parentNode;\n");
         js.append("  if (fRow && !document.getElementById('radio-crud-row')) {\n");
         js.append("    fRow.className = 'filter-row-archive';\n");
+        js.append("    var sBoxEl = document.getElementById('search-box');\n");
+        js.append("    var fltBtn = document.getElementById('btn-filter-unread');\n");
+        js.append("    if (!fltBtn) {\n");
+        js.append("      fltBtn = document.createElement('button');\n");
+        js.append("      fltBtn.id = 'btn-filter-unread';\n");
+        js.append("      fltBtn.className = 'btn';\n");
+        js.append("      fltBtn.type = 'button';\n");
+        js.append("      fltBtn.innerText = 'ALL';\n");
+        js.append("      if (sBoxEl && sBoxEl.nextSibling) {\n");
+        js.append("        fRow.insertBefore(fltBtn, sBoxEl.nextSibling);\n");
+        js.append("      } else {\n");
+        js.append("        fRow.appendChild(fltBtn);\n");
+        js.append("      }\n");
+        js.append("    }\n");
+        js.append("    fltBtn.addEventListener('click', function() {\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("      window.__archiveFilterMode = (window.__archiveFilterMode + 1) % 3;\n");
+        js.append("      var labels = ['ALL', 'NEW', 'UNPLAY'];\n");
+        js.append("      fltBtn.innerText = labels[window.__archiveFilterMode];\n");
+        js.append("      fltBtn.classList.toggle('active', window.__archiveFilterMode !== 0);\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("    });\n");
+
         js.append("    var rBar = document.createElement('div');\n");
         js.append("    rBar.id = 'radio-crud-row'; rBar.className = 'radio-crud-bar';\n");
         js.append("    rBar.innerHTML = '<button class=\"btn\" type=\"button\" id=\"btn-rad-edit\">MANAGE</button><button class=\"btn\" type=\"button\" id=\"btn-rad-up\">&#9650; UP</button><button class=\"btn\" type=\"button\" id=\"btn-rad-dn\">&#9660; DN</button><button class=\"btn\" type=\"button\" id=\"btn-rad-del\">DEL</button>';\n");
@@ -1070,7 +1098,8 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("    }\n");
         js.append("    drawProSigintScope();\n");
         js.append("  }\n");
-js.append("  window.selectRadioStationOnly = function(idx) {\n");
+
+        js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= window.__radioStations.length) return;\n");
         js.append("    window.__radioIdx = idx;\n");
         js.append("    var stObj = window.__radioStations[idx];\n");
@@ -1121,8 +1150,9 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("          hdr.style.gridTemplateColumns = '36px 68px 48px 1fr';\n");
         js.append("          hdr.innerHTML = '<span>CH</span><span>BAND</span><span>MODE</span><span>STATION NAME</span>';\n");
         js.append("        }\n");
-        js.append("        if (fRowEl) fRowEl.style.display = 'none';\n");
-        js.append("        if (cRowEl) cRowEl.style.display = 'grid';\n");
+        /* Lock entire filter row to display: none !important; whenever Radio mode is active */
+        js.append("        if (fRowEl) fRowEl.style.setProperty('display', 'none', 'important');\n");
+        js.append("        if (cRowEl) cRowEl.style.setProperty('display', 'grid', 'important');\n");
         js.append("        if (cModeBtn) cModeBtn.style.display = 'none';\n");
         js.append("        if (dspBtnEl) dspBtnEl.style.display = 'none';\n");
         js.append("        window.renderPlaylist();\n");
@@ -1135,8 +1165,8 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("          hdr.style.gridTemplateColumns = '62px 52px 58px 34px 1fr';\n");
         js.append("          hdr.innerHTML = '<span>DATE</span><span>TIME</span><span>FREQ</span><span>DUR</span><span>NAME</span>';\n");
         js.append("        }\n");
-        js.append("        if (fRowEl) fRowEl.style.display = 'grid';\n");
-        js.append("        if (cRowEl) cRowEl.style.display = 'none';\n");
+        js.append("        if (fRowEl) fRowEl.style.setProperty('display', 'grid', 'important');\n");
+        js.append("        if (cRowEl) cRowEl.style.setProperty('display', 'none', 'important');\n");
         js.append("        if (cModeBtn) cModeBtn.style.display = 'flex';\n");
         js.append("        if (dspBtnEl) dspBtnEl.style.display = 'flex';\n");
         js.append("        window.__activePlayingFileId = '';\n");
@@ -1208,9 +1238,14 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("      return;\n");
         js.append("    }\n");
 
-        /* Search Filter Active on Archive Mode Only */
+        /* Search + [ALL / NEW / UNPLAY] Filter Active on Archive Mode Only */
         js.append("    var q = (document.getElementById('search-box').value || '').trim().toLowerCase();\n");
+        js.append("    var fMode = window.__archiveFilterMode || 0;\n");
         js.append("    filteredRecs = allRecs.filter(function(r) {\n");
+        js.append("      var key = r.fileId || r.fileName;\n");
+        js.append("      if (window.__deletedDriveIds && window.__deletedDriveIds[key]) return false;\n");
+        js.append("      if (fMode === 1 && window.__seenOnPrevVisit && window.__seenOnPrevVisit[key]) return false;\n");
+        js.append("      if (fMode === 2 && window.__playedDriveIds && window.__playedDriveIds[key]) return false;\n");
         js.append("      if (q && !r.name.toLowerCase().includes(q) && !r.freq.toLowerCase().includes(q) && !r.timeStr.toLowerCase().includes(q)) return false;\n");
         js.append("      return true;\n");
         js.append("    });\n");
@@ -1243,6 +1278,10 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    var r = filteredRecs[idx];\n");
         js.append("    var id = r.fileId || r.fileName;\n");
         js.append("    window.__activePlayingRecordKey = id;\n");
+        js.append("    if (id) {\n");
+        js.append("      window.__playedDriveIds[id] = true;\n");
+        js.append("      try { localStorage.setItem('proscan_played_recs_v1', JSON.stringify(window.__playedDriveIds)); } catch(e) {}\n");
+        js.append("    }\n");
         js.append("    var ro = document.getElementById('track-main-readout');\n");
         js.append("    if (ro) ro.innerText = r.name + ' • ' + r.freq;\n");
         js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
@@ -1602,336 +1641,4 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         @JavascriptInterface
         public void setWakeLock(final boolean keepOn) {
             mainHandler.post(() -> {
-                applyPlayerWakeLock(keepOn);
-                Toast.makeText(PlayerActivity.this, keepOn ? "Screen Wake: ON (All Modes)" : "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
-            });
-        }
-
-        @JavascriptInterface
-        public void setWebStreamActive(final boolean active) {
-            mainHandler.post(() -> {
-                isLiveRadioStream = active;
-                mainHandler.removeCallbacks(progressTicker);
-                if (active) mainHandler.post(progressTicker);
-            });
-        }
-
-        @JavascriptInterface
-        public void saveStationsJson(final String jsonStr, final boolean showToast) {
-            mainHandler.post(() -> saveRadioStationsJsonToDownloads(jsonStr, showToast));
-        }
-
-        @JavascriptInterface
-        public void openStationJsonMenu(final int curIdx, final String name, final String freq, final String url) {
-            mainHandler.post(() -> showStationMenuDialog(curIdx, name, freq, url));
-        }
-
-        @JavascriptInterface
-        public void refreshRecordings() {
-            loadLiveGoogleDriveRecordings();
-        }
-
-        @JavascriptInterface
-        public void playDriveIdDirect(final String fileId) {
-            mainHandler.post(() -> playDriveFileIdNatively(fileId));
-        }
-
-        @JavascriptInterface
-        public void playLiveStreamUrl(final String url) {
-            mainHandler.post(() -> playLiveRadioUrlNatively(url));
-        }
-
-        @JavascriptInterface
-        public void showStationDialog(final int editIdx, final String name, final String freq, final String url) {
-            mainHandler.post(() -> openAddOrEditStationDialog(editIdx, name, freq, url));
-        }
-
-        @JavascriptInterface
-        public void seekToSeconds(final int sec) {
-            mainHandler.post(() -> {
-                try { if (nativePlayer != null && !isLiveRadioStream) nativePlayer.seekTo(sec * 1000); } catch (Exception ignored) {}
-            });
-        }
-
-        @JavascriptInterface
-        public void stopAudio() { mainHandler.post(() -> stopNativePlayer()); }
-
-        @JavascriptInterface
-        public void togglePause() {
-            mainHandler.post(() -> {
-                try {
-                    if (nativePlayer != null) {
-                        if (nativePlayer.isPlaying()) {
-                            nativePlayer.pause();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(typeof setPlayingUI==='function')setPlayingUI(false);renderPlaylist();", null);
-                        } else {
-                            nativePlayer.start();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(typeof setPlayingUI==='function')setPlayingUI(true);renderPlaylist();", null);
-                            mainHandler.post(progressTicker);
-                        }
-                    }
-                } catch (Exception ignored) {}
-            });
-        }
-
-        @JavascriptInterface
-        public void openGoogleDriveFolder() {
-            mainHandler.post(() -> {
-                try {
-                    Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://drive.google.com/drive/folders/" + GDRIVE_ROOT_FOLDER_ID));
-                    startActivity(i);
-                } catch (Exception ignored) {}
-            });
-        }
-
-        @JavascriptInterface
-        public void speakCaption(final String text) {
-            mainHandler.post(() -> {
-                if (tts != null && ttsReady && text != null && !text.trim().isEmpty()) {
-                    if (Build.VERSION.SDK_INT >= 21) {
-                        Bundle params = new Bundle();
-                        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.35f);
-                        tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, params, "player_tts");
-                    } else {
-                        tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, null);
-                    }
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public void showSystemBars() {
-            mainHandler.post(() -> {
-                showBothSystemBarsNow();
-                mainHandler.postDelayed(() -> hideSystemUI(), 4500);
-            });
-        }
-
-        @JavascriptInterface
-        public void minimizeApp() {
-            mainHandler.post(() -> moveTaskToBack(true));
-        }
-
-        @JavascriptInterface
-        public void exitEntireApp() {
-            mainHandler.post(() -> {
-                stopNativePlayer();
-                try { stopService(new Intent(PlayerActivity.this, AudioKeepAliveService.class)); } catch (Exception ignored) {}
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    finishAffinity();
-                    finishAndRemoveTask();
-                } else {
-                    finishAffinity();
-                }
-                System.exit(0);
-            });
-        }
-
-        @JavascriptInterface
-        public void closePlayer() {
-            mainHandler.post(() -> {
-                stopNativePlayer();
-                finish();
-                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
-            });
-        }
-    }
-
-    private String fetchUrlText(String urlStr) {
-        try {
-            String sep = urlStr.contains("?") ? "&" : "?";
-            URL url = new URL(urlStr + sep + "_t=" + System.currentTimeMillis());
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(9000);
-            conn.setReadTimeout(9000);
-            conn.setUseCaches(false);
-            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
-            conn.setRequestProperty("Pragma", "no-cache");
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) sb.append(line).append("\n");
-            reader.close();
-            conn.disconnect();
-            return sb.toString();
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    private Map<String, String> parseDriveFolderAllItems(String folderId) {
-        Map<String, String> map = new LinkedHashMap<>();
-        if (folderId == null || folderId.isEmpty()) return map;
-        String html1 = fetchUrlText("https://drive.google.com/embeddedfolderview?id=" + folderId);
-        if (!html1.isEmpty()) {
-            Pattern p1 = Pattern.compile("id=\"entry-([A-Za-z0-9_-]{15,})\"[\\s\\S]*?<div class=\"flip-entry-title\">([^<]+)</div>");
-            Matcher m1 = p1.matcher(html1);
-            while (m1.find()) {
-                map.put(m1.group(2).trim().replace("&amp;", "&").replace("&#39;", "'").replace("&quot;", "\""), m1.group(1).trim());
-            }
-        }
-        String html2 = fetchUrlText("https://drive.google.com/drive/folders/" + folderId);
-        if (!html2.isEmpty()) {
-            String unescaped = html2.replace("\\u0022", "\"").replace("\\\"", "\"");
-            Pattern p2 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"([^\"]+\\.mp3)\"");
-            Matcher m2 = p2.matcher(unescaped);
-            while (m2.find()) map.put(m2.group(2).trim().replace("&amp;", "&").replace("&#39;", "'"), m2.group(1).trim());
-            Pattern p3 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"(\\d{2}-\\d{2}-\\d{2}|Scan)\"");
-            Matcher m3 = p3.matcher(unescaped);
-            while (m3.find()) map.put(m3.group(2).trim(), m3.group(1).trim());
-        }
-        return map;
-    }
-
-    private static class RecItem implements Comparable<RecItem> {
-        String fileId, fileName, dateStr, timeStr, freq, dur, name, sortKey;
-        @Override
-        public int compareTo(RecItem o) { return o.sortKey.compareTo(this.sortKey); }
-    }
-
-    private RecItem parseMp3Filename(String dateFolder, String fileName, String fileId) {
-        String base = fileName.endsWith(".mp3") ? fileName.substring(0, fileName.length() - 4) : fileName;
-        Pattern pat = Pattern.compile("^(.*?)\\s+-\\s+(\\d+\\.\\d+)\\s+-\\s+(\\d{2})-(\\d{2})-(\\d{2})(?:.*?TO\\s+(\\d{2})-(\\d{2})-(\\d{2}))?");
-        Matcher m = pat.matcher(base);
-        RecItem item = new RecItem();
-        item.fileId = fileId;
-        item.fileName = fileName;
-        item.dateStr = dateFolder;
-        if (m.find()) {
-            item.name = m.group(1).trim();
-            item.freq = m.group(2).trim();
-            String h1 = m.group(3), m1 = m.group(4), s1 = m.group(5);
-            item.timeStr = h1 + ":" + m1 + ":" + s1;
-            item.dur = "00:03";
-            if (m.group(6) != null) {
-                try {
-                    int t1 = Integer.parseInt(h1) * 3600 + Integer.parseInt(m1) * 60 + Integer.parseInt(s1);
-                    int t2 = Integer.parseInt(m.group(6)) * 3600 + Integer.parseInt(m.group(7)) * 60 + Integer.parseInt(m.group(8));
-                    int diff = t2 - t1;
-                    if (diff < 0) diff += 86400;
-                    item.dur = String.format(Locale.US, "%02d:%02d", diff / 60, diff % 60);
-                } catch (Exception ignored) {}
-            }
-        } else {
-            String[] parts = base.split(" - ");
-            item.name = parts.length > 0 ? parts[0].trim() : base;
-            item.freq = parts.length > 1 ? parts[1].trim() : "---.----";
-            item.timeStr = parts.length > 2 ? parts[2].replace('-', ':').trim() : "00:00:00";
-            item.dur = "--:--";
-        }
-        String[] dp = dateFolder.split("-");
-        String isoDate = dp.length == 3 ? (dp[2] + "-" + dp[0] + "-" + dp[1]) : dateFolder;
-        item.sortKey = isoDate + " " + item.timeStr + " " + fileName;
-        return item;
-    }
-
-    private void loadLiveGoogleDriveRecordings() {
-        if (isFetchingDrive) return;
-        isFetchingDrive = true;
-        executor.execute(() -> {
-            try {
-                Map<String, String> rootItems = parseDriveFolderAllItems(GDRIVE_ROOT_FOLDER_ID);
-                List<String> dateFolders = new ArrayList<>();
-                for (String title : rootItems.keySet()) {
-                    if (title.matches("\\d{2}-\\d{2}-\\d{2}")) dateFolders.add(title);
-                }
-                Collections.sort(dateFolders, (a, b) -> {
-                    String[] pa = a.split("-"), pb = b.split("-");
-                    String ka = pa.length == 3 ? (pa[2] + pa[0] + pa[1]) : a;
-                    String kb = pb.length == 3 ? (pb[2] + pb[0] + pb[1]) : b;
-                    return kb.compareTo(ka);
-                });
-                List<RecItem> allItems = new ArrayList<>();
-                int maxDates = Math.min(dateFolders.size(), 3);
-                for (int i = 0; i < maxDates; i++) {
-                    String dFolder = dateFolders.get(i);
-                    String dId = rootItems.get(dFolder);
-                    if (dId == null) continue;
-                    Map<String, String> dateChildren = parseDriveFolderAllItems(dId);
-                    for (Map.Entry<String, String> e : dateChildren.entrySet()) {
-                        if (e.getKey().toLowerCase().endsWith(".mp3")) {
-                            allItems.add(parseMp3Filename(dFolder, e.getKey(), e.getValue()));
-                        } else {
-                            Map<String, String> subChildren = parseDriveFolderAllItems(e.getValue());
-                            for (Map.Entry<String, String> se : subChildren.entrySet()) {
-                                if (se.getKey().toLowerCase().endsWith(".mp3")) {
-                                    allItems.add(parseMp3Filename(dFolder, se.getKey(), se.getValue()));
-                                }
-                            }
-                        }
-                    }
-                }
-                Collections.sort(allItems);
-                JSONArray arr = new JSONArray();
-                for (RecItem it : allItems) {
-                    JSONObject o = new JSONObject();
-                    o.put("fileId", it.fileId);
-                    o.put("fileName", it.fileName);
-                    o.put("dateStr", it.dateStr);
-                    o.put("timeStr", it.timeStr);
-                    o.put("freq", it.freq);
-                    o.put("dur", it.dur);
-                    o.put("name", it.name);
-                    arr.put(o);
-                }
-                final String escapedJson = JSONObject.quote(arr.toString());
-                mainHandler.post(() -> {
-                    isFetchingDrive = false;
-                    if (playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onDriveRecordingsLoaded)window.onDriveRecordingsLoaded(" + escapedJson + ");", null);
-                    }
-                });
-            } catch (Exception ignored) {
-                isFetchingDrive = false;
-            }
-        });
-    }
-
-    private void hideSystemUI() {
-        try {
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-            getWindow().getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_FULLSCREEN
-            );
-            if (Build.VERSION.SDK_INT >= 30) {
-                WindowInsetsController ic = getWindow().getInsetsController();
-                if (ic != null) {
-                    ic.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                    ic.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                }
-            }
-        } catch (Exception ignored) {}
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        if (playerWeb != null) {
-            playerWeb.evaluateJavascript("if(window.markCurrentListAsVisited)window.markCurrentListAsVisited();", null);
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
-        try {
-            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
-                audioManager.unregisterAudioDeviceCallback(btDeviceCallback);
-            }
-        } catch (Exception ignored) {}
-        mainHandler.removeCallbacks(autoSyncRunnable);
-        stopNativePlayer();
-        releasePlaybackLocks();
-        try {
-            if (tts != null) { tts.stop(); tts.shutdown(); }
-            if (playerWeb != null) { playerWeb.loadUrl("about:blank"); playerWeb.destroy(); }
-        } catch (Exception ignored) {}
-        super.onDestroy();
-    }
-}
+                
