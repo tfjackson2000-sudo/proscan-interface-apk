@@ -15,8 +15,12 @@ import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
+import android.media.MediaCodec;
+import android.media.MediaExtractor;
+import android.media.MediaFormat;
 import android.media.MediaPlayer;
 import android.media.audiofx.Equalizer;
+import android.media.audiofx.Visualizer;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
@@ -57,6 +61,9 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.ShortBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -89,6 +96,9 @@ public class PlayerActivity extends Activity {
     private boolean ttsReady = false;
     private MediaPlayer nativePlayer = null;
     private Equalizer speechEqualizer = null;
+    private Visualizer audioVisualizer = null;
+    private volatile float liveVisualizerLevel = -1f;
+    private volatile long lastVisualizerUpdateMs = 0L;
     private boolean clarityFilterEnabled = false;
     private boolean isFetchingDrive = false;
     private boolean isLiveRadioStream = false;
@@ -104,6 +114,56 @@ public class PlayerActivity extends Activity {
                 configureSpeechBands(speechEqualizer);
             }
         } catch (Exception ignored) {}
+        setupVisualizer(audioSessionId);
+    }
+
+    private synchronized void setupVisualizer(int audioSessionId) {
+        releaseVisualizer();
+        try {
+            audioVisualizer = new Visualizer(audioSessionId);
+            int[] range = Visualizer.getCaptureSizeRange();
+            int capSize = range != null && range.length > 0 ? Math.min(256, Math.max(range[0], 128)) : 128;
+            audioVisualizer.setCaptureSize(capSize);
+            audioVisualizer.setDataCaptureListener(new Visualizer.OnDataCaptureListener() {
+                @Override
+                public void onWaveFormDataCapture(Visualizer visualizer, byte[] waveform, int samplingRate) {
+                    if (waveform == null || waveform.length == 0) return;
+                    double sumSq = 0;
+                    int peak = 0;
+                    for (byte b : waveform) {
+                        int centered = (b & 0xFF) - 128;
+                        int abs = Math.abs(centered);
+                        if (abs > peak) peak = abs;
+                        sumSq += centered * centered;
+                    }
+                    double rms = Math.sqrt(sumSq / waveform.length);
+                    if (peak <= 2 && rms < 1.0) {
+                        // Some devices return silent waveform bytes without RECORD_AUDIO; ignore if dead flat
+                        return;
+                    }
+                    float norm = (float) Math.min(1.0, (rms / 42.0) * 0.75 + (peak / 128.0) * 0.35);
+                    if (norm < 0.04f) norm = 0.02f;
+                    liveVisualizerLevel = norm;
+                    lastVisualizerUpdateMs = System.currentTimeMillis();
+                }
+
+                @Override
+                public void onFftDataCapture(Visualizer visualizer, byte[] fft, int samplingRate) {}
+            }, Visualizer.getMaxCaptureRate() / 2, true, false);
+            audioVisualizer.setEnabled(true);
+        } catch (Exception ignored) {
+            liveVisualizerLevel = -1f;
+        }
+    }
+
+    private synchronized void releaseVisualizer() {
+        liveVisualizerLevel = -1f;
+        lastVisualizerUpdateMs = 0L;
+        if (audioVisualizer != null) {
+            try { audioVisualizer.setEnabled(false); } catch (Exception ignored) {}
+            try { audioVisualizer.release(); } catch (Exception ignored) {}
+            audioVisualizer = null;
+        }
     }
 
     private void configureSpeechBands(Equalizer eq) {
@@ -129,6 +189,7 @@ public class PlayerActivity extends Activity {
     }
 
     private synchronized void releaseEqualizer() {
+        releaseVisualizer();
         if (speechEqualizer != null) {
             try { speechEqualizer.release(); } catch (Exception ignored) {}
             speechEqualizer = null;
@@ -231,31 +292,47 @@ public class PlayerActivity extends Activity {
         @Override
         public void run() {
             try {
-                if (playerWeb != null && (isLiveRadioStream || (nativePlayer != null && nativePlayer.isPlaying()))) {
+                if (playerWeb != null && nativePlayer != null && nativePlayer.isPlaying()) {
                     int sec = 0, tot = 0;
-                    float prog = 0.5f, level = 0.35f;
+                    float prog = 0.5f, level = 0.04f;
+                    long now = System.currentTimeMillis();
+                    boolean hasLiveVis = (liveVisualizerLevel >= 0f && (now - lastVisualizerUpdateMs) < 400);
+
                     if (isLiveRadioStream) {
-                        sec = (int) ((System.currentTimeMillis() / 1000) % 3600);
+                        sec = (int) ((now / 1000) % 3600);
                         tot = 3600;
                         prog = (sec % 60) / 60f;
-                        double t = System.currentTimeMillis() / 140.0;
-                        level = (float) (0.32 + 0.24 * Math.sin(t) * Math.cos(t * 0.43) + 0.15 * Math.sin(t * 2.1));
-                        level = Math.min(0.95f, Math.max(0.12f, level));
-                    } else if (nativePlayer != null && nativePlayer.isPlaying()) {
+                        if (hasLiveVis) {
+                            level = liveVisualizerLevel;
+                        } else {
+                            // Natural speech syllable envelope with micro-pauses & dynamic peaks
+                            double t = now / 95.0;
+                            double syll = Math.sin(t) * Math.sin(t * 0.63) + 0.5 * Math.cos(t * 1.9);
+                            double gate = Math.sin(now / 620.0) + 0.35 * Math.cos(now / 270.0);
+                            if (gate < -0.35) {
+                                level = 0.03f; // Natural pause between words/sentences
+                            } else {
+                                level = (float) Math.min(0.96, Math.max(0.05, Math.abs(syll) * 0.68));
+                            }
+                        }
+                    } else {
                         int posMs = nativePlayer.getCurrentPosition();
                         int durMs = Math.max(1, nativePlayer.getDuration());
                         sec = posMs / 1000;
                         tot = Math.max(1, durMs / 1000);
                         prog = Math.min(1f, Math.max(0f, (float) posMs / (float) durMs));
                         if (currentEnvelope.length > 0) {
-                            int envIdx = Math.min(currentEnvelope.length - 1, (int) (prog * currentEnvelope.length));
-                            level = currentEnvelope[envIdx];
+                            float exactIdx = prog * (currentEnvelope.length - 1);
+                            int idx0 = Math.min(currentEnvelope.length - 1, Math.max(0, (int) exactIdx));
+                            int idx1 = Math.min(currentEnvelope.length - 1, idx0 + 1);
+                            float frac = exactIdx - idx0;
+                            level = currentEnvelope[idx0] * (1f - frac) + currentEnvelope[idx1] * frac;
+                        } else if (hasLiveVis) {
+                            level = liveVisualizerLevel;
                         }
-                    } else {
-                        return;
                     }
                     playerWeb.evaluateJavascript("if(window.onNativeTelemetry)window.onNativeTelemetry(" + sec + "," + tot + "," + prog + "," + level + ");", null);
-                    mainHandler.postDelayed(this, 60);
+                    mainHandler.postDelayed(this, 50);
                 }
             } catch (Exception ignored) {}
         }
@@ -624,8 +701,432 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '.hw-fader-knob{position:absolute;top:36px;left:-3px;width:16px;height:11px;border-radius:2px;background:linear-gradient(180deg,#f8fafc,#94a3b8 45%,#334155 55%,#cbd5e1);border:1px solid #000;box-shadow:0 2px 4px rgba(0,0,0,0.85);}' +\n");
         js.append("    '.hw-vu-dial{width:54px;height:30px;border-radius:5px;background:radial-gradient(circle at 50% 95%,#fef9c3 0%,#fde047 55%,#ca8a04 100%);border:2px solid #090a0c;position:relative;overflow:hidden;box-shadow:inset 0 2px 5px rgba(0,0,0,0.65),0 1px 0 rgba(255,255,255,0.15);}' +\n");
         js.append("    '.hw-vu-dial::before{content:\"dB  -20 -10  0  +3\";position:absolute;top:3px;left:3px;right:3px;font-family:monospace;font-size:5px;font-weight:900;color:#1e293b;text-align:center;letter-spacing:-0.3px;}' +\n");
-        js.append("    '.hw-vu-needle{position:absolute;bottom:-2px;left:25px;width:1.8px;height:25px;background:#dc2626;transform-origin:bottom center;transform:rotate(-35deg);transition:transform 0.06s ease;box-shadow:0 0 2px rgba(0,0,0,0.5);}' +\n");
-        js.append("    '#cd-laser-sled{position:absolute;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle,#ff2222 20%,rgba(255,0,0,0.7) 55%,transparent 100%);box-shadow:0 0 10px #ff0000;z-index:2;pointer-events:none;transition:transform 0.2s linear;}' +\n");
+        js.append("    '.hw-vu-needle{position:absolute;bottom:-2px;left:25px;width:1.8px;height:25px;background:#dc2626;transform-origin:bottom center;transform:rotate(-35deg);transition:transform 0.05s ease-out;box-shadow:0 0 2px rgba(0,0,0,0.5);}' +\n");
+        js.append("    '#cd-laser-sled{position:absolute;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle,#ff2222 20%,rgba(255,0,0,0.7) 55%,transparent 100%);box-shadow:0 0 10px #ff0000;z-index:2;pointer-events:none;transition:transform 0.1s linear;}' +\n");
+        js.append("    '#reactive-vu-strip{position:absolute;bottom:5px;left:50%;transform:translateX(-50%);display:flex;gap:3px;z-index:12;background:rgba(0,0,0,0.78);padding:3px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);}' +\n");
+        js.append("    '.rvu-seg{width:6px;height:5px;border-radius:1px;background:#1e293b;}' +\n");
+        js.append("    '#player-wake-pill{display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:1px 5px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:5px;}' +\n");
+        js.append("    '#player-wake-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
+        js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}' +\n");
+        js.append("    '#btn-player-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-left:6px;cursor:pointer;touch-action:manipulation;}' +\n");
+        js.append("    '#btn-player-exit .exit-cap{width:22px;height:10px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}' +\n");
+        js.append("    '#btn-player-exit .exit-cap::after{content:\"\";width:7px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}' +\n");
+        js.append("    '#btn-player-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
+        js.append("    '#player-bat-hud{display:inline-flex;align-items:center;gap:3px;font-family:\"JetBrains Mono\",monospace;font-size:10px;font-weight:800;color:var(--log-text);}' +\n");
+        js.append("    '.bat-icon-box{display:inline-block;width:15px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;margin-right:3px;}' +\n");
+        js.append("    '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
+        js.append("    '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
+        js.append("  document.head.appendChild(st);\n");
+
+        js.append("  var pClk = document.getElementById('player-clock-hud');\n");
+        js.append("  if (pClk && !document.getElementById('player-bat-hud')) {\n");
+        js.append("    var topBar = pClk.parentNode;\n");
+        js.append("    var pBat = document.createElement('span');\n");
+        js.append("    pBat.id = 'player-bat-hud';\n");
+        js.append("    pBat.innerHTML = '<span class=\"bat-icon-box\"><span class=\"bat-icon-fill\" id=\"player-bat-fill\"></span></span><span id=\"player-bat-txt\">--%</span>';\n");
+        js.append("    topBar.insertBefore(pClk, topBar.firstChild);\n");
+        js.append("    topBar.appendChild(pBat);\n");
+        js.append("    function updatePlayerBattery() {\n");
+        js.append("      if (window.PlayerBridge && typeof window.PlayerBridge.getBatteryStatus === 'function') {\n");
+        js.append("        var bStr = window.PlayerBridge.getBatteryStatus() || '';\n");
+        js.append("        var bTxt = document.getElementById('player-bat-txt');\n");
+        js.append("        var bFill = document.getElementById('player-bat-fill');\n");
+        js.append("        if (bTxt && bStr) bTxt.innerText = bStr;\n");
+        js.append("        if (bFill && bStr) {\n");
+        js.append("          var num = parseInt(bStr.replace(/[^0-9]/g, ''), 10) || 0;\n");
+        js.append("          bFill.style.width = Math.max(8, Math.min(100, num)) + '%';\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("    }\n");
+        js.append("    updatePlayerBattery();\n");
+        js.append("    setInterval(updatePlayerBattery, 10000);\n");
+        js.append("  }\n");
+
+        js.append("  var recHud = document.getElementById('rec-count-hud');\n");
+        js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
+        js.append("    var wWrap = document.createElement('div');\n");
+        js.append("    wWrap.style.cssText = 'display:flex;align-items:center;padding-left:2px;';\n");
+        js.append("    var wPill = document.createElement('button');\n");
+        js.append("    wPill.id = 'player-wake-pill'; wPill.type = 'button';\n");
+        js.append("    wPill.className = ").append(wakePref ? "'active'" : "''").append(";\n");
+        js.append("    wPill.innerHTML = '<span id=\"player-wake-dot\"></span><span style=\"font-size:7.5px;font-weight:900;color:var(--toggle-color);\">WAKE</span>';\n");
+        js.append("    recHud.parentNode.insertBefore(wWrap, recHud);\n");
+        js.append("    wWrap.appendChild(wPill);\n");
+        js.append("    wWrap.appendChild(recHud);\n");
+        js.append("    window.__playerWakeActive = ").append(wakePref).append(";\n");
+        js.append("    wPill.addEventListener('click', function() {\n");
+        js.append("      window.__playerWakeActive = !window.__playerWakeActive;\n");
+        js.append("      wPill.classList.toggle('active', window.__playerWakeActive);\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.setWakeLock) {\n");
+        js.append("        window.PlayerBridge.setWakeLock(window.__playerWakeActive);\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("  }\n");
+
+        js.append("  var contHud = document.getElementById('cont-status-hud');\n");
+        js.append("  if (contHud && !document.getElementById('btn-player-exit')) {\n");
+        js.append("    var rWrap = document.createElement('div');\n");
+        js.append("    rWrap.style.cssText = 'justify-self:end;display:flex;align-items:center;padding-right:2px;';\n");
+        js.append("    contHud.parentNode.insertBefore(rWrap, contHud);\n");
+        js.append("    rWrap.appendChild(contHud);\n");
+        js.append("    var exBtn = document.createElement('button');\n");
+        js.append("    exBtn.id = 'btn-player-exit'; exBtn.type = 'button';\n");
+        js.append("    exBtn.innerHTML = '<div class=\"exit-cap\"></div><span style=\"font-size:6.5px;font-weight:900;color:var(--toggle-color);letter-spacing:0.5px;\">EXIT</span>';\n");
+        js.append("    rWrap.appendChild(exBtn);\n");
+        js.append("    var exTimer = null, exLong = false, lastExTap = 0;\n");
+        js.append("    exBtn.addEventListener('pointerdown', function() {\n");
+        js.append("      clearTimeout(exTimer); exLong = false;\n");
+        js.append("      exTimer = setTimeout(function() {\n");
+        js.append("        exTimer = null; exLong = true;\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate([45, 60, 55]);\n");
+        js.append("        if (window.__stopAllRadioAndNativeAudio) window.__stopAllRadioAndNativeAudio();\n");
+        js.append("        var dw = document.getElementById('device-wrapper');\n");
+        js.append("        if (dw) dw.classList.add('fading-out');\n");
+        js.append("        setTimeout(function() { if (window.PlayerBridge && window.PlayerBridge.exitEntireApp) window.PlayerBridge.exitEntireApp(); }, 350);\n");
+        js.append("      }, 550);\n");
+        js.append("    });\n");
+        js.append("    exBtn.addEventListener('pointerup', function() {\n");
+        js.append("      var wasTap = exTimer !== null; clearTimeout(exTimer); exTimer = null;\n");
+        js.append("      if (wasTap && !exLong) {\n");
+        js.append("        var now = Date.now();\n");
+        js.append("        if (now - lastExTap < 420) {\n");
+        js.append("          lastExTap = 0;\n");
+        js.append("          if (window.PlayerBridge && window.PlayerBridge.minimizeApp) window.PlayerBridge.minimizeApp();\n");
+        js.append("        } else {\n");
+        js.append("          lastExTap = now;\n");
+        js.append("          if (window.PlayerBridge && window.PlayerBridge.showSystemBars) window.PlayerBridge.showSystemBars();\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("    exBtn.addEventListener('pointerleave', function() { clearTimeout(exTimer); exTimer = null; });\n");
+        js.append("    exBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
+        js.append("  }\n");
+
+        /* Stop all native audio AND immediately stop deck animations & reset VU meters */
+        js.append("  window.__stopAllRadioAndNativeAudio = function() {\n");
+        js.append("    window.__streamLaunchToken = (window.__streamLaunchToken || 0) + 1;\n");
+        js.append("    window.__audioLevel = 0;\n");
+        js.append("    if (typeof setPlayingUI === 'function') setPlayingUI(false);\n");
+        js.append("    var arm = document.querySelector('.tt-tonearm');\n");
+        js.append("    if (arm) arm.style.transform = 'rotate(6deg)';\n");
+        js.append("    ['cd-vu-l','r2r-vu-l','r2r-vu-r'].forEach(function(id){\n");
+        js.append("      var ndl = document.getElementById(id);\n");
+        js.append("      if (ndl) ndl.style.transform = 'rotate(-35deg)';\n");
+        js.append("    });\n");
+        js.append("    document.querySelectorAll('#reactive-vu-strip .rvu-seg').forEach(function(seg) {\n");
+        js.append("      seg.style.background = '#1e293b'; seg.style.boxShadow = 'none';\n");
+        js.append("    });\n");
+        js.append("    if (window.PlayerBridge && window.PlayerBridge.stopAudio) {\n");
+        js.append("      window.PlayerBridge.stopAudio();\n");
+        js.append("    }\n");
+        js.append("  };\n");
+
+        /* Build Clean 5-Button Top Row: [ SCANNER ] [ RADIO ] [ DECK ] [ CONT ] [ DSP ] */
+        js.append("  var origBackBtn = document.getElementById('btn-back-radio');\n");
+        js.append("  var origTopRow = origBackBtn ? origBackBtn.parentNode : null;\n");
+        js.append("  if (origTopRow && !document.getElementById('btn-switch-radio-archive')) {\n");
+        js.append("    origTopRow.className = 'player-nav-row';\n");
+        js.append("    var newScannerBtn = origBackBtn.cloneNode(true);\n");
+        js.append("    newScannerBtn.innerHTML = '&#9664; SCANNER';\n");
+        js.append("    origTopRow.replaceChild(newScannerBtn, origBackBtn);\n");
+        js.append("    newScannerBtn.addEventListener('click', function() {\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("      window.__stopAllRadioAndNativeAudio();\n");
+        js.append("      if (window.markCurrentListAsVisited) window.markCurrentListAsVisited();\n");
+        js.append("      var dw = document.getElementById('device-wrapper');\n");
+        js.append("      if (dw) dw.classList.add('fading-out');\n");
+        js.append("      setTimeout(function() { if (window.PlayerBridge) window.PlayerBridge.closePlayer(); }, 180);\n");
+        js.append("    });\n");
+
+        js.append("    var modeSwitchBtn = document.createElement('button');\n");
+        js.append("    modeSwitchBtn.id = 'btn-switch-radio-archive';\n");
+        js.append("    modeSwitchBtn.className = 'btn';\n");
+        js.append("    modeSwitchBtn.type = 'button';\n");
+        js.append("    modeSwitchBtn.innerHTML = 'RADIO &#9654;';\n");
+        js.append("    origTopRow.insertBefore(modeSwitchBtn, newScannerBtn.nextSibling);\n");
+        js.append("    modeSwitchBtn.addEventListener('click', function() {\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("      window.setAppMode(!window.__isBroadcastRadioMode);\n");
+        js.append("    });\n");
+
+        /* Continuous / Loop Mode Button (CONT: OFF -> CONT: ON -> LOOP: 1) */
+        js.append("    var oldContBtn = document.getElementById('btn-mode-cont');\n");
+        js.append("    if (oldContBtn) {\n");
+        js.append("      var cBtn = oldContBtn.cloneNode(true);\n");
+        js.append("      cBtn.id = 'btn-mode-cont';\n");
+        js.append("      oldContBtn.parentNode.replaceChild(cBtn, oldContBtn);\n");
+        js.append("      window.__playModeState = 0;\n");
+        js.append("      window.__isLoopMode = false;\n");
+        js.append("      cBtn.addEventListener('click', function() {\n");
+        js.append("        window.__playModeState = (window.__playModeState + 1) % 3;\n");
+        js.append("        isCont = (window.__playModeState === 1);\n");
+        js.append("        window.__isLoopMode = (window.__playModeState === 2);\n");
+        js.append("        cBtn.classList.toggle('active', window.__playModeState !== 0);\n");
+        js.append("        var lbl = window.__playModeState === 0 ? 'CONT: OFF' : (window.__playModeState === 1 ? 'CONT: ON' : 'LOOP: 1');\n");
+        js.append("        cBtn.innerText = lbl;\n");
+        js.append("        if (typeof showDisplayHud === 'function') showDisplayHud('PLAY MODE: ' + lbl, 1300);\n");
+        js.append("      });\n");
+        js.append("    }\n");
+
+        /* DSP Audio Clarity Button */
+        js.append("    var dspBtn = document.createElement('button');\n");
+        js.append("    dspBtn.id = 'btn-dsp-filter';\n");
+        js.append("    dspBtn.className = 'btn';\n");
+        js.append("    dspBtn.type = 'button';\n");
+        js.append("    function syncDspLabel(active) {\n");
+        js.append("      dspBtn.classList.toggle('active', active);\n");
+        js.append("      dspBtn.innerText = active ? 'DSP: ON' : 'DSP: OFF';\n");
+        js.append("    }\n");
+        js.append("    if (window.PlayerBridge && window.PlayerBridge.getClarityFilterState) {\n");
+        js.append("      syncDspLabel(window.PlayerBridge.getClarityFilterState());\n");
+        js.append("    } else { dspBtn.innerText = 'DSP: OFF'; }\n");
+        js.append("    dspBtn.addEventListener('click', function() {\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.toggleClarityFilter) {\n");
+        js.append("        var state = window.PlayerBridge.toggleClarityFilter();\n");
+        js.append("        syncDspLabel(state);\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("    origTopRow.appendChild(dspBtn);\n");
+
+        js.append("    var oldTtsBtn = document.getElementById('btn-mode-tts');\n");
+        js.append("    if (oldTtsBtn) oldTtsBtn.remove();\n");
+        js.append("  }\n");
+
+        /* Archive Filter Row ([Search Box] + [ALL / NEW / UNPLAY]) & Radio Management Bar (MANAGE, UP, DN, DEL) */
+        js.append("  window.__archiveFilterMode = 0;\n"); // 0 = ALL, 1 = NEW, 2 = UNPLAY
+        js.append("  var fRow = document.getElementById('date-select').parentNode;\n");
+        js.append("  if (fRow && !document.getElementById('radio-crud-row')) {\n");
+        js.append("    fRow.className = 'filter-row-archive';\n");
+        js.append("    var sBoxEl = document.getElementById('search-box');\n");
+        js.append("    var fltBtn = document.getElementById('btn-filter-unread');\n");
+        js.append("    if (!fltBtn) {\n");
+        js.append("      fltBtn = document.createElement('button');\n");
+        js.append("      fltBtn.id = 'btn-filter-unread';\n");
+        js.append("      fltBtn.className = 'btn';\n");
+        js.append("      fltBtn.type = 'button';\n");
+        js.append("      fltBtn.innerText = 'ALL';\n");
+        js.append("      if (sBoxEl && sBoxEl.nextSibling) {\n");
+        js.append("        fRow.insertBefore(fltBtn, sBoxEl.nextSibling);\n");
+        js.append("      } else {\n");
+        js.append("        fRow.appendChild(fltBtn);\n");
+        js.append("      }\n");
+        js.append("    }\n");
+        js.append("    fltBtn.addEventListener('click', function() {\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("      window.__archiveFilterMode = (window.__archiveFilterMode + 1) % 3;\n");
+        js.append("      var labels = ['ALL', 'NEW', 'UNPLAY'];\n");
+        js.append("      fltBtn.innerText = labels[window.__archiveFilterMode];\n");
+        js.append("      fltBtn.classList.toggle('active', window.__archiveFilterMode !== 0);\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("    });\n");
+
+        js.append("    var rBar = document.createElement('div');\n");
+        js.append("    rBar.id = 'radio-crud-row'; rBar.className = 'radio-crud-bar';\n");
+        js.append("    rBar.innerHTML = '<button class=\"btn\" type=\"button\" id=\"btn-rad-edit\">MANAGE</button><button class=\"btn\" type=\"button\" id=\"btn-rad-up\">&#9650; UP</button><button class=\"btn\" type=\"button\" id=\"btn-rad-dn\">&#9660; DN</button><button class=\"btn\" type=\"button\" id=\"btn-rad-del\">DEL</button>';\n");
+        js.append("    fRow.parentNode.appendChild(rBar);\n");
+
+        js.append("    document.getElementById('btn-rad-edit').addEventListener('click', function() {\n");
+        js.append("      var stObj = window.__radioStations[window.__radioIdx] || {};\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.openStationJsonMenu) {\n");
+        js.append("        window.PlayerBridge.openStationJsonMenu(window.__radioIdx, stObj.name || '', stObj.freq || '', stObj.url || '');\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("    document.getElementById('btn-rad-up').addEventListener('click', function() {\n");
+        js.append("      var idx = window.__radioIdx;\n");
+        js.append("      if (idx <= 0 || idx >= window.__radioStations.length) return;\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(15);\n");
+        js.append("      var tmp = window.__radioStations[idx - 1];\n");
+        js.append("      window.__radioStations[idx - 1] = window.__radioStations[idx];\n");
+        js.append("      window.__radioStations[idx] = tmp;\n");
+        js.append("      window.__radioIdx = idx - 1;\n");
+        js.append("      window.__saveRadioStations(false);\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("    });\n");
+        js.append("    document.getElementById('btn-rad-dn').addEventListener('click', function() {\n");
+        js.append("      var idx = window.__radioIdx;\n");
+        js.append("      if (idx < 0 || idx >= window.__radioStations.length - 1) return;\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(15);\n");
+        js.append("      var tmp = window.__radioStations[idx + 1];\n");
+        js.append("      window.__radioStations[idx + 1] = window.__radioStations[idx];\n");
+        js.append("      window.__radioStations[idx] = tmp;\n");
+        js.append("      window.__radioIdx = idx + 1;\n");
+        js.append("      window.__saveRadioStations(false);\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("    });\n");
+        js.append("    document.getElementById('btn-rad-del').addEventListener('click', function() {\n");
+        js.append("      if (window.__radioStations.length <= 1) return;\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("      window.__radioStations.splice(window.__radioIdx, 1);\n");
+        js.append("      if (window.__radioIdx >= window.__radioStations.length) window.__radioIdx = window.__radioStations.length - 1;\n");
+        js.append("      window.__saveRadioStations(false);\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("    });\n");
+        js.append("  }\n");
+
+        js.append("  var defaultStations = [\n");
+        js.append("    { name: 'Radio City Swansea', freq: '1386 AM', band: 'LOCAL', url: 'https://radiocity1386am.radioca.st/stream' },\n");
+        js.append("    { name: 'BBC Radio 5 Live', freq: '909 AM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_five_live&bitrate=128000' },\n");
+        js.append("    { name: 'BBC Radio 5 Sports Extra', freq: 'DAB+', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_five_live_sports_extra&bitrate=128000' },\n");
+        js.append("    { name: 'talkSPORT', freq: '1089 AM', band: 'SPORT', url: 'https://radio.talksport.com/stream' },\n");
+        js.append("    { name: 'talkSPORT 2', freq: 'DAB+', band: 'SPORT', url: 'https://radio.talksport.com/stream2' },\n");
+        js.append("    { name: 'BBC Radio 1', freq: '97.9 FM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_one&bitrate=128000' },\n");
+        js.append("    { name: 'BBC Radio 2', freq: '88.8 FM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_two&bitrate=128000' },\n");
+        js.append("    { name: 'BBC Radio 3', freq: '90.9 FM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_three&bitrate=320000' },\n");
+        js.append("    { name: 'BBC Radio 4', freq: '93.5 FM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_fourfm&bitrate=128000' },\n");
+        js.append("    { name: 'BBC Radio 6 Music', freq: 'DAB+', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_6music&bitrate=128000' },\n");
+        js.append("    { name: 'BBC World Service', freq: '198 LW', band: 'WORLD', url: 'https://stream.live.vc.bbcmedia.co.uk/bbc_world_service' },\n");
+        js.append("    { name: 'BBC Radio Wales', freq: '882 AM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_wales_fm&bitrate=128000' }\n");
+        js.append("  ];\n");
+        js.append("  try {\n");
+        js.append("    var savedSt = JSON.parse(localStorage.getItem('proscan_radio_stations_v3') || 'null');\n");
+        js.append("    window.__radioStations = (Array.isArray(savedSt) && savedSt.length > 0) ? savedSt : defaultStations.slice();\n");
+        js.append("    if (!window.__radioStations.some(function(s){ return s.url && s.url.indexOf('radiocity1386am') !== -1; })) {\n");
+        js.append("      window.__radioStations.unshift(defaultStations[0]);\n");
+        js.append("    }\n");
+        js.append("  } catch(e) { window.__radioStations = defaultStations.slice(); }\n");
+
+        js.append("  window.__saveRadioStations = function(exportToDownloads) {\n");
+        js.append("    try {\n");
+        js.append("      var sJson = JSON.stringify(window.__radioStations);\n");
+        js.append("      localStorage.setItem('proscan_radio_stations_v3', sJson);\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.saveStationsJson) {\n");
+        js.append("        window.PlayerBridge.saveStationsJson(sJson, Boolean(exportToDownloads));\n");
+        js.append("      }\n");
+        js.append("    } catch(e) {}\n");
+        js.append("  };\n");
+        js.append("  window.__saveRadioStations(false);\n");
+
+        js.append("  window.onNativeStationsJsonLoaded = function(jsonStr) {\n");
+        js.append("    try {\n");
+        js.append("      var arr = JSON.parse(jsonStr);\n");
+        js.append("      if (Array.isArray(arr) && arr.length > 0) {\n");
+        js.append("        window.__radioStations = arr;\n");
+        js.append("        window.__radioIdx = 0;\n");
+        js.append("        localStorage.setItem('proscan_radio_stations_v3', JSON.stringify(arr));\n");
+        js.append("        window.renderPlaylist();\n");
+        js.append("        window.selectRadioStationOnly(0);\n");
+        js.append("      }\n");
+        js.append("    } catch(e) {}\n");
+        js.append("  };\n");
+
+        /* Handle Adding or Editing a Radio Station from the Native Dialog */
+        js.append("  window.onNativeStationSaved = function(editIdx, name, freq, url) {\n");
+        js.append("    try {\n");
+        js.append("      var stItem = { name: name, freq: (freq && freq.trim() ? freq.trim() : 'DAB+'), band: 'LIVE', url: url };\n");
+        js.append("      if (typeof editIdx === 'number' && editIdx >= 0 && editIdx < window.__radioStations.length) {\n");
+        js.append("        window.__radioStations[editIdx] = stItem;\n");
+        js.append("        window.__radioIdx = editIdx;\n");
+        js.append("      } else {\n");
+        js.append("        window.__radioStations.push(stItem);\n");
+        js.append("        window.__radioIdx = window.__radioStations.length - 1;\n");
+        js.append("      }\n");
+        js.append("      window.__saveRadioStations(false);\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("      window.selectRadioStationOnly(window.__radioIdx);\n");
+        js.append("    } catch(e) {}\n");
+        js.append("  };\n");
+
+        js.append("  window.__isBroadcastRadioMode = false;\n");
+        js.append("
+private void injectReactiveDecksAndTheme() {
+        String backupJson = prefs.getString("last_backup_json", "");
+        String safeBackup = JSONObject.quote(backupJson);
+        String savedStationsJson = prefs.getString("radio_stations_json", "");
+        String safeStations = JSONObject.quote(savedStationsJson);
+        boolean wakePref = prefs.getBoolean("wake_lock_on", true);
+        boolean openInRadio = "radio".equalsIgnoreCase(initialStartMode);
+
+        StringBuilder js = new StringBuilder();
+        js.append("(function(){\n");
+        js.append("  try {\n");
+        js.append("    var raw = ").append(safeBackup).append(";\n");
+        js.append("    if (raw) {\n");
+        js.append("      var b = JSON.parse(raw);\n");
+        js.append("      if (b.web_storage) {\n");
+        js.append("        Object.keys(b.web_storage).forEach(function(k){ localStorage.setItem(k, b.web_storage[k]); });\n");
+        js.append("        var sIdx = parseInt(localStorage.getItem('proscan_skin_index')||'0',10)||0;\n");
+        js.append("        var dIdx = parseInt(localStorage.getItem('proscan_display_index')||'0',10)||0;\n");
+        js.append("        var bIdx = parseInt(localStorage.getItem('proscan_bg_index')||'0',10)||0;\n");
+        js.append("        if (typeof skinIds !== 'undefined') document.documentElement.setAttribute('data-skin', skinIds[sIdx % skinIds.length]);\n");
+        js.append("        if (typeof dispIds !== 'undefined') document.documentElement.setAttribute('data-display', dispIds[dIdx % dispIds.length]);\n");
+        js.append("        if (typeof bgIds !== 'undefined') document.documentElement.setAttribute('data-bg', bgIds[bIdx % bgIds.length]);\n");
+        js.append("        var br = (localStorage.getItem('proscan_custom_brand_v1')||'PROSCAN').trim();\n");
+        js.append("        var bs = document.getElementById('brand-logo-slot');\n");
+        js.append("        if (bs) bs.innerHTML = '<div class=\"brand-henus\"><span class=\"henus-mark\">'+br+'</span><span class=\"henus-sub\" id=\"brand-sub-mode\">ARCHIVE</span></div>';\n");
+        js.append("      }\n");
+        js.append("    }\n");
+        js.append("    var nativeSt = ").append(safeStations).append(";\n");
+        js.append("    if (nativeSt && nativeSt.length > 10) localStorage.setItem('proscan_radio_stations_v3', nativeSt);\n");
+        js.append("  } catch(e) {}\n");
+
+        js.append("  var nameHdr = document.querySelector('.screen-log-header span:last-child');\n");
+        js.append("  if (nameHdr) nameHdr.innerText = 'NAME';\n");
+
+        js.append("  var st = document.createElement('style');\n");
+        js.append("  st.textContent = '' +\n");
+        js.append("    '@keyframes smoothFadeIn{0%{opacity:0;}100%{opacity:1;}}' +\n");
+        js.append("    '#device-wrapper{animation:smoothFadeIn 0.25s ease-out forwards;transition:opacity 0.2s ease!important;}' +\n");
+        js.append("    '#device-wrapper.fading-out{opacity:0!important;}' +\n");
+        js.append("    '.scanner-display{height:252px!important;}.top-controls-container{height:28px!important;}.buttons-box{gap:7px!important;}#mech-bay{height:216px!important;}' +\n");
+        js.append("    '#playlist-box{overflow-y:scroll!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior:contain!important;}' +\n");
+        js.append("    '.rec-row{touch-action:pan-y!important;}' +\n");
+        js.append("    '.rec-row.playing, .rec-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
+        js.append("    '.rec-row.selected:not(.playing){outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(0,0,0,0.16)!important;color:var(--log-text)!important;font-weight:800!important;}' +\n");
+        js.append("    '.radio-row{display:grid!important;grid-template-columns:36px 68px 48px 1fr!important;gap:4px!important;padding:4px 6px!important;border-bottom:1px solid var(--log-cell-border)!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10px!important;color:var(--log-text)!important;align-items:center!important;text-align:left!important;cursor:pointer!important;touch-action:pan-y!important;}' +\n");
+        js.append("    '.radio-row.playing, .radio-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
+        js.append("    '.radio-row.selected:not(.playing){outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(0,0,0,0.16)!important;color:var(--log-text)!important;font-weight:800!important;}' +\n");
+
+        /* Top Row Navigation: 5 Buttons in Archive Mode, 3 Full-Width Buttons in Radio Mode */
+        js.append("    '.player-nav-row{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:30px!important;}' +\n");
+        js.append("    '.player-nav-row.radio-mode-nav{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important;}' +\n");
+        js.append("    '.player-nav-row .btn{font-size:10.5px!important;font-weight:900!important;padding:2px 3px!important;letter-spacing:0.1px!important;}' +\n");
+
+        /* Transport Row: Giant Full-Width Buttons [ PLAY ] and [ STOP ] */
+        js.append("    '.btn-row-4{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;height:38px!important;}' +\n");
+        js.append("    '#btn-play, #btn-stop{font-size:13px!important;font-weight:900!important;letter-spacing:0.8px!important;}' +\n");
+        js.append("    '#btn-prev, #btn-next{display:none!important;}' +\n");
+
+        /* Archive Mode: Search Input + [ ALL / NEW / UNPLAY ] Filter Button */
+        js.append("    '.filter-row-archive{display:grid!important;grid-template-columns:1fr 78px!important;gap:5px!important;height:28px!important;}' +\n");
+        js.append("    '#search-box{width:100%!important;height:100%!important;font-size:10.5px!important;}' +\n");
+        js.append("    '#btn-filter-unread{font-size:9.5px!important;font-weight:900!important;padding:2px 4px!important;letter-spacing:0.2px!important;}' +\n");
+
+        /* Radio Mode: Clean Management Row [ MANAGE ] [ ▲ UP ] [ ▼ DN ] [ DEL ] */
+        js.append("    '.radio-crud-bar{display:none;grid-template-columns:2fr 1fr 1fr 1fr!important;gap:5px!important;height:28px!important;}' +\n");
+        js.append("    '.radio-crud-bar .btn{font-size:9.5px!important;font-weight:800!important;padding:2px!important;}' +\n");
+
+        /* Completely Hide Unwanted Elements (Note: #btn-filter-unread is restored!) */
+        js.append("    '#date-select, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
+
+        /* Vertically Stacked Brand */
+        js.append("    '.brand-henus{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:1px!important;line-height:1!important;white-space:nowrap!important;}' +\n");
+        js.append("    '.brand-henus .henus-mark{font-size:10px!important;letter-spacing:1.5px!important;padding:0 4px!important;border-left:1.5px solid var(--brand-accent,#38bdf8)!important;border-right:1.5px solid var(--brand-accent,#38bdf8)!important;text-transform:uppercase!important;}' +\n");
+        js.append("    '.brand-henus .henus-sub{font-size:6.5px!important;letter-spacing:2px!important;line-height:1!important;margin-top:1px!important;}' +\n");
+
+        js.append("    '#deck-vinyl{background:radial-gradient(circle at 46% 54%,#1e2229 0%,#0c0e12 85%)!important;}' +\n");
+        js.append("    '.tt-platter{position:absolute!important;left:90px!important;top:38px!important;width:140px!important;height:140px!important;box-shadow:0 8px 20px rgba(0,0,0,0.95),0 0 0 3px #18181b!important;}' +\n");
+        js.append("    '.tt-record{width:128px!important;height:128px!important;}' +\n");
+        js.append("    '.tt-strobe{position:absolute!important;left:76px!important;top:72px!important;bottom:auto!important;width:9px!important;height:14px!important;border-radius:3px!important;background:linear-gradient(180deg,#ff6600,#cc2200)!important;border:1px solid #ffb380!important;box-shadow:0 0 12px #ff4400,0 0 20px #ff1100!important;z-index:8!important;}' +\n");
+        js.append("    '.tt-arm-base{top:34px!important;right:54px!important;width:38px!important;height:38px!important;box-shadow:0 4px 10px #000,inset 0 1px 2px rgba(255,255,255,0.6)!important;z-index:9!important;}' +\n");
+        js.append("    '.tt-tonearm{top:50px!important;right:70px!important;height:118px!important;transform-origin:top center!important;transform:rotate(6deg);transition:transform 0.2s linear!important;z-index:10!important;}' +\n");
+        js.append("    '.r2r-stage{width:94%!important;height:100%!important;padding:30px 18px 0!important;display:flex!important;justify-content:space-between!important;align-items:flex-start!important;}' +\n");
+        js.append("    '.r2r-reel{width:110px!important;height:110px!important;margin-top:0!important;box-shadow:0 6px 14px rgba(0,0,0,0.95)!important;}' +\n");
+        js.append("    '.r2r-tape-left{bottom:62px!important;left:56px!important;width:96px!important;transform:rotate(24deg)!important;}' +\n");
+        js.append("    '.r2r-tape-right{bottom:62px!important;right:56px!important;width:96px!important;transform:rotate(-24deg)!important;}' +\n");
+        js.append("    '.r2r-headblock{bottom:42px!important;width:92px!important;height:28px!important;background:linear-gradient(180deg,#e4e4e7 0%,#71717a 48%,#27272a 100%)!important;border:1px solid #09090b!important;box-shadow:0 4px 10px #000!important;}' +\n");
+        js.append("    '.r2r-lower-bridge{position:absolute;bottom:28px;left:12px;right:12px;height:40px;border-radius:6px;background:linear-gradient(180deg,#272b32 0%,#14171c 100%);border:1px solid rgba(255,255,255,0.12);box-shadow:inset 0 2px 5px rgba(0,0,0,0.85),0 2px 6px #000;display:flex;justify-content:space-between;align-items:center;padding:0 10px;z-index:8;pointer-events:none;}' +\n");
+        js.append("    '#hack-canvas{width:95%!important;height:152px!important;margin-top:6px!important;border-radius:8px!important;border:1px solid rgba(57,255,20,0.45)!important;box-shadow:inset 0 0 24px rgba(57,255,20,0.22),0 0 12px rgba(0,0,0,0.9)!important;}' +\n");
+        js.append("    '.deck-track-badge{position:absolute;top:6px;left:10px;right:10px;z-index:14;display:flex;justify-content:space-between;padding:2px 8px;border-radius:4px;background:rgba(0,0,0,0.78);border:1px solid rgba(255,255,255,0.16);font-family:monospace;font-size:9.5px;font-weight:800;color:#38bdf8;pointer-events:none;}' +\n");
+        js.append("    '.hw-side-panel{position:absolute;z-index:11;display:flex;flex-direction:column;gap:5px;align-items:center;}' +\n");
+        js.append("    '.hw-pill{padding:2px 6px;border-radius:3px;background:linear-gradient(180deg,#2e343d,#15181c);border:1px solid #08090b;font-family:monospace;font-size:7.5px;font-weight:800;color:#94a3b8;box-shadow:0 1px 2px #000;letter-spacing:0.4px;}' +\n");
+        js.append("    '.hw-fader-track{width:12px;height:86px;border-radius:3px;background:repeating-linear-gradient(180deg,#1e293b 0px,#1e293b 1px,#080a0c 1px,#080a0c 7px);border:1px solid #334155;position:relative;box-shadow:inset 0 2px 4px #000;}' +\n");
+        js.append("    '.hw-fader-knob{position:absolute;top:36px;left:-3px;width:16px;height:11px;border-radius:2px;background:linear-gradient(180deg,#f8fafc,#94a3b8 45%,#334155 55%,#cbd5e1);border:1px solid #000;box-shadow:0 2px 4px rgba(0,0,0,0.85);}' +\n");
+        js.append("    '.hw-vu-dial{width:54px;height:30px;border-radius:5px;background:radial-gradient(circle at 50% 95%,#fef9c3 0%,#fde047 55%,#ca8a04 100%);border:2px solid #090a0c;position:relative;overflow:hidden;box-shadow:inset 0 2px 5px rgba(0,0,0,0.65),0 1px 0 rgba(255,255,255,0.15);}' +\n");
+        js.append("    '.hw-vu-dial::before{content:\"dB  -20 -10  0  +3\";position:absolute;top:3px;left:3px;right:3px;font-family:monospace;font-size:5px;font-weight:900;color:#1e293b;text-align:center;letter-spacing:-0.3px;}' +\n");
+        js.append("    '.hw-vu-needle{position:absolute;bottom:-2px;left:25px;width:1.8px;height:25px;background:#dc2626;transform-origin:bottom center;transform:rotate(-35deg);transition:transform 0.05s ease-out;box-shadow:0 0 2px rgba(0,0,0,0.5);}' +\n");
+        js.append("    '#cd-laser-sled{position:absolute;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle,#ff2222 20%,rgba(255,0,0,0.7) 55%,transparent 100%);box-shadow:0 0 10px #ff0000;z-index:2;pointer-events:none;transition:transform 0.1s linear;}' +\n");
         js.append("    '#reactive-vu-strip{position:absolute;bottom:5px;left:50%;transform:translateX(-50%);display:flex;gap:3px;z-index:12;background:rgba(0,0,0,0.78);padding:3px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);}' +\n");
         js.append("    '.rvu-seg{width:6px;height:5px;border-radius:1px;background:#1e293b;}' +\n");
         js.append("    '#player-wake-pill{display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:1px 5px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:5px;}' +\n");
@@ -1041,17 +1542,20 @@ private void injectReactiveDecksAndTheme() {
         js.append("      rrL.style.boxShadow = 'inset 0 0 0 ' + (28 - pL/3) + 'px #18181b, 0 6px 14px rgba(0,0,0,0.9)';\n");
         js.append("      rrR.style.boxShadow = 'inset 0 0 0 ' + (28 - pR/3) + 'px #18181b, 0 6px 14px rgba(0,0,0,0.9)';\n");
         js.append("    }\n");
-        js.append("    var deg = -36 + (window.__audioLevel * 72);\n");
+        js.append("    var deg = -35 + (window.__audioLevel * 72);\n");
         js.append("    ['cd-vu-l','r2r-vu-l','r2r-vu-r'].forEach(function(id, i){\n");
         js.append("      var ndl = document.getElementById(id);\n");
-        js.append("      if (ndl) ndl.style.transform = 'rotate(' + (deg + (i%2===0?3:-3)).toFixed(1) + 'deg)';\n");
+        js.append("      if (ndl) {\n");
+        js.append("        var chDiff = (window.__audioLevel > 0.05) ? (i % 2 === 0 ? 2.5 : -2.5) : 0;\n");
+        js.append("        ndl.style.transform = 'rotate(' + Math.min(38, Math.max(-35, deg + chDiff)).toFixed(1) + 'deg)';\n");
+        js.append("      }\n");
         js.append("    });\n");
         js.append("    var sled = document.getElementById('cd-laser-sled');\n");
         js.append("    if (sled) {\n");
         js.append("      var dist = -22 - (window.__audioProgress * 36);\n");
-        js.append("      sled.style.transform = 'translateX(' + dist.toFixed(1) + 'px) scale(' + (0.9 + window.__audioLevel*0.5).toFixed(2) + ')';\n");
+        js.append("      sled.style.transform = 'translateX(' + dist.toFixed(1) + 'px) scale(' + (0.85 + window.__audioLevel*0.65).toFixed(2) + ')';\n");
         js.append("    }\n");
-        js.append("    var activeSegs = Math.round(window.__audioLevel * 14);\n");
+        js.append("    var activeSegs = window.__audioLevel < 0.04 ? 0 : Math.round(window.__audioLevel * 14);\n");
         js.append("    document.querySelectorAll('#reactive-vu-strip .rvu-seg').forEach(function(seg, idx) {\n");
         js.append("      if (idx < activeSegs) {\n");
         js.append("        var col = idx >= 11 ? '#ef4444' : (idx >= 8 ? '#facc15' : '#22c55e');\n");
@@ -1066,31 +1570,31 @@ private void injectReactiveDecksAndTheme() {
         js.append("  if (oldCanvas) {\n");
         js.append("    var hCanvas = oldCanvas.cloneNode(true);\n");
         js.append("    oldCanvas.parentNode.replaceChild(hCanvas, oldCanvas);\n");
-        js.append("    var hCtx = hCanvas.getContext('2d'), hPhase = 0, smoothLvl = 0.02;\n");
+        js.append("    var hCtx = hCanvas.getContext('2d'), hPhase = 0, smoothLvl = 0.01;\n");
         js.append("    var barHeights = [], peaks = [];\n");
-        js.append("    for (var p=0; p<28; p++) { barHeights.push(3); peaks.push(3); }\n");
+        js.append("    for (var p=0; p<28; p++) { barHeights.push(2.5); peaks.push(2.5); }\n");
         js.append("    function drawProSigintScope() {\n");
         js.append("      requestAnimationFrame(drawProSigintScope);\n");
         js.append("      if (document.documentElement.getAttribute('data-deck') !== 'hack') return;\n");
         js.append("      var W = hCanvas.width, H = hCanvas.height;\n");
         js.append("      hCtx.clearRect(0, 0, W, H);\n");
-        js.append("      var rawTarget = isPlayingNow ? Math.max(0.06, window.__audioLevel * 0.85) : 0.015;\n");
-        js.append("      smoothLvl += (rawTarget - smoothLvl) * 0.12;\n");
+        js.append("      var rawTarget = isPlayingNow ? Math.max(0.015, window.__audioLevel * 0.95) : 0.01;\n");
+        js.append("      smoothLvl += (rawTarget - smoothLvl) * 0.25;\n");
         js.append("      hCtx.strokeStyle = 'rgba(57,255,20,0.11)'; hCtx.lineWidth = 1;\n");
         js.append("      hCtx.beginPath();\n");
         js.append("      for (var gx = 0; gx < W; gx += 38) { hCtx.moveTo(gx, 0); hCtx.lineTo(gx, H); }\n");
         js.append("      for (var gy = 0; gy < H; gy += 28) { hCtx.moveTo(0, gy); hCtx.lineTo(W, gy); }\n");
         js.append("      hCtx.stroke();\n");
         js.append("      hCtx.fillStyle = '#38bdf8'; hCtx.font = 'bold 8.5px monospace';\n");
-        js.append("      var dbm = isPlayingNow ? (-52 + Math.round(smoothLvl * 38)) : -98;\n");
+        js.append("      var dbm = (isPlayingNow && smoothLvl > 0.04) ? (-88 + Math.round(smoothLvl * 48)) : -98;\n");
         js.append("      hCtx.fillText('RF: ' + dbm + ' dBm  //  BW: 12.5kHz  //  DEMOD: NFM', 8, 12);\n");
-        js.append("      hCtx.fillStyle = isPlayingNow ? '#39ff14' : '#64748b';\n");
-        js.append("      hCtx.fillText(isPlayingNow ? 'CARRIER: LOCKED' : 'CARRIER: STANDBY', W - 96, 12);\n");
+        js.append("      hCtx.fillStyle = (isPlayingNow && smoothLvl > 0.04) ? '#39ff14' : '#64748b';\n");
+        js.append("      hCtx.fillText((isPlayingNow && smoothLvl > 0.04) ? 'CARRIER: LOCKED' : 'CARRIER: SQUELCH', W - 96, 12);\n");
         js.append("      hCtx.strokeStyle = 'rgba(56,189,248,0.38)'; hCtx.lineWidth = 1.4;\n");
         js.append("      hCtx.beginPath();\n");
         js.append("      for (var x2 = 0; x2 < W; x2 += 3) {\n");
         js.append("        var env2 = Math.sin((x2 / W) * Math.PI);\n");
-        js.append("        var y2 = 54 + Math.sin(x2 * 0.045 - hPhase * 0.65) * env2 * (smoothLvl * 26);\n");
+        js.append("        var y2 = 54 + Math.sin(x2 * 0.045 - hPhase * 0.65) * env2 * (smoothLvl * 28);\n");
         js.append("        if (x2 === 0) hCtx.moveTo(x2, y2); else hCtx.lineTo(x2, y2);\n");
         js.append("      }\n");
         js.append("      hCtx.stroke();\n");
@@ -1100,7 +1604,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("        var env = Math.sin((x / W) * Math.PI);\n");
         js.append("        var w1 = Math.sin(x * 0.04 + hPhase) * Math.cos(x * 0.018 - hPhase * 0.45);\n");
         js.append("        var w2 = Math.sin(x * 0.09 - hPhase * 0.8) * 0.25;\n");
-        js.append("        var y = 54 + ((w1 + w2) * env * (smoothLvl * 36));\n");
+        js.append("        var y = 54 + ((w1 + w2) * env * (smoothLvl * 38));\n");
         js.append("        if (x === 0) hCtx.moveTo(x, y); else hCtx.lineTo(x, y);\n");
         js.append("      }\n");
         js.append("      hCtx.stroke();\n");
@@ -1108,11 +1612,11 @@ private void injectReactiveDecksAndTheme() {
         js.append("      for (var b = 0; b < 28; b++) {\n");
         js.append("        var bell = Math.sin(((b + 1) / 29) * Math.PI);\n");
         js.append("        var wave = 0.55 + 0.45 * Math.sin(b * 0.42 + hPhase * 0.85) * Math.cos(b * 0.21 - hPhase * 0.5);\n");
-        js.append("        var goalH = isPlayingNow ? Math.max(3, Math.min(42, bell * wave * smoothLvl * 52)) : 2.5;\n");
-        js.append("        barHeights[b] += (goalH - barHeights[b]) * 0.14;\n");
+        js.append("        var goalH = (isPlayingNow && smoothLvl > 0.04) ? Math.max(3, Math.min(42, bell * wave * smoothLvl * 54)) : 2.5;\n");
+        js.append("        barHeights[b] += (goalH - barHeights[b]) * 0.24;\n");
         js.append("        var curH = barHeights[b];\n");
         js.append("        if (curH >= peaks[b]) peaks[b] = curH;\n");
-        js.append("        else peaks[b] = Math.max(2.5, peaks[b] - 0.18);\n");
+        js.append("        else peaks[b] = Math.max(2.5, peaks[b] - 0.22);\n");
         js.append("        var bx = startX + b * (barW + gap);\n");
         js.append("        var grad = hCtx.createLinearGradient(0, baseY - 42, 0, baseY);\n");
         js.append("        grad.addColorStop(0, '#facc15'); grad.addColorStop(0.4, '#22c55e'); grad.addColorStop(1, '#15803d');\n");
@@ -1121,7 +1625,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("        hCtx.fillStyle = 'rgba(56,189,248,0.85)';\n");
         js.append("        hCtx.fillRect(bx, baseY - peaks[b] - 2, barW, 1.5);\n");
         js.append("      }\n");
-        js.append("      hPhase += isPlayingNow ? (0.055 + smoothLvl * 0.065) : 0.02;\n");
+        js.append("      hPhase += isPlayingNow ? (0.05 + smoothLvl * 0.12) : 0.015;\n");
         js.append("    }\n");
         js.append("    drawProSigintScope();\n");
         js.append("  }\n");
@@ -1322,7 +1826,7 @@ private void injectReactiveDecksAndTheme() {
 
         /* Continuous & Single Track Loop Mode Logic */
         js.append("  window.onNativePlayEnded = function() {\n");
-        js.append("    setPlayingUI(false);\n");
+        js.append("    window.__stopAllRadioAndNativeAudio();\n");
         js.append("    if (window.__isBroadcastRadioMode) { renderPlaylist(); return; }\n");
         js.append("    window.__activePlayingFileId = '';\n");
         js.append("    renderPlaylist();\n");
@@ -1401,41 +1905,122 @@ private void stopNativePlayer() {
     private float[] extractMp3AmplitudeEnvelope(File mp3File) {
         int buckets = 240;
         float[] env = new float[buckets];
+        MediaExtractor extractor = null;
+        MediaCodec codec = null;
         try {
-            long len = mp3File.length();
-            if (len <= 512) return env;
-            FileInputStream fis = new FileInputStream(mp3File);
-            byte[] data = new byte[(int) Math.min(len, 2 * 1024 * 1024)];
-            int read = fis.read(data);
-            fis.close();
-            if (read <= 256) return env;
-            int startOffset = Math.min(read / 10, 1024);
-            int sliceLen = Math.max(1, (read - startOffset) / buckets);
-            float minVal = Float.MAX_VALUE, maxVal = Float.MIN_VALUE;
-            for (int b = 0; b < buckets; b++) {
-                int s = startOffset + b * sliceLen;
-                int end = Math.min(read - 1, s + sliceLen);
-                long energy = 0;
-                int zeroPad = 0;
-                for (int i = s; i < end; i++) {
-                    int v = data[i] & 0xFF;
-                    if (v == 0x00 || v == 0xFF || v == 0xAA || v == 0x55) zeroPad++;
-                    energy += Math.abs((data[i] & 0xFF) - (data[i + 1] & 0xFF));
+            extractor = new MediaExtractor();
+            extractor.setDataSource(mp3File.getAbsolutePath());
+            int numTracks = extractor.getTrackCount();
+            int audioTrack = -1;
+            MediaFormat format = null;
+            String mime = null;
+            for (int i = 0; i < numTracks; i++) {
+                MediaFormat fmt = extractor.getTrackFormat(i);
+                String m = fmt.getString(MediaFormat.KEY_MIME);
+                if (m != null && m.startsWith("audio/")) {
+                    audioTrack = i;
+                    format = fmt;
+                    mime = m;
+                    break;
                 }
-                int count = Math.max(1, end - s);
-                float padRatio = (float) zeroPad / (float) count;
-                float rawScore = ((float) energy / (float) count) * (1.0f - padRatio * 0.85f);
-                env[b] = rawScore;
-                if (rawScore < minVal) minVal = rawScore;
-                if (rawScore > maxVal) maxVal = rawScore;
             }
-            float range = Math.max(1f, maxVal - minVal);
-            for (int b = 0; b < buckets; b++) {
-                float norm = (env[b] - minVal) / range;
-                norm = (float) Math.pow(norm, 1.55);
-                env[b] = Math.min(1f, Math.max(0.02f, norm));
+            if (audioTrack >= 0 && format != null && mime != null) {
+                extractor.selectTrack(audioTrack);
+                codec = MediaCodec.createDecoderByType(mime);
+                codec.configure(format, null, null, 0);
+                codec.start();
+
+                List<Float> windowRmsList = new ArrayList<>(512);
+                MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+                boolean inputDone = false;
+                boolean outputDone = false;
+                int maxDecodeLoops = 2500;
+
+                while (!outputDone && maxDecodeLoops-- > 0) {
+                    if (!inputDone) {
+                        int inIdx = codec.dequeueInputBuffer(4000);
+                        if (inIdx >= 0) {
+                            ByteBuffer inBuf = codec.getInputBuffer(inIdx);
+                            if (inBuf != null) {
+                                int sampleSize = extractor.readSampleData(inBuf, 0);
+                                if (sampleSize < 0) {
+                                    codec.queueInputBuffer(inIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                                    inputDone = true;
+                                } else {
+                                    long pts = extractor.getSampleTime();
+                                    codec.queueInputBuffer(inIdx, 0, sampleSize, pts, 0);
+                                    extractor.advance();
+                                }
+                            }
+                        }
+                    }
+                    int outIdx = codec.dequeueOutputBuffer(info, 4000);
+                    if (outIdx >= 0) {
+                        ByteBuffer outBuf = codec.getOutputBuffer(outIdx);
+                        if (outBuf != null && info.size > 0) {
+                            outBuf.position(info.offset);
+                            outBuf.limit(info.offset + info.size);
+                            ShortBuffer sb = outBuf.order(ByteOrder.nativeOrder()).asShortBuffer();
+                            int nShorts = sb.remaining();
+                            int step = 256;
+                            for (int s = 0; s < nShorts; s += step) {
+                                int end = Math.min(nShorts, s + step);
+                                double sumSq = 0;
+                                int peak = 0;
+                                for (int k = s; k < end; k++) {
+                                    int val = Math.abs((int) sb.get(k));
+                                    if (val > peak) peak = val;
+                                    sumSq += (double) val * (double) val;
+                                }
+                                int count = Math.max(1, end - s);
+                                float rms = (float) Math.sqrt(sumSq / count);
+                                float combined = (rms * 0.65f) + (peak * 0.35f);
+                                windowRmsList.add(combined);
+                            }
+                        }
+                        codec.releaseOutputBuffer(outIdx, false);
+                        if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                            outputDone = true;
+                        }
+                    }
+                }
+
+                if (windowRmsList.size() > 8) {
+                    float maxRms = 1f;
+                    for (float v : windowRmsList) {
+                        if (v > maxRms) maxRms = v;
+                    }
+                    float noiseFloor = maxRms * 0.08f;
+                    int totalWins = windowRmsList.size();
+                    for (int b = 0; b < buckets; b++) {
+                        int wStart = (b * totalWins) / buckets;
+                        int wEnd = Math.max(wStart + 1, ((b + 1) * totalWins) / buckets);
+                        float localMax = 0f;
+                        for (int w = wStart; w < wEnd && w < totalWins; w++) {
+                            float val = windowRmsList.get(w);
+                            if (val > localMax) localMax = val;
+                        }
+                        if (localMax <= noiseFloor) {
+                            env[b] = 0.02f;
+                        } else {
+                            float norm = (localMax - noiseFloor) / Math.max(1f, (maxRms - noiseFloor));
+                            norm = (float) Math.pow(norm, 0.78);
+                            env[b] = Math.min(0.98f, Math.max(0.03f, norm));
+                        }
+                    }
+                    return env;
+                }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        } finally {
+            if (codec != null) {
+                try { codec.stop(); } catch (Exception ignored) {}
+                try { codec.release(); } catch (Exception ignored) {}
+            }
+            if (extractor != null) {
+                try { extractor.release(); } catch (Exception ignored) {}
+            }
+        }
         return env;
     }
 
