@@ -231,7 +231,8 @@ public class MainActivity extends Activity {
             connectSmart(localUrl, tailscaleUrl);
         }
     }
-private String getNativeBatteryStatus() {
+
+    private String getNativeBatteryStatus() {
         try {
             IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
             Intent b = registerReceiver(null, ifilter);
@@ -504,7 +505,8 @@ private String getNativeBatteryStatus() {
         @JavascriptInterface
         public void exitApp() { mainHandler.post(() -> closeAndExitApp()); }
     }
-private void showBothSystemBarsNow() {
+
+    private void showBothSystemBarsNow() {
         try {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
             getWindow().getDecorView().setSystemUiVisibility(
@@ -572,8 +574,7 @@ private void showBothSystemBarsNow() {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 900);
     }
-
-    private void injectEnhancements() {
+private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -589,7 +590,7 @@ private void showBothSystemBarsNow() {
         js.append("        '#device-wrapper{transition:opacity 0.18s ease!important;}' +\n");
         js.append("        '#device-wrapper.flipping-out{opacity:0!important;}' +\n");
 
-        /* Second Row: 6-Button Grid (Houses LOG IN, ARCHIVE, RADIO, BRAND, GUIDE, DSP) */
+        /* Second Row: 6-Button Grid (Houses LOG IN, ARCHIVE, RADIO, METER, GUIDE, DSP) */
         js.append("        '.scanner-nav-6{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:4px!important;height:28px!important;}' +\n");
         js.append("        '.scanner-nav-6 .btn{font-size:8.5px!important;letter-spacing:-0.2px!important;padding:2px 1px!important;white-space:nowrap!important;}' +\n");
 
@@ -612,10 +613,23 @@ private void showBothSystemBarsNow() {
         js.append("        '#btn-voice-toggle.active #voice-led{border-style:solid!important;border-width:2px!important;animation:voice-led-pulse-green 3.8s ease-in-out infinite!important;}' +\n");
         js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:24px;height:11px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
 
-        /* Vertically Stacked Brand Name on Scanner (No overlap with RX LED) */
-        js.append("        '.brand-henus{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:1px!important;line-height:1!important;white-space:nowrap!important;}' +\n");
-        js.append("        '.brand-henus .henus-mark{font-size:10px!important;letter-spacing:1.5px!important;padding:0 4px!important;border-left:1.5px solid var(--brand-accent,#e11d48)!important;border-right:1.5px solid var(--brand-accent,#e11d48)!important;text-transform:uppercase!important;}' +\n");
-        js.append("        '.brand-henus .henus-sub{font-size:6.5px!important;letter-spacing:2px!important;line-height:1!important;margin-top:1px!important;}' +\n");
+        /* 5-Style Live Signal Meter in #brand-logo-slot */
+        js.append("        '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:126px;height:22px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
+        js.append("        '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
+        js.append("        '.sm-mode.active{display:flex;}' +\n");
+        js.append("        '.sm-lbl{font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;color:#38bdf8;letter-spacing:0.3px;margin-right:3px;flex-shrink:0;}' +\n");
+        js.append("        '.sm-bar-wrap{display:flex;align-items:center;gap:2px;flex:1;height:11px;justify-content:space-between;}' +\n");
+        js.append("        '.sm-seg{flex:1;height:100%;border-radius:1px;background:#1e293b;transition:background 0.04s linear;}' +\n");
+        js.append("        '.sm-vu-wrap{width:100%;height:100%;background:radial-gradient(circle at 50% 100%,#fef9c3 0%,#fde047 60%,#ca8a04 100%);border-radius:3px;position:relative;overflow:hidden;border:1px solid #000;}' +\n");
+        js.append("        '.sm-vu-scale{position:absolute;top:1px;left:3px;right:3px;font-family:monospace;font-size:6px;font-weight:900;color:#1e293b;display:flex;justify-content:space-between;line-height:1;}' +\n");
+        js.append("        '#sm-vu-needle{position:absolute;bottom:-2px;left:50%;width:1.6px;height:18px;background:#dc2626;transform-origin:bottom center;transform:rotate(-42deg);transition:transform 0.05s ease-out;box-shadow:0 0 2px rgba(0,0,0,0.5);}' +\n");
+        js.append("        '.sm-spec-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:2px;width:100%;height:15px;padding-top:1px;}' +\n");
+        js.append("        '.sm-spec-bar{flex:1;height:2px;background:linear-gradient(180deg,#ef4444 0%,#facc15 35%,#22c55e 100%);border-radius:1px 1px 0 0;transition:height 0.04s linear;}' +\n");
+        js.append("        '#sm-scope-canvas{width:100%;height:16px;display:block;}' +\n");
+        js.append("        '.sm-dig-wrap{display:flex;align-items:center;justify-content:space-between;width:100%;gap:4px;font-family:\"JetBrains Mono\",monospace;}' +\n");
+        js.append("        '#sm-dig-txt{font-size:8.5px;font-weight:900;color:#39ff14;min-width:46px;text-align:left;letter-spacing:-0.3px;}' +\n");
+        js.append("        '.sm-peak-track{flex:1;height:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;overflow:hidden;position:relative;}' +\n");
+        js.append("        '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.04s linear;}' +\n");
 
         js.append("        '#display-clock-hud{position:absolute!important;top:6px!important;left:10px!important;right:auto!important;z-index:3!important;}' +\n");
         js.append("        '#scanner-bat-hud{position:absolute!important;top:6px!important;right:9px!important;left:auto!important;z-index:3!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10px!important;font-weight:700!important;letter-spacing:0.8px!important;color:var(--log-text)!important;opacity:0.88;pointer-events:none;display:inline-flex!important;align-items:center!important;line-height:1;transition:opacity 0.3s ease,color 0.3s ease;}' +\n");
@@ -652,6 +666,148 @@ private void showBothSystemBarsNow() {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
+        /* Build 5-Style Audio-Reactive Signal Meter in #brand-logo-slot & wire up METER button */
+        js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
+        js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
+        js.append("      window.renderCustomBrand = function() {};\n");
+        js.append("      var mNames = ['S-BAR', 'VU DIAL', 'SPECTRUM', 'SCOPE', 'PEAK dB'];\n");
+        js.append("      window.__sigMeterStyle = parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0;\n");
+        js.append("      var segHtml = ''; for (var s=0; s<12; s++) segHtml += '<div class=\"sm-seg\"></div>';\n");
+        js.append("      var specHtml = ''; for (var sp=0; sp<10; sp++) specHtml += '<div class=\"sm-spec-bar\"></div>';\n");
+        js.append("      bSlot.innerHTML = '<div id=\"sig-meter-host\" title=\"Tap to cycle Signal Meter style\">' +\n");
+        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-0\"><span class=\"sm-lbl\">S</span><div class=\"sm-bar-wrap\" id=\"sm-led-bars\">' + segHtml + '</div></div>' +\n");
+        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-1\"><div class=\"sm-vu-wrap\"><div class=\"sm-vu-scale\"><span>S1</span><span>3</span><span>5</span><span>7</span><span>9</span><span style=\"color:#dc2626;\">+30</span></div><div id=\"sm-vu-needle\"></div></div></div>' +\n");
+        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-2\"><span class=\"sm-lbl\">EQ</span><div class=\"sm-spec-wrap\" id=\"sm-spec-bars\">' + specHtml + '</div></div>' +\n");
+        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-3\"><canvas id=\"sm-scope-canvas\" width=\"114\" height=\"16\"></canvas></div>' +\n");
+        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-4\"><div class=\"sm-dig-wrap\"><span id=\"sm-dig-txt\">S0 -98dB</span><div class=\"sm-peak-track\"><div id=\"sm-peak-fill\"></div></div></div></div>' +\n");
+        js.append("      '</div>';\n");
+
+        js.append("      window.__applySigMeterStyle = function(idx, showHudMsg) {\n");
+        js.append("        window.__sigMeterStyle = ((idx % 5) + 5) % 5;\n");
+        js.append("        localStorage.setItem('proscan_sig_meter_style_v1', String(window.__sigMeterStyle));\n");
+        js.append("        for (var m = 0; m < 5; m++) {\n");
+        js.append("          var el = document.getElementById('sm-mode-' + m);\n");
+        js.append("          if (el) el.classList.toggle('active', m === window.__sigMeterStyle);\n");
+        js.append("        }\n");
+        js.append("        var mBtn = document.getElementById('btn-brand-open');\n");
+        js.append("        if (mBtn) mBtn.innerText = 'MTR: ' + mNames[window.__sigMeterStyle];\n");
+        js.append("        if (showHudMsg && typeof showDisplayHud === 'function') {\n");
+        js.append("          showDisplayHud('SIGNAL METER: ' + mNames[window.__sigMeterStyle], 1300);\n");
+        js.append("        }\n");
+        js.append("      };\n");
+
+        js.append("      window.handleBrandCornerTap = function() {\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("        var bp = document.getElementById('proscan-brand-panel');\n");
+        js.append("        if (bp) bp.hidden = true;\n");
+        js.append("        window.__applySigMeterStyle((window.__sigMeterStyle || 0) + 1, true);\n");
+        js.append("      };\n");
+
+        js.append("      var mHost = document.getElementById('sig-meter-host');\n");
+        js.append("      if (mHost) mHost.addEventListener('click', window.handleBrandCornerTap);\n");
+        js.append("      window.__applySigMeterStyle(window.__sigMeterStyle, false);\n");
+
+        /* Real-Time 60fps Audio-Reactive Signal Meter Loop */
+        js.append("      var smSmoothLvl = 0;\n");
+        js.append("      function renderLiveScannerSignalMeter() {\n");
+        js.append("        requestAnimationFrame(renderLiveScannerSignalMeter);\n");
+        js.append("        var rawLvl = 0;\n");
+        js.append("        if (typeof isConnected !== 'undefined' && isConnected && typeof analyser !== 'undefined' && analyser && typeof dataArray !== 'undefined' && dataArray) {\n");
+        js.append("          try {\n");
+        js.append("            analyser.getByteTimeDomainData(dataArray);\n");
+        js.append("            var sumSq = 0, peak = 0;\n");
+        js.append("            for (var i = 0; i < dataArray.length; i++) {\n");
+        js.append("              var d = Math.abs(dataArray[i] - 128);\n");
+        js.append("              if (d > peak) peak = d;\n");
+        js.append("              sumSq += d * d;\n");
+        js.append("            }\n");
+        js.append("            var rms = Math.sqrt(sumSq / dataArray.length);\n");
+        js.append("            if (peak > 3) {\n");
+        js.append("              rawLvl = Math.min(1.0, (rms / 28.0) * 0.7 + (peak / 90.0) * 0.35);\n");
+        js.append("            }\n");
+        js.append("          } catch(e) {}\n");
+        js.append("        }\n");
+        js.append("        smSmoothLvl += (rawLvl - smSmoothLvl) * (rawLvl > smSmoothLvl ? 0.38 : 0.18);\n");
+        js.append("        if (smSmoothLvl < 0.01) smSmoothLvl = 0;\n");
+
+        js.append("        var stIdx = window.__sigMeterStyle || 0;\n");
+        js.append("        if (stIdx === 0) {\n");
+        js.append("          var activeSegs = smSmoothLvl < 0.03 ? 0 : Math.min(12, Math.ceil(smSmoothLvl * 12));\n");
+        js.append("          var segs = document.querySelectorAll('#sm-led-bars .sm-seg');\n");
+        js.append("          for (var k = 0; k < segs.length; k++) {\n");
+        js.append("            if (k < activeSegs) {\n");
+        js.append("              var col = k >= 9 ? '#ef4444' : (k >= 6 ? '#facc15' : '#22c55e');\n");
+        js.append("              segs[k].style.background = col;\n");
+        js.append("              segs[k].style.boxShadow = '0 0 4px ' + col;\n");
+        js.append("            } else {\n");
+        js.append("              segs[k].style.background = '#1e293b';\n");
+        js.append("              segs[k].style.boxShadow = 'none';\n");
+        js.append("            }\n");
+        js.append("          }\n");
+        js.append("        } else if (stIdx === 1) {\n");
+        js.append("          var ndl = document.getElementById('sm-vu-needle');\n");
+        js.append("          if (ndl) {\n");
+        js.append("            var deg = -42 + (smSmoothLvl * 84);\n");
+        js.append("            ndl.style.transform = 'rotate(' + Math.min(42, Math.max(-42, deg)).toFixed(1) + 'deg)';\n");
+        js.append("          }\n");
+        js.append("        } else if (stIdx === 2) {\n");
+        js.append("          var bars = document.querySelectorAll('#sm-spec-bars .sm-spec-bar');\n");
+        js.append("          var hasFreq = (typeof isConnected !== 'undefined' && isConnected && typeof analyser !== 'undefined' && analyser && typeof freqArray !== 'undefined' && freqArray);\n");
+        js.append("          if (hasFreq) { try { analyser.getByteFrequencyData(freqArray); } catch(e) {} }\n");
+        js.append("          for (var b = 0; b < bars.length; b++) {\n");
+        js.append("            var h = 2;\n");
+        js.append("            if (hasFreq && smSmoothLvl >= 0.03) {\n");
+        js.append("              var bin = Math.min(freqArray.length - 1, 2 + b * 6);\n");
+        js.append("              h = Math.max(2, Math.min(15, Math.round((freqArray[bin] / 255.0) * 15)));\n");
+        js.append("            }\n");
+        js.append("            bars[b].style.height = h + 'px';\n");
+        js.append("          }\n");
+        js.append("        } else if (stIdx === 3) {\n");
+        js.append("          var cv = document.getElementById('sm-scope-canvas');\n");
+        js.append("          if (cv) {\n");
+        js.append("            var c = cv.getContext('2d');\n");
+        js.append("            var W = cv.width, H = cv.height;\n");
+        js.append("            c.clearRect(0, 0, W, H);\n");
+        js.append("            c.strokeStyle = smSmoothLvl >= 0.03 ? '#39ff14' : '#334155';\n");
+        js.append("            c.lineWidth = 1.4;\n");
+        js.append("            c.beginPath();\n");
+        js.append("            var hasWave = (typeof isConnected !== 'undefined' && isConnected && typeof dataArray !== 'undefined' && dataArray && smSmoothLvl >= 0.03);\n");
+        js.append("            for (var x = 0; x < W; x += 2) {\n");
+        js.append("              var y = H / 2;\n");
+        js.append("              if (hasWave) {\n");
+        js.append("                var wIdx = Math.min(dataArray.length - 1, Math.floor((x / W) * dataArray.length));\n");
+        js.append("                y = (H / 2) + ((dataArray[wIdx] - 128) / 128.0) * (H * 0.75);\n");
+        js.append("              }\n");
+        js.append("              if (x === 0) c.moveTo(x, y); else c.lineTo(x, y);\n");
+        js.append("            }\n");
+        js.append("            c.stroke();\n");
+        js.append("          }\n");
+        js.append("        } else if (stIdx === 4) {\n");
+        js.append("          var dTxt = document.getElementById('sm-dig-txt');\n");
+        js.append("          var pFill = document.getElementById('sm-peak-fill');\n");
+        js.append("          if (dTxt) {\n");
+        js.append("            if (smSmoothLvl < 0.03) {\n");
+        js.append("              dTxt.innerText = 'S0 -98dB';\n");
+        js.append("              dTxt.style.color = '#64748b';\n");
+        js.append("            } else {\n");
+        js.append("              var sUnit = Math.min(9, Math.max(1, Math.round(smSmoothLvl * 10)));\n");
+        js.append("              var dbVal = -92 + Math.round(smSmoothLvl * 58);\n");
+        js.append("              var plusStr = smSmoothLvl > 0.82 ? ('S9+' + Math.round((smSmoothLvl - 0.8) * 150)) : ('S' + sUnit + ' ' + dbVal + 'dB');\n");
+        js.append("              dTxt.innerText = plusStr;\n");
+        js.append("              dTxt.style.color = smSmoothLvl > 0.78 ? '#facc15' : '#39ff14';\n");
+        js.append("            }\n");
+        js.append("          }\n");
+        js.append("          if (pFill) pFill.style.width = Math.min(100, Math.round(smSmoothLvl * 100)) + '%';\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("      renderLiveScannerSignalMeter();\n");
+        js.append("    }\n");
+
+        js.append("    var mBtnCheck = document.getElementById('btn-brand-open');\n");
+        js.append("    if (mBtnCheck && window.__applySigMeterStyle && mBtnCheck.innerText.indexOf('MTR:') === -1) {\n");
+        js.append("      window.__applySigMeterStyle(window.__sigMeterStyle || 0, false);\n");
+        js.append("    }\n");
+
         js.append("    var dispBox = document.querySelector('.scanner-display');\n");
         js.append("    if (dispBox) {\n");
         js.append("      var clkEl = document.getElementById('display-clock-hud');\n");
@@ -677,7 +833,8 @@ private void showBothSystemBarsNow() {
         js.append("        }\n");
         js.append("      }\n");
         js.append("    }\n");
-js.append("    window.__stripHitBadgesFromLog = function() {\n");
+
+        js.append("    window.__stripHitBadgesFromLog = function() {\n");
         js.append("      document.querySelectorAll('#mini-log-data tr').forEach(function(tr) {\n");
         js.append("        if (tr.children.length < 5) return;\n");
         js.append("        var nameTd = tr.children[4];\n");
@@ -704,7 +861,6 @@ js.append("    window.__stripHitBadgesFromLog = function() {\n");
         js.append("          applySkin(parseInt(localStorage.getItem('proscan_skin_index')||'0',10)||0);\n");
         js.append("          if (typeof applyDisplay === 'function') applyDisplay(parseInt(localStorage.getItem('proscan_display_index')||'0',10)||0);\n");
         js.append("          if (typeof applyBg === 'function') applyBg(parseInt(localStorage.getItem('proscan_bg_index')||'0',10)||0);\n");
-        js.append("          if (typeof renderCustomBrand === 'function') renderCustomBrand(localStorage.getItem('proscan_custom_brand_v1')||'');\n");
         js.append("        }\n");
         js.append("      }\n");
         js.append("    }\n");
@@ -756,7 +912,7 @@ js.append("    window.__stripHitBadgesFromLog = function() {\n");
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
 
-        /* Second Row: Clean 6-Button Grid [ LOG IN ] [ ARCHIVE ] [ RADIO ] [ BRAND ] [ GUIDE ] [ DSP ] */
+        /* Second Row: Clean 6-Button Grid [ LOG IN ] [ ARCHIVE ] [ RADIO ] [ MTR: ... ] [ GUIDE ] [ DSP ] */
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
