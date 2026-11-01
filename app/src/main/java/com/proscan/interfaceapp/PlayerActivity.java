@@ -921,6 +921,23 @@ private void injectReactiveDecksAndTheme() {
         js.append("    } catch(e) {}\n");
         js.append("  };\n");
 
+        /* Handle Adding or Editing a Radio Station from the Native Dialog */
+        js.append("  window.onNativeStationSaved = function(editIdx, name, freq, url) {\n");
+        js.append("    try {\n");
+        js.append("      var stItem = { name: name, freq: (freq && freq.trim() ? freq.trim() : 'DAB+'), band: 'LIVE', url: url };\n");
+        js.append("      if (typeof editIdx === 'number' && editIdx >= 0 && editIdx < window.__radioStations.length) {\n");
+        js.append("        window.__radioStations[editIdx] = stItem;\n");
+        js.append("        window.__radioIdx = editIdx;\n");
+        js.append("      } else {\n");
+        js.append("        window.__radioStations.push(stItem);\n");
+        js.append("        window.__radioIdx = window.__radioStations.length - 1;\n");
+        js.append("      }\n");
+        js.append("      window.__saveRadioStations(false);\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("      window.selectRadioStationOnly(window.__radioIdx);\n");
+        js.append("    } catch(e) {}\n");
+        js.append("  };\n");
+
         js.append("  window.__isBroadcastRadioMode = false;\n");
         js.append("  window.__radioIdx = 0;\n");
         js.append("  window.__activeRadioUrl = '';\n");
