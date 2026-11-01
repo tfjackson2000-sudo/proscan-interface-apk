@@ -403,46 +403,52 @@ private String getNativeBatteryStatus() {
             boolean written = false;
 
             if (Build.VERSION.SDK_INT >= 29) {
+                Uri collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+
+                // Clean up any stale or conflicting files with this name to prevent duplicate-file limits
                 try {
-                    Uri targetUri = null;
-                    Cursor cursor = getContentResolver().query(
-                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    Cursor c = getContentResolver().query(
+                            collection,
                             new String[]{MediaStore.MediaColumns._ID},
-                            MediaStore.MediaColumns.DISPLAY_NAME + "=?",
-                            new String[]{"proscan_radio_stations.json"},
+                            MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ?",
+                            new String[]{"proscan_radio_stations%"},
                             null
                     );
-                    if (cursor != null) {
-                        if (cursor.moveToFirst()) {
-                            long id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID));
-                            targetUri = ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id);
+                    if (c != null) {
+                        while (c.moveToNext()) {
+                            long id = c.getLong(0);
+                            Uri delUri = ContentUris.withAppendedId(collection, id);
+                            try { getContentResolver().delete(delUri, null, null); } catch (Exception ignored) {}
                         }
-                        cursor.close();
-                    }
-
-                    if (targetUri == null) {
-                        ContentValues values = new ContentValues();
-                        values.put(MediaStore.MediaColumns.DISPLAY_NAME, "proscan_radio_stations.json");
-                        values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
-                        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-                        targetUri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-                    }
-
-                    if (targetUri != null) {
-                        OutputStream os = getContentResolver().openOutputStream(targetUri, "wt");
-                        if (os != null) {
-                            os.write(bytes);
-                            os.close();
-                            written = true;
-                        }
+                        c.close();
                     }
                 } catch (Exception ignored) {}
+
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, "proscan_radio_stations.json");
+                values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+
+                Uri targetUri = getContentResolver().insert(collection, values);
+                if (targetUri != null) {
+                    OutputStream os = getContentResolver().openOutputStream(targetUri, "w");
+                    if (os != null) {
+                        os.write(bytes);
+                        os.close();
+                        written = true;
+                    }
+                    values.clear();
+                    values.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                    getContentResolver().update(targetUri, values, null, null);
+                }
             }
 
             if (!written) {
                 File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
                 if (!dir.exists()) dir.mkdirs();
                 File file = new File(dir, "proscan_radio_stations.json");
+                if (file.exists()) file.delete();
                 FileOutputStream fos = new FileOutputStream(file);
                 fos.write(bytes);
                 fos.close();
@@ -497,7 +503,8 @@ private String getNativeBatteryStatus() {
 
     private void showStationMenuDialog(final int curIdx, final String curName, final String curFreq, final String curUrl) {
         String[] items = new String[]{
-                "Edit Selected Station (" + (curName != null && !curName.isEmpty() ? curName : "Station") + ")",
+                "+ Add New Station",
+                "Edit Selected (" + (curName != null && !curName.isEmpty() ? curName : "Station") + ")",
                 "Save Stations JSON to Downloads (proscan_radio_stations.json)",
                 "Load Stations JSON from Downloads",
                 "Reset Stations to Default UK List"
@@ -506,17 +513,19 @@ private String getNativeBatteryStatus() {
                 .setTitle("Radio Station Manager")
                 .setItems(items, (d, which) -> {
                     if (which == 0) {
-                        openAddOrEditStationDialog(curIdx, curName, curFreq, curUrl);
+                        openAddOrEditStationDialog(-1, "", "", "");
                     } else if (which == 1) {
+                        openAddOrEditStationDialog(curIdx, curName, curFreq, curUrl);
+                    } else if (which == 2) {
                         if (playerWeb != null) {
                             playerWeb.evaluateJavascript("if(window.PlayerBridge)window.PlayerBridge.saveStationsJson(JSON.stringify(window.__radioStations), true);", null);
                         }
-                    } else if (which == 2) {
+                    } else if (which == 3) {
                         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                         intent.addCategory(Intent.CATEGORY_OPENABLE);
                         intent.setType("*/*");
                         startActivityForResult(intent, REQ_LOAD_RADIO_JSON);
-                    } else if (which == 3) {
+                    } else if (which == 4) {
                         if (playerWeb != null) {
                             playerWeb.evaluateJavascript("if(window.__resetDefaultRadioStations)window.__resetDefaultRadioStations();", null);
                         }
@@ -586,8 +595,8 @@ private String getNativeBatteryStatus() {
         js.append("    '.filter-row-archive{display:grid!important;grid-template-columns:1fr!important;height:28px!important;}' +\n");
         js.append("    '#search-box{width:100%!important;height:100%!important;font-size:10.5px!important;}' +\n");
 
-        /* Radio Station Management Row */
-        js.append("    '.radio-crud-bar{display:none;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:28px!important;}' +\n");
+        /* Radio Bottom Management Bar [ MANAGE ] [ ▲ UP ] [ ▼ DN ] [ DEL ] */
+        js.append("    '.radio-crud-bar{display:none;grid-template-columns:2fr 1fr 1fr 1fr!important;gap:5px!important;height:28px!important;}' +\n");
         js.append("    '.radio-crud-bar .btn{font-size:9.5px!important;font-weight:800!important;padding:2px!important;}' +\n");
 
         /* Completely Hide Unwanted Buttons */
@@ -782,18 +791,15 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("    if (oldTtsBtn) oldTtsBtn.remove();\n");
         js.append("  }\n");
 
-        /* Clean Archive Filter & Radio Station Management Bar */
+        /* Archive Filter Row & Radio Management Bar (MANAGE, UP, DN, DEL) */
         js.append("  var fRow = document.getElementById('date-select').parentNode;\n");
         js.append("  if (fRow && !document.getElementById('radio-crud-row')) {\n");
         js.append("    fRow.className = 'filter-row-archive';\n");
         js.append("    var rBar = document.createElement('div');\n");
         js.append("    rBar.id = 'radio-crud-row'; rBar.className = 'radio-crud-bar';\n");
-        js.append("    rBar.innerHTML = '<button class=\"btn\" type=\"button\" id=\"btn-rad-add\">+ ADD</button><button class=\"btn\" type=\"button\" id=\"btn-rad-edit\">JSON / EDIT</button><button class=\"btn\" type=\"button\" id=\"btn-rad-up\">&#9650; UP</button><button class=\"btn\" type=\"button\" id=\"btn-rad-dn\">&#9660; DN</button><button class=\"btn\" type=\"button\" id=\"btn-rad-del\">DEL</button>';\n");
+        js.append("    rBar.innerHTML = '<button class=\"btn\" type=\"button\" id=\"btn-rad-edit\">MANAGE</button><button class=\"btn\" type=\"button\" id=\"btn-rad-up\">&#9650; UP</button><button class=\"btn\" type=\"button\" id=\"btn-rad-dn\">&#9660; DN</button><button class=\"btn\" type=\"button\" id=\"btn-rad-del\">DEL</button>';\n");
         js.append("    fRow.parentNode.appendChild(rBar);\n");
 
-        js.append("    document.getElementById('btn-rad-add').addEventListener('click', function() {\n");
-        js.append("      if (window.PlayerBridge && window.PlayerBridge.showStationDialog) window.PlayerBridge.showStationDialog(-1, '', '', '');\n");
-        js.append("    });\n");
         js.append("    document.getElementById('btn-rad-edit').addEventListener('click', function() {\n");
         js.append("      var stObj = window.__radioStations[window.__radioIdx] || {};\n");
         js.append("      if (window.PlayerBridge && window.PlayerBridge.openStationJsonMenu) {\n");
@@ -886,25 +892,11 @@ js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("    window.selectRadioStationOnly(0);\n");
         js.append("  };\n");
 
-        js.append("  window.onNativeStationSaved = function(editIdx, name, freq, url) {\n");
-        js.append("    if (!name || !url) return;\n");
-        js.append("    var item = { name: name.trim(), freq: (freq || 'LIVE').trim(), band: 'USER', url: url.trim() };\n");
-        js.append("    if (editIdx >= 0 && editIdx < window.__radioStations.length) {\n");
-        js.append("      window.__radioStations[editIdx] = item;\n");
-        js.append("      window.__radioIdx = editIdx;\n");
-        js.append("    } else {\n");
-        js.append("      window.__radioStations.unshift(item);\n");
-        js.append("      window.__radioIdx = 0;\n");
-        js.append("    }\n");
-        js.append("    window.__saveRadioStations(false);\n");
-        js.append("    window.renderPlaylist();\n");
-        js.append("    window.selectRadioStationOnly(window.__radioIdx);\n");
-        js.append("  };\n");
-
         js.append("  window.__isBroadcastRadioMode = false;\n");
         js.append("  window.__radioIdx = 0;\n");
         js.append("  window.__activeRadioUrl = '';\n");
 
+        // Always plays live radio via native Android MediaPlayer with locks so screen sleep never stops it
         js.append("  window.__startHybridLiveStream = function(url) {\n");
         js.append("    window.__stopAllRadioAndNativeAudio();\n");
         js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) {\n");
@@ -1163,8 +1155,7 @@ js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= filteredRecs.length) return;\n");
         js.append("    curIdx = idx;\n");
         js.append("    var r = filteredRecs[idx];\n");
-        js.append("    var ro = document.getElementById('track-main-readout');\n");
-        js.append("    if (ro) ro.innerText = r.name + ' • ' + r.freq;\n");
+        js.append("    document.getElementById('track-main-readout').innerText = 'READY: ' + r.name + ' • ' + r.freq;\n");
         js.append("    document.getElementById('cassette-lbl-left').innerText = r.name;\n");
         js.append("    document.getElementById('cassette-lbl-right').innerText = r.freq + ' (' + r.timeStr + ')';\n");
         js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
