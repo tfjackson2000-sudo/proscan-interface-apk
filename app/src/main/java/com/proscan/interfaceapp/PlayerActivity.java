@@ -138,7 +138,6 @@ public class PlayerActivity extends Activity {
                     }
                     double rms = Math.sqrt(sumSq / waveform.length);
                     if (peak <= 2 && rms < 1.0) {
-                        // Some devices return silent waveform bytes without RECORD_AUDIO; ignore if dead flat
                         return;
                     }
                     float norm = (float) Math.min(1.0, (rms / 42.0) * 0.75 + (peak / 128.0) * 0.35);
@@ -305,12 +304,11 @@ public class PlayerActivity extends Activity {
                         if (hasLiveVis) {
                             level = liveVisualizerLevel;
                         } else {
-                            // Natural speech syllable envelope with micro-pauses & dynamic peaks
                             double t = now / 95.0;
                             double syll = Math.sin(t) * Math.sin(t * 0.63) + 0.5 * Math.cos(t * 1.9);
                             double gate = Math.sin(now / 620.0) + 0.35 * Math.cos(now / 270.0);
                             if (gate < -0.35) {
-                                level = 0.03f; // Natural pause between words/sentences
+                                level = 0.03f;
                             } else {
                                 level = (float) Math.min(0.96, Math.max(0.05, Math.abs(syll) * 0.68));
                             }
