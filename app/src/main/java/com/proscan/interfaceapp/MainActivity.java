@@ -589,8 +589,9 @@ private void showBothSystemBarsNow() {
         js.append("        '#device-wrapper{transition:opacity 0.18s ease!important;}' +\n");
         js.append("        '#device-wrapper.flipping-out{opacity:0!important;}' +\n");
 
-        /* Second Row: Clean 5-Button Layout [ LOG IN ] [ ARCHIVE ] [ RADIO ] [ BRAND ] [ GUIDE ] */
-        js.append("        '.scanner-nav-5{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;}' +\n");
+        /* Second Row: 6-Button Grid (Houses LOG IN, ARCHIVE, RADIO, BRAND, GUIDE, DSP) */
+        js.append("        '.scanner-nav-6{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:4px!important;height:28px!important;}' +\n");
+        js.append("        '.scanner-nav-6 .btn{font-size:8.5px!important;letter-spacing:-0.2px!important;padding:2px 1px!important;white-space:nowrap!important;}' +\n");
 
         js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:7px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
         js.append("        '.freq-hit-badge, #mini-log-table .freq-hit-badge, #mini-log-table td:nth-child(5) .freq-hit-badge, #mini-log-table td:nth-child(5) span[class*=\"hit\"], #mini-log-table td:nth-child(5) span[class*=\"badge\"]{display:none!important;visibility:hidden!important;width:0!important;height:0!important;padding:0!important;margin:0!important;border:none!important;overflow:hidden!important;font-size:0!important;}' +\n");
@@ -755,12 +756,12 @@ js.append("    window.__stripHitBadgesFromLog = function() {\n");
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
 
-        /* Clean 5-Button Row [ LOG IN ] [ ARCHIVE ] [ RADIO ] [ BRAND ] [ GUIDE ] */
+        /* Second Row: Clean 6-Button Grid [ LOG IN ] [ ARCHIVE ] [ RADIO ] [ BRAND ] [ GUIDE ] [ DSP ] */
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
         js.append("      var rowParent = loginBtn.parentNode;\n");
-        js.append("      if (rowParent) rowParent.classList.add('scanner-nav-5');\n");
+        js.append("      if (rowParent) rowParent.className = 'scanner-nav-6';\n");
         js.append("      var newAuthBtn = loginBtn.cloneNode(true);\n");
         js.append("      newAuthBtn.__mergedAuthHooked = true;\n");
         js.append("      rowParent.replaceChild(newAuthBtn, loginBtn);\n");
@@ -794,6 +795,69 @@ js.append("    window.__stripHitBadgesFromLog = function() {\n");
         js.append("        var wrap = document.getElementById('device-wrapper'); if (wrap) wrap.classList.add('flipping-out');\n");
         js.append("        setTimeout(function() { if (window.AndroidApp) window.AndroidApp.openBroadcastRadio(); }, 160);\n");
         js.append("      });\n");
+
+        /* Live Web Audio DSP Speech Filter & Squelch De-Hiss Compressor */
+        js.append("      window.__scannerDspOn = localStorage.getItem('proscan_scanner_dsp_v1') === 'true';\n");
+        js.append("      window.__applyScannerDspRouting = function() {\n");
+        js.append("        if (!window.audioContext) return;\n");
+        js.append("        var player = document.getElementById('audio_player');\n");
+        js.append("        if (!player) return;\n");
+        js.append("        if (!window.__dspNodes) {\n");
+        js.append("          try {\n");
+        js.append("            var ctx = window.audioContext;\n");
+        js.append("            var hp = ctx.createBiquadFilter();\n");
+        js.append("            hp.type = 'highpass';\n");
+        js.append("            hp.frequency.value = 320;\n");
+        js.append("            var peak = ctx.createBiquadFilter();\n");
+        js.append("            peak.type = 'peaking';\n");
+        js.append("            peak.frequency.value = 2200;\n");
+        js.append("            peak.Q.value = 1.2;\n");
+        js.append("            peak.gain.value = 6.5;\n");
+        js.append("            var lp = ctx.createBiquadFilter();\n");
+        js.append("            lp.type = 'lowpass';\n");
+        js.append("            lp.frequency.value = 4500;\n");
+        js.append("            var comp = ctx.createDynamicsCompressor();\n");
+        js.append("            comp.threshold.value = -24;\n");
+        js.append("            comp.knee.value = 12;\n");
+        js.append("            comp.ratio.value = 4;\n");
+        js.append("            comp.attack.value = 0.003;\n");
+        js.append("            comp.release.value = 0.25;\n");
+        js.append("            hp.connect(peak); peak.connect(lp); lp.connect(comp);\n");
+        js.append("            window.__dspNodes = { hp: hp, comp: comp };\n");
+        js.append("          } catch(e) {}\n");
+        js.append("        }\n");
+        js.append("        if (window.__dspNodes && window.source && window.analyser) {\n");
+        js.append("          try {\n");
+        js.append("            window.source.disconnect();\n");
+        js.append("            if (window.__scannerDspOn) {\n");
+        js.append("              window.source.connect(window.__dspNodes.hp);\n");
+        js.append("              window.__dspNodes.comp.connect(window.analyser);\n");
+        js.append("            } else {\n");
+        js.append("              window.source.connect(window.analyser);\n");
+        js.append("            }\n");
+        js.append("          } catch(e) {}\n");
+        js.append("        }\n");
+        js.append("      };\n");
+
+        /* Add DSP as the 6th button in the second row */
+        js.append("      var dspBtn = document.createElement('button');\n");
+        js.append("      dspBtn.id = 'btn-scanner-dsp'; dspBtn.className = 'btn'; dspBtn.type = 'button';\n");
+        js.append("      function syncDspBtnUi(active) {\n");
+        js.append("        dspBtn.classList.toggle('active', active);\n");
+        js.append("        dspBtn.innerText = active ? 'DSP: ON' : 'DSP: OFF';\n");
+        js.append("      }\n");
+        js.append("      syncDspBtnUi(window.__scannerDspOn);\n");
+        js.append("      dspBtn.addEventListener('click', function() {\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("        window.__scannerDspOn = !window.__scannerDspOn;\n");
+        js.append("        localStorage.setItem('proscan_scanner_dsp_v1', String(window.__scannerDspOn));\n");
+        js.append("        syncDspBtnUi(window.__scannerDspOn);\n");
+        js.append("        window.__applyScannerDspRouting();\n");
+        js.append("        if (typeof showDisplayHud === 'function') {\n");
+        js.append("          showDisplayHud('DSP CLARITY: ' + (window.__scannerDspOn ? 'ON (VOICE BOOST)' : 'OFF'), 1400);\n");
+        js.append("        }\n");
+        js.append("      });\n");
+        js.append("      rowParent.appendChild(dspBtn);\n");
         js.append("    }\n");
 
         /* Top LEDs Left: Clean, uncrowded layout with just VOICE and WAKE */
@@ -874,7 +938,11 @@ js.append("    window.__stripHitBadgesFromLog = function() {\n");
         js.append("        isVlcMode = Boolean(play && vlcBg);\n");
         js.append("        if (play) {\n");
         js.append("          isConnected = true;\n");
-        js.append("          if (player && player.paused) { player.play(); if (typeof setupAudioDetection === 'function') setupAudioDetection(); }\n");
+        js.append("          if (player && player.paused) {\n");
+        js.append("            player.play();\n");
+        js.append("            if (typeof setupAudioDetection === 'function') setupAudioDetection();\n");
+        js.append("            if (window.__applyScannerDspRouting) setTimeout(window.__applyScannerDspRouting, 350);\n");
+        js.append("          }\n");
         js.append("          aBtn.classList.add('active');\n");
         js.append("          if (window.AndroidApp) window.AndroidApp.setBackgroundAudioMode(isVlcMode);\n");
         js.append("        } else {\n");
