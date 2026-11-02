@@ -638,44 +638,45 @@ private void injectReactiveDecksAndTheme() {
         js.append("  var st = document.createElement('style');\n");
         js.append("  st.textContent = '' +\n");
         js.append("    '@keyframes smoothFadeIn{0%{opacity:0;}100%{opacity:1;}}' +\n");
-        js.append("    '#device-wrapper{animation:smoothFadeIn 0.25s ease-out forwards;transition:opacity 0.2s ease!important;}' +\n");
+        js.append("    '#device-wrapper{width:95%!important;max-height:94dvh!important;animation:smoothFadeIn 0.25s ease-out forwards;transition:opacity 0.2s ease!important;}' +\n");
         js.append("    '#device-wrapper.fading-out{opacity:0!important;}' +\n");
-        js.append("    '.scanner-display{height:252px!important;transition:height 0.22s ease!important;}.top-controls-container{height:28px!important;}.buttons-box{gap:7px!important;}#mech-bay{height:216px!important;}' +\n");
-        /* LITE MODE on Archive & Radio: Hide 3D Deck Bay and expand Log Screen to 468px! */
+        js.append("    '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;}' +\n");
+        /* Expanded Log Screen (345px in Normal Mode, 565px in Lite Mode) & Taller Controls */
+        js.append("    '.scanner-display{height:345px!important;transition:height 0.22s ease!important;}.top-controls-container{height:30px!important;}.buttons-box{gap:8px!important;padding:9px!important;}#mech-bay{height:216px!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] #mech-bay{display:none!important;}' +\n");
-        js.append("    'html[data-deck=\"lite\"] .scanner-display{height:468px!important;}' +\n");
+        js.append("    'html[data-deck=\"lite\"] .scanner-display{height:565px!important;}' +\n");
         js.append("    '#playlist-box{overflow-y:scroll!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior:contain!important;}' +\n");
-        js.append("    '.rec-row{touch-action:pan-y!important;}' +\n");
+        js.append("    '.rec-row{padding:4.5px 4px!important;font-size:10px!important;touch-action:pan-y!important;}' +\n");
         js.append("    '.rec-row.playing, .rec-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
         js.append("    '.rec-row.selected:not(.playing){outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(0,0,0,0.16)!important;color:var(--log-text)!important;font-weight:800!important;}' +\n");
-        js.append("    '.radio-row{display:grid!important;grid-template-columns:36px 68px 48px 1fr!important;gap:4px!important;padding:4px 6px!important;border-bottom:1px solid var(--log-cell-border)!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10px!important;color:var(--log-text)!important;align-items:center!important;text-align:left!important;cursor:pointer!important;touch-action:pan-y!important;}' +\n");
+        js.append("    '.radio-row{display:grid!important;grid-template-columns:36px 68px 48px 1fr!important;gap:4px!important;padding:5.5px 6px!important;border-bottom:1px solid var(--log-cell-border)!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10.5px!important;color:var(--log-text)!important;align-items:center!important;text-align:left!important;cursor:pointer!important;touch-action:pan-y!important;}' +\n");
         js.append("    '.radio-row.playing, .radio-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
         js.append("    '.radio-row.selected:not(.playing){outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(0,0,0,0.16)!important;color:var(--log-text)!important;font-weight:800!important;}' +\n");
 
-        /* Top Row Navigation: 5 Buttons in Archive Mode, 3 Full-Width Buttons in Radio Mode */
-        js.append("    '.player-nav-row{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;height:30px!important;}' +\n");
+        /* Top Row Navigation: Larger 35px Tall Buttons */
+        js.append("    '.player-nav-row{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:6px!important;height:35px!important;}' +\n");
         js.append("    '.player-nav-row.radio-mode-nav{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important;}' +\n");
-        js.append("    '.player-nav-row .btn{font-size:10.5px!important;font-weight:900!important;padding:2px 3px!important;letter-spacing:0.1px!important;}' +\n");
+        js.append("    '.player-nav-row .btn{font-size:11px!important;font-weight:900!important;padding:2px 3px!important;letter-spacing:0.2px!important;}' +\n");
 
-        /* Transport Row: Giant Full-Width Buttons [ PLAY ] and [ STOP ] */
-        js.append("    '.btn-row-4{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;height:38px!important;}' +\n");
-        js.append("    '#btn-play, #btn-stop{font-size:13px!important;font-weight:900!important;letter-spacing:0.8px!important;}' +\n");
+        /* Transport Row: Giant 44px Tall Full-Width Buttons [ PLAY ] and [ STOP ] */
+        js.append("    '.btn-row-4{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;height:44px!important;}' +\n");
+        js.append("    '#btn-play, #btn-stop{font-size:14px!important;font-weight:900!important;letter-spacing:0.9px!important;}' +\n");
         js.append("    '#btn-prev, #btn-next{display:none!important;}' +\n");
 
-        /* Archive Mode: Search Input + [ ALL / NEW / UNPLAY ] Filter Button */
-        js.append("    '.filter-row-archive{display:grid!important;grid-template-columns:1fr 78px!important;gap:5px!important;height:28px!important;}' +\n");
-        js.append("    '#search-box{width:100%!important;height:100%!important;font-size:10.5px!important;}' +\n");
-        js.append("    '#btn-filter-unread{font-size:9.5px!important;font-weight:900!important;padding:2px 4px!important;letter-spacing:0.2px!important;}' +\n");
+        /* Archive Mode: 34px Tall Search Input + [ ALL / NEW / UNPLAY ] Filter Button */
+        js.append("    '.filter-row-archive{display:grid!important;grid-template-columns:1fr 84px!important;gap:6px!important;height:34px!important;}' +\n");
+        js.append("    '#search-box{width:100%!important;height:100%!important;font-size:11px!important;}' +\n");
+        js.append("    '#btn-filter-unread{font-size:10.5px!important;font-weight:900!important;padding:2px 4px!important;letter-spacing:0.3px!important;}' +\n");
 
-        /* Radio Mode: Clean Management Row [ MANAGE ] [ ▲ UP ] [ ▼ DN ] [ DEL ] */
-        js.append("    '.radio-crud-bar{display:none;grid-template-columns:2fr 1fr 1fr 1fr!important;gap:5px!important;height:28px!important;}' +\n");
-        js.append("    '.radio-crud-bar .btn{font-size:9.5px!important;font-weight:800!important;padding:2px!important;}' +\n");
+        /* Radio Mode: 34px Tall Clean Management Row [ MANAGE ] [ ▲ UP ] [ ▼ DN ] [ DEL ] */
+        js.append("    '.radio-crud-bar{display:none;grid-template-columns:2fr 1fr 1fr 1fr!important;gap:6px!important;height:34px!important;}' +\n");
+        js.append("    '.radio-crud-bar .btn{font-size:10.5px!important;font-weight:900!important;padding:2px!important;}' +\n");
 
         /* Completely Hide Unwanted Elements */
         js.append("    '#date-select, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
 
         /* 5-Style Live Signal Meter in #brand-logo-slot on Archive & Radio */
-        js.append("    '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:126px;height:22px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
+        js.append("    '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:132px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
         js.append("    '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
         js.append("    '.sm-mode.active{display:flex;}' +\n");
         js.append("    '.sm-lbl{font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;color:#38bdf8;letter-spacing:0.3px;margin-right:3px;flex-shrink:0;}' +\n");
@@ -730,7 +731,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("  document.head.appendChild(st);\n");
 
-        /* Add 6th Deck Option: DECK: LITE (Hides 3D deck bay, expands Log Screen to 468px!) */
+        /* Add 6th Deck Option: DECK: LITE (Hides 3D deck bay, expands Log Screen to 565px!) */
         js.append("  if (typeof decks !== 'undefined' && !decks.some(function(d){ return d.id === 'lite'; })) {\n");
         js.append("    decks.push({ id: 'lite', btn: 'DECK: LITE', hud: 'ARCHIVE // LITE LOG VIEW' });\n");
         js.append("  }\n");
