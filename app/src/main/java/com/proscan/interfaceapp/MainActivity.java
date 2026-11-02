@@ -590,9 +590,26 @@ private void injectEnhancements() {
         js.append("        '#device-wrapper{transition:opacity 0.18s ease!important;}' +\n");
         js.append("        '#device-wrapper.flipping-out{opacity:0!important;}' +\n");
 
-        /* Second Row: 6-Button Grid (Houses LOG IN, ARCHIVE, RADIO, METER, GUIDE, DSP) */
+        /* Second Row: 6-Button Grid (Houses LOG IN, ARCHIVE, RADIO, MTR, LITE, DSP) */
         js.append("        '.scanner-nav-6{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:4px!important;height:28px!important;}' +\n");
         js.append("        '.scanner-nav-6 .btn{font-size:8.5px!important;letter-spacing:-0.2px!important;padding:2px 1px!important;white-space:nowrap!important;}' +\n");
+
+        /* SCANNER LITE MODE: Hide secondary buttons, expand Display & Log, and make remaining Main + Numpad buttons larger! */
+        js.append("        'html[data-scanner-lite=\"true\"] .scanner-display{height:295px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(4),' +\n"); /* V- / V+ */
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(5),' +\n"); /* LIMIT SRCH */
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(6),' +\n"); /* SQ- / SQ+ */
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(8),' +\n"); /* DIRECT */
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(11),' +\n"); /* MENU / BACK */
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(12),' +\n"); /* TXT & FX */
+        js.append("        'html[data-scanner-lite=\"true\"] #btn-brt-toggle{display:none!important;}' +\n"); /* DISP BRT */
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls{grid-auto-rows:38px!important;gap:7px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > .btn{font-size:13px!important;font-weight:900!important;letter-spacing:0.5px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls .scroll-btn{font-size:10px!important;font-weight:900!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .numpad{grid-auto-rows:34px!important;gap:7px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .numpad .btn{font-size:15.5px!important;font-weight:900!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .top-right-group{height:34px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .top-right-group .btn{font-size:11.5px!important;}' +\n");
 
         js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:7px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
         js.append("        '.freq-hit-badge, #mini-log-table .freq-hit-badge, #mini-log-table td:nth-child(5) .freq-hit-badge, #mini-log-table td:nth-child(5) span[class*=\"hit\"], #mini-log-table td:nth-child(5) span[class*=\"badge\"]{display:none!important;visibility:hidden!important;width:0!important;height:0!important;padding:0!important;margin:0!important;border:none!important;overflow:hidden!important;font-size:0!important;}' +\n");
@@ -747,7 +764,6 @@ private void injectEnhancements() {
         js.append("            }\n");
         js.append("          }\n");
         js.append("        } else if (stIdx === 1) {\n");
-        /* Slide vertical bar from far left (3px) up to far right (calc(100% - 5px)) with the sound */
         js.append("          var ndl = document.getElementById('sm-vu-needle');\n");
         js.append("          if (ndl) {\n");
         js.append("            var pct = Math.min(100, Math.max(0, smSmoothLvl * 100));\n");
@@ -809,6 +825,45 @@ private void injectEnhancements() {
         js.append("    var mBtnCheck = document.getElementById('btn-brand-open');\n");
         js.append("    if (mBtnCheck && window.__applySigMeterStyle && mBtnCheck.innerText.indexOf('MTR:') === -1) {\n");
         js.append("      window.__applySigMeterStyle(window.__sigMeterStyle || 0, false);\n");
+        js.append("    }\n");
+
+        /* Repurpose GUIDE button (#btn-manual-open) into LITE: OFF / LITE: ON (Hold = App/Guide Menu) */
+        js.append("    var liteBtn = document.getElementById('btn-manual-open');\n");
+        js.append("    if (liteBtn && !liteBtn.__liteModeHooked) {\n");
+        js.append("      var newLiteBtn = liteBtn.cloneNode(true);\n");
+        js.append("      newLiteBtn.__liteModeHooked = true;\n");
+        js.append("      newLiteBtn.removeAttribute('onclick');\n");
+        js.append("      liteBtn.parentNode.replaceChild(newLiteBtn, liteBtn);\n");
+        js.append("      window.__scannerLiteMode = localStorage.getItem('proscan_scanner_lite_v1') === 'true';\n");
+        js.append("      window.__applyScannerLiteMode = function(active, showHudMsg) {\n");
+        js.append("        window.__scannerLiteMode = Boolean(active);\n");
+        js.append("        localStorage.setItem('proscan_scanner_lite_v1', String(window.__scannerLiteMode));\n");
+        js.append("        document.documentElement.setAttribute('data-scanner-lite', window.__scannerLiteMode ? 'true' : 'false');\n");
+        js.append("        newLiteBtn.classList.toggle('active', window.__scannerLiteMode);\n");
+        js.append("        newLiteBtn.innerText = window.__scannerLiteMode ? 'LITE: ON' : 'LITE: OFF';\n");
+        js.append("        if (showHudMsg && typeof showDisplayHud === 'function') {\n");
+        js.append("          showDisplayHud('SCANNER LITE MODE: ' + (window.__scannerLiteMode ? 'ON' : 'OFF'), 1300);\n");
+        js.append("        }\n");
+        js.append("      };\n");
+        js.append("      window.__applyScannerLiteMode(window.__scannerLiteMode, false);\n");
+        js.append("      var lHoldTimer = null, lLongFired = false;\n");
+        js.append("      newLiteBtn.addEventListener('pointerdown', function() {\n");
+        js.append("        clearTimeout(lHoldTimer); lLongFired = false;\n");
+        js.append("        lHoldTimer = setTimeout(function() {\n");
+        js.append("          lHoldTimer = null; lLongFired = true;\n");
+        js.append("          if (navigator.vibrate) navigator.vibrate(35);\n");
+        js.append("          if (typeof toggleAppMenuPanel === 'function') toggleAppMenuPanel();\n");
+        js.append("        }, 500);\n");
+        js.append("      });\n");
+        js.append("      newLiteBtn.addEventListener('pointerup', function() {\n");
+        js.append("        var wasTap = lHoldTimer !== null; clearTimeout(lHoldTimer); lHoldTimer = null;\n");
+        js.append("        if (wasTap && !lLongFired) {\n");
+        js.append("          if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("          window.__applyScannerLiteMode(!window.__scannerLiteMode, true);\n");
+        js.append("        }\n");
+        js.append("      });\n");
+        js.append("      newLiteBtn.addEventListener('pointerleave', function() { clearTimeout(lHoldTimer); lHoldTimer = null; });\n");
+        js.append("      newLiteBtn.addEventListener('pointercancel', function() { clearTimeout(lHoldTimer); lHoldTimer = null; });\n");
         js.append("    }\n");
 
         js.append("    var dispBox = document.querySelector('.scanner-display');\n");
@@ -915,7 +970,7 @@ private void injectEnhancements() {
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
 
-        /* Second Row: Clean 6-Button Grid [ LOG IN ] [ ARCHIVE ] [ RADIO ] [ MTR: ... ] [ GUIDE ] [ DSP ] */
+        /* Second Row: Clean 6-Button Grid [ LOG IN ] [ ARCHIVE ] [ RADIO ] [ MTR: ... ] [ LITE: ... ] [ DSP ] */
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
