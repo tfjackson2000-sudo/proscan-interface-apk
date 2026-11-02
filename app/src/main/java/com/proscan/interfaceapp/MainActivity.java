@@ -587,15 +587,25 @@ private void injectEnhancements() {
         js.append("      var st = document.createElement('style');\n");
         js.append("      st.id = 'proscan-v7-upgrade-css';\n");
         js.append("      st.textContent = '' +\n");
-        js.append("        '#device-wrapper{transition:opacity 0.18s ease!important;}' +\n");
+        js.append("        '#device-wrapper{width:95%!important;max-height:94dvh!important;transition:opacity 0.18s ease!important;}' +\n");
         js.append("        '#device-wrapper.flipping-out{opacity:0!important;}' +\n");
+        js.append("        '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;}' +\n");
 
-        /* Second Row: 6-Button Grid (Houses LOG IN, ARCHIVE, RADIO, MTR, LITE, DSP) */
-        js.append("        '.scanner-nav-6{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:4px!important;height:28px!important;}' +\n");
-        js.append("        '.scanner-nav-6 .btn{font-size:8.5px!important;letter-spacing:-0.2px!important;padding:2px 1px!important;white-space:nowrap!important;}' +\n");
+        /* Normal Mode: Larger 325px Scanner Display & Taller Keys to utilize vertical space */
+        js.append("        '.scanner-display{height:325px!important;transition:height 0.22s ease!important;}' +\n");
+        js.append("        '.top-controls-container{height:29px!important;}' +\n");
+        js.append("        '.top-right-group{height:34px!important;}' +\n");
+        js.append("        '.top-right-group .btn{font-size:11px!important;}' +\n");
+        js.append("        '.scanner-nav-6{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:4px!important;height:32px!important;}' +\n");
+        js.append("        '.scanner-nav-6 .btn{font-size:9px!important;letter-spacing:-0.2px!important;padding:2px 1px!important;white-space:nowrap!important;}' +\n");
+        js.append("        '.essential-controls{grid-auto-rows:33px!important;gap:6px!important;}' +\n");
+        js.append("        '.essential-controls > .btn{font-size:11.5px!important;}' +\n");
+        js.append("        '.essential-controls .scroll-btn{font-size:9px!important;}' +\n");
+        js.append("        '.numpad{grid-auto-rows:34px!important;gap:6px!important;}' +\n");
+        js.append("        '.numpad .btn{font-size:15.5px!important;font-weight:900!important;}' +\n");
 
-        /* SCANNER LITE MODE: Hide secondary buttons, expand Display & Log, and make remaining Main + Numpad buttons larger! */
-        js.append("        'html[data-scanner-lite=\"true\"] .scanner-display{height:295px!important;}' +\n");
+        /* SCANNER LITE MODE: Hide secondary buttons, expand Display & Log to 420px, and make remaining Main + Numpad buttons extra-large! */
+        js.append("        'html[data-scanner-lite=\"true\"] .scanner-display{height:420px!important;}' +\n");
         js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(4),' +\n"); /* V- / V+ */
         js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(5),' +\n"); /* LIMIT SRCH */
         js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(6),' +\n"); /* SQ- / SQ+ */
@@ -603,17 +613,17 @@ private void injectEnhancements() {
         js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(11),' +\n"); /* MENU / BACK */
         js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(12),' +\n"); /* TXT & FX */
         js.append("        'html[data-scanner-lite=\"true\"] #btn-brt-toggle{display:none!important;}' +\n"); /* DISP BRT */
-        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls{grid-auto-rows:38px!important;gap:7px!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > .btn{font-size:13px!important;font-weight:900!important;letter-spacing:0.5px!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls .scroll-btn{font-size:10px!important;font-weight:900!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .numpad{grid-auto-rows:34px!important;gap:7px!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .numpad .btn{font-size:15.5px!important;font-weight:900!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .top-right-group{height:34px!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .top-right-group .btn{font-size:11.5px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls{grid-auto-rows:44px!important;gap:8px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > .btn{font-size:13.5px!important;font-weight:900!important;letter-spacing:0.6px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls .scroll-btn{font-size:10.5px!important;font-weight:900!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .numpad{grid-auto-rows:40px!important;gap:7px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .numpad .btn{font-size:16.5px!important;font-weight:900!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .top-right-group{height:38px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .top-right-group .btn{font-size:12px!important;}' +\n");
 
-        js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:7px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
+        js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:8px!important;gap:8px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
         js.append("        '.freq-hit-badge, #mini-log-table .freq-hit-badge, #mini-log-table td:nth-child(5) .freq-hit-badge, #mini-log-table td:nth-child(5) span[class*=\"hit\"], #mini-log-table td:nth-child(5) span[class*=\"badge\"]{display:none!important;visibility:hidden!important;width:0!important;height:0!important;padding:0!important;margin:0!important;border:none!important;overflow:hidden!important;font-size:0!important;}' +\n");
-        js.append("        '#mini-log-table th,#mini-log-table td{padding:3px 2px 3px 4px!important;}' +\n");
+        js.append("        '#mini-log-table th,#mini-log-table td{padding:3.5px 2px 3.5px 4px!important;}' +\n");
         js.append("        '#mini-log-table th:nth-child(1),#mini-log-table td:nth-child(1){width:19%!important;}' +\n");
         js.append("        '#mini-log-table th:nth-child(2),#mini-log-table td:nth-child(2){width:20%!important;}' +\n");
         js.append("        '#mini-log-table th:nth-child(3),#mini-log-table td:nth-child(3){width:13%!important;}' +\n");
@@ -631,7 +641,7 @@ private void injectEnhancements() {
         js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:24px;height:11px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
 
         /* 5-Style Live Signal Meter in #brand-logo-slot */
-        js.append("        '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:126px;height:22px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
+        js.append("        '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:132px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
         js.append("        '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
         js.append("        '.sm-mode.active{display:flex;}' +\n");
         js.append("        '.sm-lbl{font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;color:#38bdf8;letter-spacing:0.3px;margin-right:3px;flex-shrink:0;}' +\n");
