@@ -626,9 +626,6 @@ private void injectReactiveDecksAndTheme() {
         js.append("        if (typeof skinIds !== 'undefined') document.documentElement.setAttribute('data-skin', skinIds[sIdx % skinIds.length]);\n");
         js.append("        if (typeof dispIds !== 'undefined') document.documentElement.setAttribute('data-display', dispIds[dIdx % dispIds.length]);\n");
         js.append("        if (typeof bgIds !== 'undefined') document.documentElement.setAttribute('data-bg', bgIds[bIdx % bgIds.length]);\n");
-        js.append("        var br = (localStorage.getItem('proscan_custom_brand_v1')||'PROSCAN').trim();\n");
-        js.append("        var bs = document.getElementById('brand-logo-slot');\n");
-        js.append("        if (bs) bs.innerHTML = '<div class=\"brand-henus\"><span class=\"henus-mark\">'+br+'</span><span class=\"henus-sub\" id=\"brand-sub-mode\">ARCHIVE</span></div>';\n");
         js.append("      }\n");
         js.append("    }\n");
         js.append("    var nativeSt = ").append(safeStations).append(";\n");
@@ -643,7 +640,10 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '@keyframes smoothFadeIn{0%{opacity:0;}100%{opacity:1;}}' +\n");
         js.append("    '#device-wrapper{animation:smoothFadeIn 0.25s ease-out forwards;transition:opacity 0.2s ease!important;}' +\n");
         js.append("    '#device-wrapper.fading-out{opacity:0!important;}' +\n");
-        js.append("    '.scanner-display{height:252px!important;}.top-controls-container{height:28px!important;}.buttons-box{gap:7px!important;}#mech-bay{height:216px!important;}' +\n");
+        js.append("    '.scanner-display{height:252px!important;transition:height 0.22s ease!important;}.top-controls-container{height:28px!important;}.buttons-box{gap:7px!important;}#mech-bay{height:216px!important;}' +\n");
+        /* LITE MODE on Archive & Radio: Hide 3D Deck Bay and expand Log Screen to 468px! */
+        js.append("    'html[data-deck=\"lite\"] #mech-bay{display:none!important;}' +\n");
+        js.append("    'html[data-deck=\"lite\"] .scanner-display{height:468px!important;}' +\n");
         js.append("    '#playlist-box{overflow-y:scroll!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior:contain!important;}' +\n");
         js.append("    '.rec-row{touch-action:pan-y!important;}' +\n");
         js.append("    '.rec-row.playing, .rec-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
@@ -671,13 +671,27 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '.radio-crud-bar{display:none;grid-template-columns:2fr 1fr 1fr 1fr!important;gap:5px!important;height:28px!important;}' +\n");
         js.append("    '.radio-crud-bar .btn{font-size:9.5px!important;font-weight:800!important;padding:2px!important;}' +\n");
 
-        /* Completely Hide Unwanted Elements (Note: #btn-filter-unread is restored!) */
+        /* Completely Hide Unwanted Elements */
         js.append("    '#date-select, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
 
-        /* Vertically Stacked Brand */
-        js.append("    '.brand-henus{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:1px!important;line-height:1!important;white-space:nowrap!important;}' +\n");
-        js.append("    '.brand-henus .henus-mark{font-size:10px!important;letter-spacing:1.5px!important;padding:0 4px!important;border-left:1.5px solid var(--brand-accent,#38bdf8)!important;border-right:1.5px solid var(--brand-accent,#38bdf8)!important;text-transform:uppercase!important;}' +\n");
-        js.append("    '.brand-henus .henus-sub{font-size:6.5px!important;letter-spacing:2px!important;line-height:1!important;margin-top:1px!important;}' +\n");
+        /* 5-Style Live Signal Meter in #brand-logo-slot on Archive & Radio */
+        js.append("    '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:126px;height:22px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
+        js.append("    '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
+        js.append("    '.sm-mode.active{display:flex;}' +\n");
+        js.append("    '.sm-lbl{font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;color:#38bdf8;letter-spacing:0.3px;margin-right:3px;flex-shrink:0;}' +\n");
+        js.append("    '.sm-bar-wrap{display:flex;align-items:center;gap:2px;flex:1;height:11px;justify-content:space-between;}' +\n");
+        js.append("    '.sm-seg{flex:1;height:100%;border-radius:1px;background:#1e293b;transition:background 0.04s linear;}' +\n");
+        js.append("    '.sm-vu-wrap{width:100%;height:100%;background:linear-gradient(90deg,#fef9c3 0%,#fde047 68%,#f59e0b 100%);border-radius:3px;position:relative;overflow:hidden;border:1px solid #000;box-shadow:inset 0 1px 3px rgba(0,0,0,0.45);}' +\n");
+        js.append("    '.sm-vu-wrap::after{content:\"\";position:absolute;left:3px;right:3px;bottom:2px;height:3px;background:repeating-linear-gradient(90deg,#1e293b 0px,#1e293b 1px,transparent 1px,transparent 6px);opacity:0.55;pointer-events:none;}' +\n");
+        js.append("    '.sm-vu-scale{position:absolute;top:1px;left:4px;right:4px;font-family:monospace;font-size:6.5px;font-weight:900;color:#1e293b;display:flex;justify-content:space-between;line-height:1;z-index:1;pointer-events:none;}' +\n");
+        js.append("    '#sm-vu-needle{position:absolute;top:0;bottom:0;left:3px;width:2.5px;background:#dc2626;border-radius:1px;box-shadow:0 0 4px rgba(220,38,38,0.9),1px 0 2px rgba(0,0,0,0.6);transition:left 0.04s linear;z-index:2;}' +\n");
+        js.append("    '.sm-spec-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:2px;width:100%;height:15px;padding-top:1px;}' +\n");
+        js.append("    '.sm-spec-bar{flex:1;height:2px;background:linear-gradient(180deg,#ef4444 0%,#facc15 35%,#22c55e 100%);border-radius:1px 1px 0 0;transition:height 0.04s linear;}' +\n");
+        js.append("    '#sm-scope-canvas{width:100%;height:16px;display:block;}' +\n");
+        js.append("    '.sm-dig-wrap{display:flex;align-items:center;justify-content:space-between;width:100%;gap:4px;font-family:\"JetBrains Mono\",monospace;}' +\n");
+        js.append("    '#sm-dig-txt{font-size:8.5px;font-weight:900;color:#39ff14;min-width:46px;text-align:left;letter-spacing:-0.3px;}' +\n");
+        js.append("    '.sm-peak-track{flex:1;height:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;overflow:hidden;position:relative;}' +\n");
+        js.append("    '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.04s linear;}' +\n");
 
         js.append("    '#deck-vinyl{background:radial-gradient(circle at 46% 54%,#1e2229 0%,#0c0e12 85%)!important;}' +\n");
         js.append("    '.tt-platter{position:absolute!important;left:90px!important;top:38px!important;width:140px!important;height:140px!important;box-shadow:0 8px 20px rgba(0,0,0,0.95),0 0 0 3px #18181b!important;}' +\n");
@@ -715,6 +729,143 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
         js.append("    '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("  document.head.appendChild(st);\n");
+
+        /* Add 6th Deck Option: DECK: LITE (Hides 3D deck bay, expands Log Screen to 468px!) */
+        js.append("  if (typeof decks !== 'undefined' && !decks.some(function(d){ return d.id === 'lite'; })) {\n");
+        js.append("    decks.push({ id: 'lite', btn: 'DECK: LITE', hud: 'ARCHIVE // LITE LOG VIEW' });\n");
+        js.append("  }\n");
+        js.append("  var savedDeckIdx = parseInt(localStorage.getItem('proscan_deck_idx') || '0', 10) || 0;\n");
+        js.append("  if (typeof applyDeck === 'function') applyDeck(savedDeckIdx);\n");
+
+        /* Long-press on DECK button toggles straight to/from DECK: LITE */
+        js.append("  var cycDeckBtn = document.getElementById('btn-cycle-deck');\n");
+        js.append("  if (cycDeckBtn) {\n");
+        js.append("    var newCycBtn = cycDeckBtn.cloneNode(true);\n");
+        js.append("    cycDeckBtn.parentNode.replaceChild(newCycBtn, cycDeckBtn);\n");
+        js.append("    var dHoldTimer = null, dLongFired = false;\n");
+        js.append("    newCycBtn.addEventListener('pointerdown', function() {\n");
+        js.append("      clearTimeout(dHoldTimer); dLongFired = false;\n");
+        js.append("      dHoldTimer = setTimeout(function() {\n");
+        js.append("        dHoldTimer = null; dLongFired = true;\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(35);\n");
+        js.append("        var liteIdx = decks.findIndex(function(d){ return d.id === 'lite'; });\n");
+        js.append("        if (liteIdx !== -1) {\n");
+        js.append("          if (deckIdx === liteIdx) {\n");
+        js.append("            applyDeck(window.__prevFullDeckIdx || 0);\n");
+        js.append("          } else {\n");
+        js.append("            window.__prevFullDeckIdx = deckIdx;\n");
+        js.append("            applyDeck(liteIdx);\n");
+        js.append("          }\n");
+        js.append("        }\n");
+        js.append("      }, 480);\n");
+        js.append("    });\n");
+        js.append("    newCycBtn.addEventListener('pointerup', function() {\n");
+        js.append("      var wasTap = dHoldTimer !== null; clearTimeout(dHoldTimer); dHoldTimer = null;\n");
+        js.append("      if (wasTap && !dLongFired) {\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(15);\n");
+        js.append("        applyDeck(deckIdx + 1);\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("    newCycBtn.addEventListener('pointerleave', function() { clearTimeout(dHoldTimer); dHoldTimer = null; });\n");
+        js.append("    newCycBtn.addEventListener('pointercancel', function() { clearTimeout(dHoldTimer); dHoldTimer = null; });\n");
+        js.append("  }\n");
+
+        /* Inject 5-Style Audio-Reactive Signal Meter into #brand-logo-slot on Archive & Radio */
+        js.append("  var bSlot = document.getElementById('brand-logo-slot');\n");
+        js.append("  if (bSlot && !document.getElementById('sig-meter-host')) {\n");
+        js.append("    window.__sigMeterStyle = parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0;\n");
+        js.append("    var segHtml = ''; for (var s=0; s<12; s++) segHtml += '<div class=\"sm-seg\"></div>';\n");
+        js.append("    var specHtml = ''; for (var sp=0; sp<10; sp++) specHtml += '<div class=\"sm-spec-bar\"></div>';\n");
+        js.append("    bSlot.innerHTML = '<div id=\"sig-meter-host\" title=\"Tap to cycle Signal Meter style\">' +\n");
+        js.append("      '<div class=\"sm-mode\" id=\"sm-mode-0\"><span class=\"sm-lbl\">S</span><div class=\"sm-bar-wrap\" id=\"sm-led-bars\">' + segHtml + '</div></div>' +\n");
+        js.append("      '<div class=\"sm-mode\" id=\"sm-mode-1\"><div class=\"sm-vu-wrap\"><div class=\"sm-vu-scale\"><span>S1</span><span>3</span><span>5</span><span>7</span><span>9</span><span style=\"color:#dc2626;\">+30</span></div><div id=\"sm-vu-needle\"></div></div></div>' +\n");
+        js.append("      '<div class=\"sm-mode\" id=\"sm-mode-2\"><span class=\"sm-lbl\">EQ</span><div class=\"sm-spec-wrap\" id=\"sm-spec-bars\">' + specHtml + '</div></div>' +\n");
+        js.append("      '<div class=\"sm-mode\" id=\"sm-mode-3\"><canvas id=\"sm-scope-canvas\" width=\"114\" height=\"16\"></canvas></div>' +\n");
+        js.append("      '<div class=\"sm-mode\" id=\"sm-mode-4\"><div class=\"sm-dig-wrap\"><span id=\"sm-dig-txt\">S0 -98dB</span><div class=\"sm-peak-track\"><div id=\"sm-peak-fill\"></div></div></div></div>' +\n");
+        js.append("    '</div>';\n");
+        js.append("    window.__applyPlayerSigMeterStyle = function(idx) {\n");
+        js.append("      window.__sigMeterStyle = ((idx % 5) + 5) % 5;\n");
+        js.append("      localStorage.setItem('proscan_sig_meter_style_v1', String(window.__sigMeterStyle));\n");
+        js.append("      for (var m = 0; m < 5; m++) {\n");
+        js.append("        var el = document.getElementById('sm-mode-' + m);\n");
+        js.append("        if (el) el.classList.toggle('active', m === window.__sigMeterStyle);\n");
+        js.append("      }\n");
+        js.append("    };\n");
+        js.append("    document.getElementById('sig-meter-host').addEventListener('click', function() {\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("      window.__applyPlayerSigMeterStyle((window.__sigMeterStyle || 0) + 1);\n");
+        js.append("    });\n");
+        js.append("    window.__applyPlayerSigMeterStyle(window.__sigMeterStyle);\n");
+
+        js.append("    var pSmSmooth = 0, pSmPhase = 0;\n");
+        js.append("    function updatePlayerTopSignalMeter() {\n");
+        js.append("      requestAnimationFrame(updatePlayerTopSignalMeter);\n");
+        js.append("      var target = isPlayingNow ? (window.__audioLevel || 0) : 0;\n");
+        js.append("      pSmSmooth += (target - pSmSmooth) * (target > pSmSmooth ? 0.35 : 0.18);\n");
+        js.append("      if (pSmSmooth < 0.01) pSmSmooth = 0;\n");
+        js.append("      var stIdx = window.__sigMeterStyle || 0;\n");
+        js.append("      if (stIdx === 0) {\n");
+        js.append("        var activeSegs = pSmSmooth < 0.03 ? 0 : Math.min(12, Math.ceil(pSmSmooth * 12));\n");
+        js.append("        var segs = document.querySelectorAll('#sm-led-bars .sm-seg');\n");
+        js.append("        for (var k = 0; k < segs.length; k++) {\n");
+        js.append("          if (k < activeSegs) {\n");
+        js.append("            var col = k >= 9 ? '#ef4444' : (k >= 6 ? '#facc15' : '#22c55e');\n");
+        js.append("            segs[k].style.background = col; segs[k].style.boxShadow = '0 0 4px ' + col;\n");
+        js.append("          } else {\n");
+        js.append("            segs[k].style.background = '#1e293b'; segs[k].style.boxShadow = 'none';\n");
+        js.append("          }\n");
+        js.append("        }\n");
+        js.append("      } else if (stIdx === 1) {\n");
+        js.append("        var ndl = document.getElementById('sm-vu-needle');\n");
+        js.append("        if (ndl) {\n");
+        js.append("          var pct = Math.min(100, Math.max(0, pSmSmooth * 100));\n");
+        js.append("          ndl.style.left = 'calc(3px + ' + (pct * 0.92).toFixed(1) + '%)';\n");
+        js.append("        }\n");
+        js.append("      } else if (stIdx === 2) {\n");
+        js.append("        var bars = document.querySelectorAll('#sm-spec-bars .sm-spec-bar');\n");
+        js.append("        for (var b = 0; b < bars.length; b++) {\n");
+        js.append("          var h = 2;\n");
+        js.append("          if (pSmSmooth >= 0.03) {\n");
+        js.append("            var bell = Math.sin(((b + 1) / 11) * Math.PI);\n");
+        js.append("            var wv = 0.55 + 0.45 * Math.sin(b * 0.8 + pSmPhase) * Math.cos(b * 0.4 - pSmPhase * 0.7);\n");
+        js.append("            h = Math.max(2, Math.min(15, Math.round(bell * wv * pSmSmooth * 17)));\n");
+        js.append("          }\n");
+        js.append("          bars[b].style.height = h + 'px';\n");
+        js.append("        }\n");
+        js.append("      } else if (stIdx === 3) {\n");
+        js.append("        var cv = document.getElementById('sm-scope-canvas');\n");
+        js.append("        if (cv) {\n");
+        js.append("          var c = cv.getContext('2d'), W = cv.width, H = cv.height;\n");
+        js.append("          c.clearRect(0, 0, W, H);\n");
+        js.append("          c.strokeStyle = pSmSmooth >= 0.03 ? '#39ff14' : '#334155';\n");
+        js.append("          c.lineWidth = 1.4; c.beginPath();\n");
+        js.append("          for (var x = 0; x < W; x += 2) {\n");
+        js.append("            var env = Math.sin((x / W) * Math.PI);\n");
+        js.append("            var y = (H / 2) + Math.sin(x * 0.14 + pSmPhase) * Math.cos(x * 0.06 - pSmPhase * 0.5) * env * (pSmSmooth * (H * 0.48));\n");
+        js.append("            if (x === 0) c.moveTo(x, y); else c.lineTo(x, y);\n");
+        js.append("          }\n");
+        js.append("          c.stroke();\n");
+        js.append("        }\n");
+        js.append("      } else if (stIdx === 4) {\n");
+        js.append("        var dTxt = document.getElementById('sm-dig-txt');\n");
+        js.append("        var pFill = document.getElementById('sm-peak-fill');\n");
+        js.append("        if (dTxt) {\n");
+        js.append("          if (pSmSmooth < 0.03) {\n");
+        js.append("            dTxt.innerText = 'S0 -98dB'; dTxt.style.color = '#64748b';\n");
+        js.append("          } else {\n");
+        js.append("            var sUnit = Math.min(9, Math.max(1, Math.round(pSmSmooth * 10)));\n");
+        js.append("            var dbVal = -92 + Math.round(pSmSmooth * 58);\n");
+        js.append("            var plusStr = pSmSmooth > 0.82 ? ('S9+' + Math.round((pSmSmooth - 0.8) * 150)) : ('S' + sUnit + ' ' + dbVal + 'dB');\n");
+        js.append("            dTxt.innerText = plusStr;\n");
+        js.append("            dTxt.style.color = pSmSmooth > 0.78 ? '#facc15' : '#39ff14';\n");
+        js.append("          }\n");
+        js.append("        }\n");
+        js.append("        if (pFill) pFill.style.width = Math.min(100, Math.round(pSmSmooth * 100)) + '%';\n");
+        js.append("      }\n");
+        js.append("      pSmPhase += isPlayingNow ? (0.14 + pSmSmooth * 0.25) : 0.02;\n");
+        js.append("    }\n");
+        js.append("    updatePlayerTopSignalMeter();\n");
+        js.append("  }\n");
 
         js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  if (pClk && !document.getElementById('player-bat-hud')) {\n");
@@ -1242,7 +1393,6 @@ private void injectReactiveDecksAndTheme() {
         js.append("      setPlayingUI(false);\n");
         js.append("      var swBtn = document.getElementById('btn-switch-radio-archive');\n");
         js.append("      var navRowEl = swBtn ? swBtn.parentNode : document.querySelector('.player-nav-row');\n");
-        js.append("      var subBrand = document.getElementById('brand-sub-mode');\n");
         js.append("      var hdr = document.querySelector('.screen-log-header');\n");
         js.append("      var fRowEl = document.getElementById('date-select').parentNode;\n");
         js.append("      var cRowEl = document.getElementById('radio-crud-row');\n");
@@ -1251,7 +1401,6 @@ private void injectReactiveDecksAndTheme() {
         js.append("      if (window.__isBroadcastRadioMode) {\n");
         js.append("        if (navRowEl) navRowEl.classList.add('radio-mode-nav');\n");
         js.append("        if (swBtn) swBtn.innerHTML = 'ARCHIVE';\n");
-        js.append("        if (subBrand) subBrand.innerText = 'TUNER';\n");
         js.append("        document.getElementById('deck-mode-hud').innerText = 'BROADCAST // DAB+ FM TUNER';\n");
         js.append("        if (hdr) {\n");
         js.append("          hdr.style.gridTemplateColumns = '36px 68px 48px 1fr';\n");
@@ -1267,7 +1416,6 @@ private void injectReactiveDecksAndTheme() {
         js.append("      } else {\n");
         js.append("        if (navRowEl) navRowEl.classList.remove('radio-mode-nav');\n");
         js.append("        if (swBtn) swBtn.innerHTML = 'RADIO &#9654;';\n");
-        js.append("        if (subBrand) subBrand.innerText = 'ARCHIVE';\n");
         js.append("        if (typeof applyDeck === 'function') applyDeck(deckIdx);\n");
         js.append("        if (hdr) {\n");
         js.append("          hdr.style.gridTemplateColumns = '62px 52px 58px 34px 1fr';\n");
