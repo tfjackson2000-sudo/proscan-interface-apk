@@ -104,6 +104,92 @@ public class PlayerActivity extends Activity {
     private boolean isLiveRadioStream = false;
     private volatile int currentStreamReqId = 0;
     private float[] currentEnvelope = new float[0];
+    private boolean bedroomLampOn = false;
+
+    private void triggerAlexaWebhook(final boolean turnOn) {
+        final String offUrl = prefs.getString("alexa_lamp_off_url", "").trim();
+        final String onUrl = prefs.getString("alexa_lamp_on_url", "").trim();
+        if (offUrl.isEmpty() && onUrl.isEmpty()) {
+            showAlexaLampSetupDialog();
+            return;
+        }
+        final String targetUrl;
+        final String actionLabel;
+        if (!offUrl.isEmpty() && !onUrl.isEmpty()) {
+            bedroomLampOn = turnOn;
+            targetUrl = bedroomLampOn ? onUrl : offUrl;
+            actionLabel = bedroomLampOn ? "Bedroom Lights: ON" : "Bedroom Lights: OFF";
+        } else {
+            bedroomLampOn = false;
+            targetUrl = !offUrl.isEmpty() ? offUrl : onUrl;
+            actionLabel = "Bedroom Lights: Triggered";
+        }
+        if (playerWeb != null) {
+            playerWeb.evaluateJavascript("var lp=document.getElementById('player-lamp-pill');if(lp)lp.classList.toggle('active'," + bedroomLampOn + ");", null);
+        }
+        Toast.makeText(this, actionLabel, Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
+            try {
+                HttpURLConnection conn = (HttpURLConnection) new URL(targetUrl).openConnection();
+                conn.setConnectTimeout(6000);
+                conn.setReadTimeout(6000);
+                conn.setRequestMethod("GET");
+                conn.setRequestProperty("Cache-Control", "no-cache");
+                int code = conn.getResponseCode();
+                conn.disconnect();
+                if (code < 200 || code >= 400) {
+                    mainHandler.post(() -> Toast.makeText(PlayerActivity.this, "Routine HTTP " + code, Toast.LENGTH_SHORT).show());
+                }
+            } catch (Exception e) {
+                mainHandler.post(() -> Toast.makeText(PlayerActivity.this, "Routine failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private void showAlexaLampSetupDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        layout.setPadding(pad, pad, pad, pad);
+
+        TextView l1 = new TextView(this);
+        l1.setText("Lights OFF Alexa Routine URL (Virtual Buttons / Voice Monkey):");
+        layout.addView(l1);
+        final EditText offInput = new EditText(this);
+        offInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        offInput.setHint("https://api.virtualbuttons.com/v1?...");
+        offInput.setText(prefs.getString("alexa_lamp_off_url", ""));
+        layout.addView(offInput);
+
+        TextView l2 = new TextView(this);
+        l2.setText("\nLights ON Alexa Routine URL (Optional - leave blank for OFF only):");
+        layout.addView(l2);
+        final EditText onInput = new EditText(this);
+        onInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        onInput.setHint("Optional second routine URL");
+        onInput.setText(prefs.getString("alexa_lamp_on_url", ""));
+        layout.addView(onInput);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Bedroom Lights (Alexa Routine)")
+                .setView(layout)
+                .setPositiveButton("Save", (d, w) -> {
+                    prefs.edit()
+                            .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
+                            .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
+                            .apply();
+                    Toast.makeText(PlayerActivity.this, "Bedroom Light Routine Saved! Tap LAMP to trigger.", Toast.LENGTH_SHORT).show();
+                })
+                .setNeutralButton("Test OFF Now", (d, w) -> {
+                    prefs.edit()
+                            .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
+                            .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
+                            .apply();
+                    triggerAlexaWebhook(false);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
 
     private synchronized void setupEqualizer(int audioSessionId) {
         releaseEqualizer();
@@ -676,7 +762,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '#date-select, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
 
         /* 5-Style Live Signal Meter in #brand-logo-slot on Archive & Radio */
-        js.append("    '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:132px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
+        js.append("    '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:128px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
         js.append("    '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
         js.append("    '.sm-mode.active{display:flex;}' +\n");
         js.append("    '.sm-lbl{font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;color:#38bdf8;letter-spacing:0.3px;margin-right:3px;flex-shrink:0;}' +\n");
@@ -718,9 +804,10 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '#cd-laser-sled{position:absolute;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle,#ff2222 20%,rgba(255,0,0,0.7) 55%,transparent 100%);box-shadow:0 0 10px #ff0000;z-index:2;pointer-events:none;transition:transform 0.1s linear;}' +\n");
         js.append("    '#reactive-vu-strip{position:absolute;bottom:5px;left:50%;transform:translateX(-50%);display:flex;gap:3px;z-index:12;background:rgba(0,0,0,0.78);padding:3px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);}' +\n");
         js.append("    '.rvu-seg{width:6px;height:5px;border-radius:1px;background:#1e293b;}' +\n");
-        js.append("    '#player-wake-pill{display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:1px 5px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:5px;}' +\n");
-        js.append("    '#player-wake-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
+        js.append("    '#player-wake-pill, #player-lamp-pill{display:inline-flex;align-items:center;gap:3px;cursor:pointer;padding:1px 5px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:4px;touch-action:manipulation;}' +\n");
+        js.append("    '#player-wake-dot, #player-lamp-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
         js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}' +\n");
+        js.append("    '#player-lamp-pill.active #player-lamp-dot{background:#facc15;box-shadow:0 0 7px #facc15;}' +\n");
         js.append("    '#btn-player-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-left:6px;cursor:pointer;touch-action:manipulation;}' +\n");
         js.append("    '#btn-player-exit .exit-cap{width:22px;height:10px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}' +\n");
         js.append("    '#btn-player-exit .exit-cap::after{content:\"\";width:7px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}' +\n");
@@ -899,9 +986,16 @@ private void injectReactiveDecksAndTheme() {
         js.append("    var wPill = document.createElement('button');\n");
         js.append("    wPill.id = 'player-wake-pill'; wPill.type = 'button';\n");
         js.append("    wPill.className = ").append(wakePref ? "'active'" : "''").append(";\n");
-        js.append("    wPill.innerHTML = '<span id=\"player-wake-dot\"></span><span style=\"font-size:7.5px;font-weight:900;color:var(--toggle-color);\">WAKE</span>';\n");
+        js.append("    wPill.innerHTML = '<span id=\"player-wake-dot\"></span><span style=\"font-size:7px;font-weight:900;color:var(--toggle-color);\">WAKE</span>';\n");
+
+        /* LAMP Button (Tap = Trigger Alexa Bedroom Lights Routine, Hold = Setup URL) */
+        js.append("    var lPill = document.createElement('button');\n");
+        js.append("    lPill.id = 'player-lamp-pill'; lPill.type = 'button';\n");
+        js.append("    lPill.innerHTML = '<span id=\"player-lamp-dot\"></span><span style=\"font-size:7px;font-weight:900;color:var(--toggle-color);\">LAMP</span>';\n");
+
         js.append("    recHud.parentNode.insertBefore(wWrap, recHud);\n");
         js.append("    wWrap.appendChild(wPill);\n");
+        js.append("    wWrap.appendChild(lPill);\n");
         js.append("    wWrap.appendChild(recHud);\n");
         js.append("    window.__playerWakeActive = ").append(wakePref).append(";\n");
         js.append("    wPill.addEventListener('click', function() {\n");
@@ -912,6 +1006,29 @@ private void injectReactiveDecksAndTheme() {
         js.append("        window.PlayerBridge.setWakeLock(window.__playerWakeActive);\n");
         js.append("      }\n");
         js.append("    });\n");
+
+        js.append("    window.__playerLampState = false;\n");
+        js.append("    var lpTimer = null, lpLong = false;\n");
+        js.append("    lPill.addEventListener('pointerdown', function() {\n");
+        js.append("      clearTimeout(lpTimer); lpLong = false;\n");
+        js.append("      lpTimer = setTimeout(function() {\n");
+        js.append("        lpTimer = null; lpLong = true;\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(40);\n");
+        js.append("        if (window.PlayerBridge && window.PlayerBridge.openLampSetup) window.PlayerBridge.openLampSetup();\n");
+        js.append("      }, 500);\n");
+        js.append("    });\n");
+        js.append("    lPill.addEventListener('pointerup', function() {\n");
+        js.append("      var wasTap = lpTimer !== null; clearTimeout(lpTimer); lpTimer = null;\n");
+        js.append("      if (wasTap && !lpLong) {\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("        window.__playerLampState = !window.__playerLampState;\n");
+        js.append("        if (window.PlayerBridge && window.PlayerBridge.triggerBedroomLamp) {\n");
+        js.append("          window.PlayerBridge.triggerBedroomLamp(window.__playerLampState);\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("    lPill.addEventListener('pointerleave', function() { clearTimeout(lpTimer); lpTimer = null; });\n");
+        js.append("    lPill.addEventListener('pointercancel', function() { clearTimeout(lpTimer); lpTimer = null; });\n");
         js.append("  }\n");
 
         js.append("  var contHud = document.getElementById('cont-status-hud');\n");
@@ -1473,7 +1590,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("    var box = document.getElementById('playlist-box');\n");
         js.append("    var prevScroll = box.scrollTop;\n");
         js.append("    if (window.__isBroadcastRadioMode) {\n");
-        js.append("      document.getElementById('rec-count-hud').innerText = window.__radioStations.length + ' STATIONS';\n");
+        js.append("      document.getElementById('rec-count-hud').innerText = window.__radioStations.length + ' ST';\n");
         js.append("      var rHtml = '';\n");
         js.append("      for (var j = 0; j < window.__radioStations.length; j++) {\n");
         js.append("        var st = window.__radioStations[j];\n");
@@ -1506,7 +1623,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("      if (q && !r.name.toLowerCase().includes(q) && !r.freq.toLowerCase().includes(q) && !r.timeStr.toLowerCase().includes(q)) return false;\n");
         js.append("      return true;\n");
         js.append("    });\n");
-        js.append("    document.getElementById('rec-count-hud').innerText = filteredRecs.length + ' RECORDINGS';\n");
+        js.append("    document.getElementById('rec-count-hud').innerText = filteredRecs.length + ' RECS';\n");
         js.append("    if (!filteredRecs.length) {\n");
         js.append("      box.innerHTML = '<div style=\"padding:14px;text-align:center;opacity:0.6;font-size:10px;\">No recordings found.</div>';\n");
         js.append("      return;\n");
@@ -1958,6 +2075,16 @@ private void stopNativePlayer() {
 
         @JavascriptInterface
         public String getBatteryStatus() { return getNativeBatteryStatus(); }
+
+        @JavascriptInterface
+        public void triggerBedroomLamp(final boolean turnOn) {
+            mainHandler.post(() -> triggerAlexaWebhook(turnOn));
+        }
+
+        @JavascriptInterface
+        public void openLampSetup() {
+            mainHandler.post(() -> showAlexaLampSetupDialog());
+        }
 
         @JavascriptInterface
         public boolean toggleClarityFilter() {
