@@ -620,9 +620,11 @@ private void injectEnhancements() {
         js.append("        '.sm-lbl{font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;color:#38bdf8;letter-spacing:0.3px;margin-right:3px;flex-shrink:0;}' +\n");
         js.append("        '.sm-bar-wrap{display:flex;align-items:center;gap:2px;flex:1;height:11px;justify-content:space-between;}' +\n");
         js.append("        '.sm-seg{flex:1;height:100%;border-radius:1px;background:#1e293b;transition:background 0.04s linear;}' +\n");
-        js.append("        '.sm-vu-wrap{width:100%;height:100%;background:radial-gradient(circle at 50% 100%,#fef9c3 0%,#fde047 60%,#ca8a04 100%);border-radius:3px;position:relative;overflow:hidden;border:1px solid #000;}' +\n");
-        js.append("        '.sm-vu-scale{position:absolute;top:1px;left:3px;right:3px;font-family:monospace;font-size:6px;font-weight:900;color:#1e293b;display:flex;justify-content:space-between;line-height:1;}' +\n");
-        js.append("        '#sm-vu-needle{position:absolute;bottom:-2px;left:50%;width:1.6px;height:18px;background:#dc2626;transform-origin:bottom center;transform:rotate(-42deg);transition:transform 0.05s ease-out;box-shadow:0 0 2px rgba(0,0,0,0.5);}' +\n");
+        /* Linear VU Dial with vertical indicator bar starting on the far left and moving right with sound */
+        js.append("        '.sm-vu-wrap{width:100%;height:100%;background:linear-gradient(90deg,#fef9c3 0%,#fde047 68%,#f59e0b 100%);border-radius:3px;position:relative;overflow:hidden;border:1px solid #000;box-shadow:inset 0 1px 3px rgba(0,0,0,0.45);}' +\n");
+        js.append("        '.sm-vu-wrap::after{content:\"\";position:absolute;left:3px;right:3px;bottom:2px;height:3px;background:repeating-linear-gradient(90deg,#1e293b 0px,#1e293b 1px,transparent 1px,transparent 6px);opacity:0.55;pointer-events:none;}' +\n");
+        js.append("        '.sm-vu-scale{position:absolute;top:1px;left:4px;right:4px;font-family:monospace;font-size:6.5px;font-weight:900;color:#1e293b;display:flex;justify-content:space-between;line-height:1;z-index:1;pointer-events:none;}' +\n");
+        js.append("        '#sm-vu-needle{position:absolute;top:0;bottom:0;left:3px;width:2.5px;background:#dc2626;border-radius:1px;box-shadow:0 0 4px rgba(220,38,38,0.9),1px 0 2px rgba(0,0,0,0.6);transition:left 0.04s linear;z-index:2;}' +\n");
         js.append("        '.sm-spec-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:2px;width:100%;height:15px;padding-top:1px;}' +\n");
         js.append("        '.sm-spec-bar{flex:1;height:2px;background:linear-gradient(180deg,#ef4444 0%,#facc15 35%,#22c55e 100%);border-radius:1px 1px 0 0;transition:height 0.04s linear;}' +\n");
         js.append("        '#sm-scope-canvas{width:100%;height:16px;display:block;}' +\n");
@@ -745,10 +747,11 @@ private void injectEnhancements() {
         js.append("            }\n");
         js.append("          }\n");
         js.append("        } else if (stIdx === 1) {\n");
+        /* Slide vertical bar from far left (3px) up to far right (calc(100% - 5px)) with the sound */
         js.append("          var ndl = document.getElementById('sm-vu-needle');\n");
         js.append("          if (ndl) {\n");
-        js.append("            var deg = -42 + (smSmoothLvl * 84);\n");
-        js.append("            ndl.style.transform = 'rotate(' + Math.min(42, Math.max(-42, deg)).toFixed(1) + 'deg)';\n");
+        js.append("            var pct = Math.min(100, Math.max(0, smSmoothLvl * 100));\n");
+        js.append("            ndl.style.left = 'calc(3px + ' + (pct * 0.92).toFixed(1) + '%)';\n");
         js.append("          }\n");
         js.append("        } else if (stIdx === 2) {\n");
         js.append("          var bars = document.querySelectorAll('#sm-spec-bars .sm-spec-bar');\n");
