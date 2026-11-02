@@ -1,349 +1,485 @@
-private void stopNativePlayer() {
-        releaseEqualizer();
-        releasePlaybackLocks();
-        currentStreamReqId++;
-        mainHandler.removeCallbacks(progressTicker);
-        isLiveRadioStream = false;
-        if (nativePlayer != null) {
-            try { if (nativePlayer.isPlaying()) nativePlayer.stop(); } catch (Exception ignored) {}
-            try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
-            nativePlayer = null;
+package com.proscan.interfaceapp;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
+import android.content.ContentValues;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.media.AudioAttributes;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
+import android.net.Uri;
+import android.os.BatteryManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.MediaStore;
+import android.speech.tts.TextToSpeech;
+import android.text.InputType;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
+import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class MainActivity extends Activity {
+
+    private static final int REQ_LOAD_JSON = 901;
+
+    private WebView webView;
+    private SharedPreferences prefs;
+    private AudioManager audioManager;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    private boolean userWakeLockEnabled = false;
+    private boolean bgAudioModeEnabled = false;
+    private boolean bedroomLampOn = false;
+    private String activeServerUrl = "";
+    private TextToSpeech tts = null;
+    private volatile boolean ttsReady = false;
+
+    private String lastSpokenText = "";
+    private long lastSpokenTimestamp = 0;
+
+    private void triggerAlexaWebhook(final boolean turnOn) {
+        final String offUrl = prefs.getString("alexa_lamp_off_url", "").trim();
+        final String onUrl = prefs.getString("alexa_lamp_on_url", "").trim();
+        if (offUrl.isEmpty() && onUrl.isEmpty()) {
+            showAlexaLampSetupDialog();
+            return;
         }
-    }
-
-    private float[] extractMp3AmplitudeEnvelope(File mp3File) {
-        int buckets = 240;
-        float[] env = new float[buckets];
-        MediaExtractor extractor = null;
-        MediaCodec codec = null;
-        try {
-            extractor = new MediaExtractor();
-            extractor.setDataSource(mp3File.getAbsolutePath());
-            int numTracks = extractor.getTrackCount();
-            int audioTrack = -1;
-            MediaFormat format = null;
-            String mime = null;
-            for (int i = 0; i < numTracks; i++) {
-                MediaFormat fmt = extractor.getTrackFormat(i);
-                String m = fmt.getString(MediaFormat.KEY_MIME);
-                if (m != null && m.startsWith("audio/")) {
-                    audioTrack = i;
-                    format = fmt;
-                    mime = m;
-                    break;
-                }
-            }
-            if (audioTrack >= 0 && format != null && mime != null) {
-                extractor.selectTrack(audioTrack);
-                codec = MediaCodec.createDecoderByType(mime);
-                codec.configure(format, null, null, 0);
-                codec.start();
-
-                List<Float> windowRmsList = new ArrayList<>(512);
-                MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
-                boolean inputDone = false;
-                boolean outputDone = false;
-                int maxDecodeLoops = 2500;
-
-                while (!outputDone && maxDecodeLoops-- > 0) {
-                    if (!inputDone) {
-                        int inIdx = codec.dequeueInputBuffer(4000);
-                        if (inIdx >= 0) {
-                            ByteBuffer inBuf = codec.getInputBuffer(inIdx);
-                            if (inBuf != null) {
-                                int sampleSize = extractor.readSampleData(inBuf, 0);
-                                if (sampleSize < 0) {
-                                    codec.queueInputBuffer(inIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
-                                    inputDone = true;
-                                } else {
-                                    long pts = extractor.getSampleTime();
-                                    codec.queueInputBuffer(inIdx, 0, sampleSize, pts, 0);
-                                    extractor.advance();
-                                }
-                            }
-                        }
-                    }
-                    int outIdx = codec.dequeueOutputBuffer(info, 4000);
-                    if (outIdx >= 0) {
-                        ByteBuffer outBuf = codec.getOutputBuffer(outIdx);
-                        if (outBuf != null && info.size > 0) {
-                            outBuf.position(info.offset);
-                            outBuf.limit(info.offset + info.size);
-                            ShortBuffer sb = outBuf.order(ByteOrder.nativeOrder()).asShortBuffer();
-                            int nShorts = sb.remaining();
-                            int step = 256;
-                            for (int s = 0; s < nShorts; s += step) {
-                                int end = Math.min(nShorts, s + step);
-                                double sumSq = 0;
-                                int peak = 0;
-                                for (int k = s; k < end; k++) {
-                                    int val = Math.abs((int) sb.get(k));
-                                    if (val > peak) peak = val;
-                                    sumSq += (double) val * (double) val;
-                                }
-                                int count = Math.max(1, end - s);
-                                float rms = (float) Math.sqrt(sumSq / count);
-                                float combined = (rms * 0.65f) + (peak * 0.35f);
-                                windowRmsList.add(combined);
-                            }
-                        }
-                        codec.releaseOutputBuffer(outIdx, false);
-                        if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                            outputDone = true;
-                        }
-                    }
-                }
-
-                if (windowRmsList.size() > 8) {
-                    float maxRms = 1f;
-                    for (float v : windowRmsList) {
-                        if (v > maxRms) maxRms = v;
-                    }
-                    float noiseFloor = maxRms * 0.08f;
-                    int totalWins = windowRmsList.size();
-                    for (int b = 0; b < buckets; b++) {
-                        int wStart = (b * totalWins) / buckets;
-                        int wEnd = Math.max(wStart + 1, ((b + 1) * totalWins) / buckets);
-                        float localMax = 0f;
-                        for (int w = wStart; w < wEnd && w < totalWins; w++) {
-                            float val = windowRmsList.get(w);
-                            if (val > localMax) localMax = val;
-                        }
-                        if (localMax <= noiseFloor) {
-                            env[b] = 0.02f;
-                        } else {
-                            float norm = (localMax - noiseFloor) / Math.max(1f, (maxRms - noiseFloor));
-                            norm = (float) Math.pow(norm, 0.78);
-                            env[b] = Math.min(0.98f, Math.max(0.03f, norm));
-                        }
-                    }
-                    return env;
-                }
-            }
-        } catch (Exception ignored) {
-        } finally {
-            if (codec != null) {
-                try { codec.stop(); } catch (Exception ignored) {}
-                try { codec.release(); } catch (Exception ignored) {}
-            }
-            if (extractor != null) {
-                try { extractor.release(); } catch (Exception ignored) {}
-            }
+        final String targetUrl;
+        final String actionLabel;
+        if (!offUrl.isEmpty() && !onUrl.isEmpty()) {
+            bedroomLampOn = turnOn;
+            targetUrl = bedroomLampOn ? onUrl : offUrl;
+            actionLabel = bedroomLampOn ? "BEDROOM LIGHTS: ON" : "BEDROOM LIGHTS: OFF";
+        } else {
+            bedroomLampOn = false;
+            targetUrl = !offUrl.isEmpty() ? offUrl : onUrl;
+            actionLabel = "BEDROOM LIGHTS: TRIGGERED";
         }
-        return env;
-    }
-
-    private String resolveRedirects(String urlStr) {
-        String current = urlStr;
-        for (int hop = 0; hop < 6; hop++) {
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "var lb=document.getElementById('btn-lamp-toggle');if(lb)lb.classList.toggle('active'," + bedroomLampOn + ");" +
+                    "if(typeof showDisplayHud==='function')showDisplayHud('" + actionLabel + "',1500);",
+                    null
+            );
+        }
+        Toast.makeText(this, actionLabel, Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
             try {
-                HttpURLConnection conn = (HttpURLConnection) new URL(current).openConnection();
-                conn.setInstanceFollowRedirects(false);
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+                HttpURLConnection conn = (HttpURLConnection) new URL(targetUrl).openConnection();
+                conn.setConnectTimeout(6000);
+                conn.setReadTimeout(6000);
+                conn.setRequestMethod("GET");
+                conn.setRequestProperty("Cache-Control", "no-cache");
                 int code = conn.getResponseCode();
-                if (code >= 300 && code < 400) {
-                    String loc = conn.getHeaderField("Location");
-                    conn.disconnect();
-                    if (loc == null || loc.isEmpty()) break;
-                    current = new URL(new URL(current), loc).toString();
-                } else {
-                    conn.disconnect();
-                    break;
-                }
-            } catch (Exception e) {
-                break;
-            }
-        }
-        return current;
-    }
-
-    private void playLiveRadioUrlNatively(final String streamUrl) {
-        stopNativePlayer();
-        acquirePlaybackLocks();
-        final int reqId = ++currentStreamReqId;
-        audioFetchExecutor.execute(() -> {
-            final String resolvedUrl = resolveRedirects(streamUrl);
-            if (reqId != currentStreamReqId) return;
-            mainHandler.post(() -> {
-                if (reqId != currentStreamReqId) return;
-                try {
-                    if (nativePlayer != null) {
-                        try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
-                        nativePlayer = null;
-                    }
-                    isLiveRadioStream = true;
-                    nativePlayer = new MediaPlayer();
-                    if (Build.VERSION.SDK_INT >= 21) {
-                        nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
-                                .setUsage(AudioAttributes.USAGE_MEDIA)
-                                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                                .build());
-                    }
-                    Map<String, String> headers = new HashMap<>();
-                    headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                    nativePlayer.setDataSource(PlayerActivity.this, Uri.parse(resolvedUrl), headers);
-                    nativePlayer.setOnPreparedListener(mp -> {
-                        if (reqId != currentStreamReqId) {
-                            try { mp.stop(); mp.release(); } catch (Exception ignored) {}
-                            return;
-                        }
-                        setupEqualizer(mp.getAudioSessionId());
-                        mp.start();
-                        if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
-                        mainHandler.post(progressTicker);
-                    });
-                    nativePlayer.setOnErrorListener((mp, what, extra) -> {
-                        if (reqId == currentStreamReqId) {
-                            stopNativePlayer();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM OFFLINE');", null);
-                        }
-                        return true;
-                    });
-                    nativePlayer.prepareAsync();
-                } catch (Exception e) {
-                    if (reqId == currentStreamReqId && playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
-                    }
-                }
-            });
-        });
-    }
-
-    private void playDriveFileIdNatively(final String fileId) {
-        stopNativePlayer();
-        acquirePlaybackLocks();
-        final int reqId = ++currentStreamReqId;
-        final String urlStr = "https://drive.usercontent.google.com/download?id=" + fileId + "&export=download";
-        audioFetchExecutor.execute(() -> {
-            try {
-                File tempMp3 = new File(getCacheDir(), "active_track.mp3");
-                URL url = new URL(urlStr);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(9000);
-                conn.setReadTimeout(9000);
-                conn.setInstanceFollowRedirects(true);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                InputStream is = conn.getInputStream();
-                FileOutputStream fos = new FileOutputStream(tempMp3);
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = is.read(buf)) != -1) {
-                    if (reqId != currentStreamReqId) {
-                        fos.close(); is.close(); conn.disconnect();
-                        return;
-                    }
-                    fos.write(buf, 0, n);
-                }
-                fos.close();
-                is.close();
                 conn.disconnect();
-                if (reqId != currentStreamReqId) return;
-
-                final float[] env = extractMp3AmplitudeEnvelope(tempMp3);
-
-                mainHandler.post(() -> {
-                    if (reqId != currentStreamReqId) return;
-                    try {
-                        if (nativePlayer != null) {
-                            try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
-                            nativePlayer = null;
-                        }
-                        isLiveRadioStream = false;
-                        currentEnvelope = env;
-                        nativePlayer = new MediaPlayer();
-                        if (Build.VERSION.SDK_INT >= 21) {
-                            nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
-                                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                    .build());
-                        }
-                        FileInputStream fis = new FileInputStream(tempMp3);
-                        nativePlayer.setDataSource(fis.getFD());
-                        fis.close();
-                        nativePlayer.setOnPreparedListener(mp -> {
-                            if (reqId != currentStreamReqId) {
-                                try { mp.stop(); mp.release(); } catch (Exception ignored) {}
-                                return;
-                            }
-                            setupEqualizer(mp.getAudioSessionId());
-                            mp.start();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
-                            mainHandler.post(progressTicker);
-                        });
-                        nativePlayer.setOnCompletionListener(mp -> {
-                            stopNativePlayer();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayEnded)window.onNativePlayEnded();", null);
-                        });
-                        nativePlayer.prepareAsync();
-                    } catch (Exception e) {
-                        if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('PLAY ERROR');", null);
-                    }
-                });
+                if (code < 200 || code >= 400) {
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this, "Routine HTTP " + code, Toast.LENGTH_SHORT).show());
+                }
             } catch (Exception e) {
-                mainHandler.post(() -> {
-                    if (reqId == currentStreamReqId && playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
-                    }
-                });
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Routine failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
             }
         });
     }
 
-    private void openAddOrEditStationDialog(final int editIdx, String curName, String curFreq, String curUrl) {
+    private void showAlexaLampSetupDialog() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         int pad = (int) (18 * getResources().getDisplayMetrics().density);
         layout.setPadding(pad, pad, pad, pad);
 
         TextView l1 = new TextView(this);
-        l1.setText("Station Name (e.g. BBC Radio 5 Live):");
+        l1.setText("Lights OFF Alexa Routine URL (Virtual Buttons / Voice Monkey):");
         layout.addView(l1);
-        final EditText nameInput = new EditText(this);
-        nameInput.setText(curName != null ? curName : "");
-        layout.addView(nameInput);
+        final EditText offInput = new EditText(this);
+        offInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        offInput.setHint("https://api.virtualbuttons.com/v1?...");
+        offInput.setText(prefs.getString("alexa_lamp_off_url", ""));
+        layout.addView(offInput);
 
         TextView l2 = new TextView(this);
-        l2.setText("\nFreq / Band Label (e.g. 909 AM or DAB+):");
+        l2.setText("\nLights ON Alexa Routine URL (Optional - leave blank for OFF only):");
         layout.addView(l2);
-        final EditText freqInput = new EditText(this);
-        freqInput.setText(curFreq != null && !curFreq.isEmpty() ? curFreq : "DAB+");
-        layout.addView(freqInput);
-
-        TextView l3 = new TextView(this);
-        l3.setText("\nDirect Stream URL (.mp3 / .aac / .m3u8):");
-        layout.addView(l3);
-        final EditText urlInput = new EditText(this);
-        urlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        urlInput.setText(curUrl != null ? curUrl : "");
-        layout.addView(urlInput);
+        final EditText onInput = new EditText(this);
+        onInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        onInput.setHint("Optional second routine URL");
+        onInput.setText(prefs.getString("alexa_lamp_on_url", ""));
+        layout.addView(onInput);
 
         new AlertDialog.Builder(this)
-                .setTitle(editIdx >= 0 ? "Edit Radio Station" : "Add Radio Station")
+                .setTitle("Bedroom Lights (Alexa Routine)")
                 .setView(layout)
-                .setPositiveButton("Save Station", (d, w) -> {
-                    String n = nameInput.getText().toString().trim();
-                    String f = freqInput.getText().toString().trim();
-                    String u = urlInput.getText().toString().trim();
-                    if (n.isEmpty() || u.isEmpty()) {
-                        Toast.makeText(PlayerActivity.this, "Name and Stream URL required", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    String jsCall = "if(window.onNativeStationSaved)window.onNativeStationSaved("
-                            + editIdx + "," + JSONObject.quote(n) + "," + JSONObject.quote(f) + "," + JSONObject.quote(u) + ");";
-                    if (playerWeb != null) playerWeb.evaluateJavascript(jsCall, null);
+                .setPositiveButton("Save", (d, w) -> {
+                    prefs.edit()
+                            .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
+                            .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
+                            .apply();
+                    Toast.makeText(MainActivity.this, "Bedroom Light Routine Saved! Tap LAMP to trigger.", Toast.LENGTH_SHORT).show();
+                })
+                .setNeutralButton("Test OFF Now", (d, w) -> {
+                    prefs.edit()
+                            .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
+                            .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
+                            .apply();
+                    triggerAlexaWebhook(false);
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
     }
 
-    public class PlayerBridge {
-        @JavascriptInterface
-        public String getServerUrl() { return serverBaseUrl; }
+    private synchronized void initTTS() {
+        try {
+            if (tts != null) {
+                try { tts.stop(); tts.shutdown(); } catch (Exception ignored) {}
+                tts = null;
+            }
+            ttsReady = false;
+            tts = new TextToSpeech(getApplicationContext(), status -> {
+                if (status == TextToSpeech.SUCCESS && tts != null) {
+                    tts.setLanguage(Locale.UK);
+                    tts.setSpeechRate(1.05f);
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        tts.setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .build());
+                    }
+                    ttsReady = true;
+                }
+            });
+        } catch (Exception ignored) {}
+    }
 
+    private void forceStopScannerOnHeadphoneDisconnect() {
+        setBgServiceRunning(false);
+        Runnable stopJs = () -> {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                        "try{if(window.__stopScannerAudioFromBt)window.__stopScannerAudioFromBt();" +
+                        "var p=document.getElementById('audio_player');if(p){p.pause();}" +
+                        "isConnected=false;var b=document.getElementById('btn-audio-toggle');if(b)b.classList.remove('active');}catch(e){}",
+                        null
+                );
+            }
+        };
+        mainHandler.post(stopJs);
+        mainHandler.postDelayed(stopJs, 200);
+        mainHandler.postDelayed(stopJs, 500);
+        mainHandler.post(() -> Toast.makeText(MainActivity.this, "Headphones disconnected — Audio stopped", Toast.LENGTH_SHORT).show());
+    }
+
+    private final BroadcastReceiver noisyAudioReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent == null) return;
+            if (isInitialStickyBroadcast()) return;
+            String act = intent.getAction();
+            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(act)
+                    || (Intent.ACTION_HEADSET_PLUG.equals(act) && intent.getIntExtra("state", -1) == 0)) {
+                forceStopScannerOnHeadphoneDisconnect();
+            }
+        }
+    };
+
+    private final AudioDeviceCallback btDeviceCallback = new AudioDeviceCallback() {
+        @Override
+        public void onAudioDevicesRemoved(AudioDeviceInfo[] removedDevices) {
+            if (removedDevices == null) return;
+            for (AudioDeviceInfo dev : removedDevices) {
+                int t = dev.getType();
+                if (t == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                        || t == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                        || t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                        || t == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                        || t == AudioDeviceInfo.TYPE_USB_HEADSET
+                        || t == 26
+                        || t == 27) {
+                    forceStopScannerOnHeadphoneDisconnect();
+                    break;
+                }
+            }
+        }
+    };
+
+    private final Runnable periodicInjector = new Runnable() {
+        @Override
+        public void run() {
+            if (webView != null) {
+                injectEnhancements();
+            }
+            mainHandler.postDelayed(this, 1800);
+        }
+    };
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        hideSystemUI();
+
+        if (Build.VERSION.SDK_INT >= 33) {
+            try {
+                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 101);
+            } catch (Exception ignored) {}
+        }
+
+        try {
+            IntentFilter f = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+            f.addAction(Intent.ACTION_HEADSET_PLUG);
+            registerReceiver(noisyAudioReceiver, f);
+        } catch (Exception ignored) {}
+
+        try {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
+                audioManager.registerAudioDeviceCallback(btDeviceCallback, mainHandler);
+            }
+        } catch (Exception ignored) {}
+
+        prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
+
+        initTTS();
+
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.BLACK);
+
+        webView = new WebView(this) {
+            @Override
+            public void setKeepScreenOn(boolean keepScreenOn) {
+                super.setKeepScreenOn(userWakeLockEnabled);
+            }
+
+            @Override
+            protected void onWindowVisibilityChanged(int visibility) {
+                if (bgAudioModeEnabled) {
+                    super.onWindowVisibilityChanged(View.VISIBLE);
+                } else {
+                    super.onWindowVisibilityChanged(visibility);
+                }
+            }
+        };
+        webView.setKeepScreenOn(false);
+        setupWebView();
+        root.addView(webView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
+        setContentView(root);
+
+        userWakeLockEnabled = prefs.getBoolean("wake_lock_on", true);
+        if (userWakeLockEnabled) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            webView.setKeepScreenOn(true);
+        }
+
+        String localUrl = prefs.getString("local_url", "");
+        String tailscaleUrl = prefs.getString("tailscale_url", "");
+
+        if (localUrl.isEmpty() && tailscaleUrl.isEmpty()) {
+            showSetupDialog(true);
+        } else {
+            connectSmart(localUrl, tailscaleUrl);
+        }
+    }
+
+    private String getNativeBatteryStatus() {
+        try {
+            IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+            Intent b = registerReceiver(null, ifilter);
+            if (b != null) {
+                int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+                int status = b.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+                boolean charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
+                if (level >= 0 && scale > 0) {
+                    int pct = Math.round((level * 100f) / scale);
+                    return (charging ? "⚡" : "") + pct + "%";
+                }
+            }
+        } catch (Exception ignored) {}
+        return "";
+    }
+
+    private void setBgServiceRunning(boolean enable) {
+        bgAudioModeEnabled = enable;
+        Intent svc = new Intent(this, AudioKeepAliveService.class);
+        try {
+            if (enable) {
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(svc);
+                else startService(svc);
+            } else {
+                stopService(svc);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast) {
+        try {
+            JSONObject root = new JSONObject();
+            root.put("local_url", prefs.getString("local_url", ""));
+            root.put("tailscale_url", prefs.getString("tailscale_url", ""));
+            root.put("alexa_lamp_off_url", prefs.getString("alexa_lamp_off_url", ""));
+            root.put("alexa_lamp_on_url", prefs.getString("alexa_lamp_on_url", ""));
+            JSONObject ws = webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject();
+            String rad = prefs.getString("radio_stations_json", "");
+            if (!rad.isEmpty() && !ws.has("proscan_radio_stations_v3")) {
+                ws.put("proscan_radio_stations_v3", rad);
+            }
+            root.put("web_storage", ws);
+            byte[] bytes = root.toString(2).getBytes(StandardCharsets.UTF_8);
+
+            prefs.edit().putString("last_backup_json", root.toString()).apply();
+
+            if (Build.VERSION.SDK_INT >= 29) {
+                try {
+                    getContentResolver().delete(
+                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            MediaStore.MediaColumns.DISPLAY_NAME + "=?",
+                            new String[]{"proscan_presets_backup.json"}
+                    );
+                } catch (Exception ignored) {}
+
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, "proscan_presets_backup.json");
+                values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+
+                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri != null) {
+                    OutputStream os = getContentResolver().openOutputStream(uri);
+                    if (os != null) {
+                        os.write(bytes);
+                        os.close();
+                    }
+                }
+            } else {
+                File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                File file = new File(dir, "proscan_presets_backup.json");
+                FileOutputStream fos = new FileOutputStream(file);
+                fos.write(bytes);
+                fos.close();
+            }
+
+            if (showToast) {
+                Toast.makeText(this, "Saved to Downloads/proscan_presets_backup.json", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            if (showToast) {
+                Toast.makeText(this, "Backup error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void restoreFromJsonString(String jsonStr) {
+        try {
+            JSONObject root = new JSONObject(jsonStr);
+            String loc = root.optString("local_url", "");
+            String ts = root.optString("tailscale_url", "");
+            String lampOff = root.optString("alexa_lamp_off_url", "");
+            String lampOn = root.optString("alexa_lamp_on_url", "");
+            JSONObject webStorage = root.optJSONObject("web_storage");
+
+            if (!loc.isEmpty() || !ts.isEmpty()) {
+                prefs.edit().putString("local_url", loc).putString("tailscale_url", ts).apply();
+            }
+            if (!lampOff.isEmpty() || !lampOn.isEmpty()) {
+                prefs.edit().putString("alexa_lamp_off_url", lampOff).putString("alexa_lamp_on_url", lampOn).apply();
+            }
+            if (webStorage != null) {
+                if (webStorage.has("proscan_radio_stations_v3")) {
+                    prefs.edit().putString("radio_stations_json", webStorage.optString("proscan_radio_stations_v3", "")).apply();
+                }
+                prefs.edit().putString("shared_web_storage", webStorage.toString()).putString("last_backup_json", root.toString()).apply();
+            }
+
+            Toast.makeText(this, "Presets & IPs Restored! Loading...", Toast.LENGTH_SHORT).show();
+            String activeLoc = prefs.getString("local_url", "");
+            String activeTs = prefs.getString("tailscale_url", "");
+            if (!activeLoc.isEmpty() || !activeTs.isEmpty()) {
+                connectSmart(activeLoc, activeTs);
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Invalid backup JSON file", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_LOAD_JSON && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            try {
+                InputStream is = getContentResolver().openInputStream(data.getData());
+                if (is != null) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) sb.append(line);
+                    reader.close();
+                    restoreFromJsonString(sb.toString());
+                }
+            } catch (Exception e) {
+                Toast.makeText(this, "Failed to read backup file", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void openPlayerActivityMode(final String mode) {
+        mainHandler.post(() -> {
+            String base = activeServerUrl;
+            if (base == null || base.isEmpty()) base = webView != null ? webView.getUrl() : "";
+            Intent i = new Intent(MainActivity.this, PlayerActivity.class);
+            i.putExtra("server_url", base != null ? base : "");
+            i.putExtra("start_mode", mode);
+            startActivity(i);
+            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+        });
+    }
+
+    public class WebAppBridge {
         @JavascriptInterface
-        public String getBatteryStatus() { return getNativeBatteryStatus(); }
+        public String getBatteryStatus() {
+            return getNativeBatteryStatus();
+        }
 
         @JavascriptInterface
         public void triggerBedroomLamp(final boolean turnOn) {
@@ -356,125 +492,111 @@ private void stopNativePlayer() {
         }
 
         @JavascriptInterface
-        public boolean toggleClarityFilter() {
-            clarityFilterEnabled = !clarityFilterEnabled;
-            prefs.edit().putBoolean("clarity_filter_on", clarityFilterEnabled).apply();
+        public void setKeepScreenOn(final boolean keepOn) {
             mainHandler.post(() -> {
-                if (speechEqualizer != null) {
-                    try {
-                        speechEqualizer.setEnabled(clarityFilterEnabled);
-                        if (clarityFilterEnabled) {
-                            configureSpeechBands(speechEqualizer);
-                        }
-                    } catch (Exception ignored) {}
+                userWakeLockEnabled = keepOn;
+                prefs.edit().putBoolean("wake_lock_on", keepOn).apply();
+                if (keepOn) {
+                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    webView.setKeepScreenOn(true);
+                    Toast.makeText(MainActivity.this, "Screen Wake: ON (All Modes)", Toast.LENGTH_SHORT).show();
+                } else {
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    webView.setKeepScreenOn(false);
+                    Toast.makeText(MainActivity.this, "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
                 }
-                Toast.makeText(PlayerActivity.this, clarityFilterEnabled ? "Audio Clarity: ON (Voice Boost & De-Hiss)" : "Audio Clarity: OFF", Toast.LENGTH_SHORT).show();
-            });
-            return clarityFilterEnabled;
-        }
-
-        @JavascriptInterface
-        public boolean getClarityFilterState() {
-            return clarityFilterEnabled;
-        }
-
-        @JavascriptInterface
-        public void setWakeLock(final boolean keepOn) {
-            mainHandler.post(() -> {
-                applyPlayerWakeLock(keepOn);
-                Toast.makeText(PlayerActivity.this, keepOn ? "Screen Wake: ON (All Modes)" : "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
             });
         }
 
         @JavascriptInterface
-        public void setWebStreamActive(final boolean active) {
+        public void setBackgroundAudioMode(final boolean enabled) {
             mainHandler.post(() -> {
-                isLiveRadioStream = active;
-                mainHandler.removeCallbacks(progressTicker);
-                if (active) mainHandler.post(progressTicker);
+                setBgServiceRunning(enabled);
+                if (enabled) Toast.makeText(MainActivity.this, "VLC / Screen-Off Stream: ON", Toast.LENGTH_SHORT).show();
             });
         }
 
         @JavascriptInterface
-        public void saveStationsJson(final String jsonStr, final boolean showToast) {
-            mainHandler.post(() -> saveRadioStationsJsonToDownloads(jsonStr, showToast));
-        }
-
-        @JavascriptInterface
-        public void openStationJsonMenu(final int curIdx, final String name, final String freq, final String url) {
-            mainHandler.post(() -> showStationMenuDialog(curIdx, name, freq, url));
-        }
-
-        @JavascriptInterface
-        public void refreshRecordings() {
-            loadLiveGoogleDriveRecordings();
-        }
-
-        @JavascriptInterface
-        public void playDriveIdDirect(final String fileId) {
-            mainHandler.post(() -> playDriveFileIdNatively(fileId));
-        }
-
-        @JavascriptInterface
-        public void playLiveStreamUrl(final String url) {
-            mainHandler.post(() -> playLiveRadioUrlNatively(url));
-        }
-
-        @JavascriptInterface
-        public void showStationDialog(final int editIdx, final String name, final String freq, final String url) {
-            mainHandler.post(() -> openAddOrEditStationDialog(editIdx, name, freq, url));
-        }
-
-        @JavascriptInterface
-        public void seekToSeconds(final int sec) {
+        public void speakChannel(final String text) {
             mainHandler.post(() -> {
-                try { if (nativePlayer != null && !isLiveRadioStream) nativePlayer.seekTo(sec * 1000); } catch (Exception ignored) {}
+                if (text == null || text.trim().isEmpty()) return;
+                final String cleanText = text.trim();
+
+                long now = System.currentTimeMillis();
+                if (cleanText.equalsIgnoreCase(lastSpokenText) && (now - lastSpokenTimestamp < 6500)) {
+                    return;
+                }
+                lastSpokenText = cleanText;
+                lastSpokenTimestamp = now;
+
+                if (tts == null || !ttsReady) {
+                    initTTS();
+                    mainHandler.postDelayed(() -> speakDirect(cleanText), 1000);
+                    return;
+                }
+                speakDirect(cleanText);
             });
         }
 
-        @JavascriptInterface
-        public void stopAudio() { mainHandler.post(() -> stopNativePlayer()); }
+        private void speakDirect(String cleanText) {
+            int result = TextToSpeech.ERROR;
+            try {
+                if (Build.VERSION.SDK_INT >= 21) {
+                    Bundle params = new Bundle();
+                    params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.40f);
+                    result = tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "proscan_tts");
+                } else {
+                    result = tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null);
+                }
+            } catch (Exception e) {
+                result = TextToSpeech.ERROR;
+            }
 
-        @JavascriptInterface
-        public void togglePause() {
-            mainHandler.post(() -> {
-                try {
-                    if (nativePlayer != null) {
-                        if (nativePlayer.isPlaying()) {
-                            nativePlayer.pause();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(typeof setPlayingUI==='function')setPlayingUI(false);renderPlaylist();", null);
+            if (result != TextToSpeech.SUCCESS) {
+                initTTS();
+                mainHandler.postDelayed(() -> {
+                    if (tts != null && ttsReady) {
+                        if (Build.VERSION.SDK_INT >= 21) {
+                            Bundle params = new Bundle();
+                            params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.40f);
+                            tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "proscan_tts");
                         } else {
-                            nativePlayer.start();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(typeof setPlayingUI==='function')setPlayingUI(true);renderPlaylist();", null);
-                            mainHandler.post(progressTicker);
+                            tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null);
                         }
                     }
-                } catch (Exception ignored) {}
-            });
+                }, 1100);
+            }
         }
 
         @JavascriptInterface
-        public void openGoogleDriveFolder() {
-            mainHandler.post(() -> {
-                try {
-                    Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://drive.google.com/drive/folders/" + GDRIVE_ROOT_FOLDER_ID));
-                    startActivity(i);
-                } catch (Exception ignored) {}
-            });
-        }
-
-        @JavascriptInterface
-        public void speakCaption(final String text) {
-            mainHandler.post(() -> {
-                if (tts != null && ttsReady && text != null && !text.trim().isEmpty()) {
-                    if (Build.VERSION.SDK_INT >= 21) {
-                        Bundle params = new Bundle();
-                        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.35f);
-                        tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, params, "player_tts");
-                    } else {
-                        tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, null);
-                    }
+        public void syncActiveThemeInMemory(final String webStorageJson) {
+            try {
+                if (webStorageJson != null && webStorageJson.length() > 10) {
+                    prefs.edit().putString("shared_web_storage", webStorageJson).apply();
                 }
+                JSONObject root = new JSONObject();
+                root.put("local_url", prefs.getString("local_url", ""));
+                root.put("tailscale_url", prefs.getString("tailscale_url", ""));
+                root.put("alexa_lamp_off_url", prefs.getString("alexa_lamp_off_url", ""));
+                root.put("alexa_lamp_on_url", prefs.getString("alexa_lamp_on_url", ""));
+                root.put("web_storage", webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject());
+                prefs.edit().putString("last_backup_json", root.toString()).apply();
+            } catch (Exception ignored) {}
+        }
+
+        @JavascriptInterface
+        public void openArchivePlayer() { openPlayerActivityMode("archive"); }
+
+        @JavascriptInterface
+        public void openBroadcastRadio() { openPlayerActivityMode("radio"); }
+
+        @JavascriptInterface
+        public void autoSavePresetsJson(final String webStorageJson, final boolean notifyUser) {
+            mainHandler.post(() -> {
+                if (webStorageJson != null && webStorageJson.length() > 10) {
+                    prefs.edit().putString("shared_web_storage", webStorageJson).apply();
+                }
+                saveBackupJsonToDownloads(webStorageJson, notifyUser);
             });
         }
 
@@ -487,233 +609,80 @@ private void stopNativePlayer() {
         }
 
         @JavascriptInterface
-        public void minimizeApp() {
-            mainHandler.post(() -> moveTaskToBack(true));
-        }
+        public void minimizeApp() { mainHandler.post(() -> moveTaskToBack(true)); }
 
         @JavascriptInterface
-        public void exitEntireApp() {
-            mainHandler.post(() -> {
-                stopNativePlayer();
-                try { stopService(new Intent(PlayerActivity.this, AudioKeepAliveService.class)); } catch (Exception ignored) {}
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    finishAffinity();
-                    finishAndRemoveTask();
-                } else {
-                    finishAffinity();
-                }
-                System.exit(0);
-            });
-        }
-
-        @JavascriptInterface
-        public void closePlayer() {
-            mainHandler.post(() -> {
-                stopNativePlayer();
-                finish();
-                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
-            });
-        }
+        public void exitApp() { mainHandler.post(() -> closeAndExitApp()); }
     }
 
-    private String fetchUrlText(String urlStr) {
+    private void showBothSystemBarsNow() {
         try {
-            String sep = urlStr.contains("?") ? "&" : "?";
-            URL url = new URL(urlStr + sep + "_t=" + System.currentTimeMillis());
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(9000);
-            conn.setReadTimeout(9000);
-            conn.setUseCaches(false);
-            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
-            conn.setRequestProperty("Pragma", "no-cache");
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) sb.append(line).append("\n");
-            reader.close();
-            conn.disconnect();
-            return sb.toString();
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    private Map<String, String> parseDriveFolderAllItems(String folderId) {
-        Map<String, String> map = new LinkedHashMap<>();
-        if (folderId == null || folderId.isEmpty()) return map;
-        String html1 = fetchUrlText("https://drive.google.com/embeddedfolderview?id=" + folderId);
-        if (!html1.isEmpty()) {
-            Pattern p1 = Pattern.compile("id=\"entry-([A-Za-z0-9_-]{15,})\"[\\s\\S]*?<div class=\"flip-entry-title\">([^<]+)</div>");
-            Matcher m1 = p1.matcher(html1);
-            while (m1.find()) {
-                map.put(m1.group(2).trim().replace("&amp;", "&").replace("&#39;", "'").replace("&quot;", "\""), m1.group(1).trim());
-            }
-        }
-        String html2 = fetchUrlText("https://drive.google.com/drive/folders/" + folderId);
-        if (!html2.isEmpty()) {
-            String unescaped = html2.replace("\\u0022", "\"").replace("\\\"", "\"");
-            Pattern p2 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"([^\"]+\\.mp3)\"");
-            Matcher m2 = p2.matcher(unescaped);
-            while (m2.find()) map.put(m2.group(2).trim().replace("&amp;", "&").replace("&#39;", "'"), m2.group(1).trim());
-            Pattern p3 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"(\\d{2}-\\d{2}-\\d{2}|Scan)\"");
-            Matcher m3 = p3.matcher(unescaped);
-            while (m3.find()) map.put(m3.group(2).trim(), m3.group(1).trim());
-        }
-        return map;
-    }
-
-    private static class RecItem implements Comparable<RecItem> {
-        String fileId, fileName, dateStr, timeStr, freq, dur, name, sortKey;
-        @Override
-        public int compareTo(RecItem o) { return o.sortKey.compareTo(this.sortKey); }
-    }
-
-    private RecItem parseMp3Filename(String dateFolder, String fileName, String fileId) {
-        String base = fileName.endsWith(".mp3") ? fileName.substring(0, fileName.length() - 4) : fileName;
-        Pattern pat = Pattern.compile("^(.*?)\\s+-\\s+(\\d+\\.\\d+)\\s+-\\s+(\\d{2})-(\\d{2})-(\\d{2})(?:.*?TO\\s+(\\d{2})-(\\d{2})-(\\d{2}))?");
-        Matcher m = pat.matcher(base);
-        RecItem item = new RecItem();
-        item.fileId = fileId;
-        item.fileName = fileName;
-        item.dateStr = dateFolder;
-        if (m.find()) {
-            item.name = m.group(1).trim();
-            item.freq = m.group(2).trim();
-            String h1 = m.group(3), m1 = m.group(4), s1 = m.group(5);
-            item.timeStr = h1 + ":" + m1 + ":" + s1;
-            item.dur = "00:03";
-            if (m.group(6) != null) {
-                try {
-                    int t1 = Integer.parseInt(h1) * 3600 + Integer.parseInt(m1) * 60 + Integer.parseInt(s1);
-                    int t2 = Integer.parseInt(m.group(6)) * 3600 + Integer.parseInt(m.group(7)) * 60 + Integer.parseInt(m.group(8));
-                    int diff = t2 - t1;
-                    if (diff < 0) diff += 86400;
-                    item.dur = String.format(Locale.US, "%02d:%02d", diff / 60, diff % 60);
-                } catch (Exception ignored) {}
-            }
-        } else {
-            String[] parts = base.split(" - ");
-            item.name = parts.length > 0 ? parts[0].trim() : base;
-            item.freq = parts.length > 1 ? parts[1].trim() : "---.----";
-            item.timeStr = parts.length > 2 ? parts[2].replace('-', ':').trim() : "00:00:00";
-            item.dur = "--:--";
-        }
-        String[] dp = dateFolder.split("-");
-        String isoDate = dp.length == 3 ? (dp[2] + "-" + dp[0] + "-" + dp[1]) : dateFolder;
-        item.sortKey = isoDate + " " + item.timeStr + " " + fileName;
-        return item;
-    }
-
-    private void loadLiveGoogleDriveRecordings() {
-        if (isFetchingDrive) return;
-        isFetchingDrive = true;
-        executor.execute(() -> {
-            try {
-                Map<String, String> rootItems = parseDriveFolderAllItems(GDRIVE_ROOT_FOLDER_ID);
-                List<String> dateFolders = new ArrayList<>();
-                for (String title : rootItems.keySet()) {
-                    if (title.matches("\\d{2}-\\d{2}-\\d{2}")) dateFolders.add(title);
-                }
-                Collections.sort(dateFolders, (a, b) -> {
-                    String[] pa = a.split("-"), pb = b.split("-");
-                    String ka = pa.length == 3 ? (pa[2] + pa[0] + pa[1]) : a;
-                    String kb = pb.length == 3 ? (pb[2] + pb[0] + pb[1]) : b;
-                    return kb.compareTo(ka);
-                });
-                List<RecItem> allItems = new ArrayList<>();
-                int maxDates = Math.min(dateFolders.size(), 3);
-                for (int i = 0; i < maxDates; i++) {
-                    String dFolder = dateFolders.get(i);
-                    String dId = rootItems.get(dFolder);
-                    if (dId == null) continue;
-                    Map<String, String> dateChildren = parseDriveFolderAllItems(dId);
-                    for (Map.Entry<String, String> e : dateChildren.entrySet()) {
-                        if (e.getKey().toLowerCase().endsWith(".mp3")) {
-                            allItems.add(parseMp3Filename(dFolder, e.getKey(), e.getValue()));
-                        } else {
-                            Map<String, String> subChildren = parseDriveFolderAllItems(e.getValue());
-                            for (Map.Entry<String, String> se : subChildren.entrySet()) {
-                                if (se.getKey().toLowerCase().endsWith(".mp3")) {
-                                    allItems.add(parseMp3Filename(dFolder, se.getKey(), se.getValue()));
-                                }
-                            }
-                        }
-                    }
-                }
-                Collections.sort(allItems);
-                JSONArray arr = new JSONArray();
-                for (RecItem it : allItems) {
-                    JSONObject o = new JSONObject();
-                    o.put("fileId", it.fileId);
-                    o.put("fileName", it.fileName);
-                    o.put("dateStr", it.dateStr);
-                    o.put("timeStr", it.timeStr);
-                    o.put("freq", it.freq);
-                    o.put("dur", it.dur);
-                    o.put("name", it.name);
-                    arr.put(o);
-                }
-                final String escapedJson = JSONObject.quote(arr.toString());
-                mainHandler.post(() -> {
-                    isFetchingDrive = false;
-                    if (playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onDriveRecordingsLoaded)window.onDriveRecordingsLoaded(" + escapedJson + ");", null);
-                    }
-                });
-            } catch (Exception ignored) {
-                isFetchingDrive = false;
-            }
-        });
-    }
-
-    private void hideSystemUI() {
-        try {
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
             getWindow().getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                             | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                             | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_FULLSCREEN
             );
             if (Build.VERSION.SDK_INT >= 30) {
                 WindowInsetsController ic = getWindow().getInsetsController();
-                if (ic != null) {
-                    ic.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                    ic.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                }
+                if (ic != null) ic.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
             }
         } catch (Exception ignored) {}
     }
 
-    @Override
-    protected void onPause() {
-        super.onPause();
-        if (playerWeb != null) {
-            playerWeb.evaluateJavascript("if(window.markCurrentListAsVisited)window.markCurrentListAsVisited();", null);
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
+    private void closeAndExitApp() {
+        setBgServiceRunning(false);
         try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
         try {
             if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
                 audioManager.unregisterAudioDeviceCallback(btDeviceCallback);
             }
         } catch (Exception ignored) {}
-        mainHandler.removeCallbacks(autoSyncRunnable);
-        stopNativePlayer();
-        releasePlaybackLocks();
-        try {
-            if (tts != null) { tts.stop(); tts.shutdown(); }
-            if (playerWeb != null) { playerWeb.loadUrl("about:blank"); playerWeb.destroy(); }
-        } catch (Exception ignored) {}
-        super.onDestroy();
+        try { if (tts != null) { tts.stop(); tts.shutdown(); } } catch (Exception ignored) {}
+        try { if (webView != null) { webView.loadUrl("about:blank"); webView.stopLoading(); webView.destroy(); } } catch (Exception ignored) {}
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) finishAndRemoveTask();
+        else finish();
+        System.exit(0);
     }
-}
+
+    private void setupWebView() {
+        WebSettings s = webView.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setDatabaseEnabled(true);
+        s.setMediaPlaybackRequiresUserGesture(false);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        s.setUseWideViewPort(true);
+        s.setLoadWithOverviewMode(true);
+
+        CookieManager.getInstance().setAcceptCookie(true);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+
+        webView.addJavascriptInterface(new WebAppBridge(), "AndroidApp");
+        webView.setBackgroundColor(Color.BLACK);
+        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return false; }
+
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                injectEnhancements();
+                mainHandler.postDelayed(() -> injectEnhancements(), 400);
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                injectEnhancements();
+            }
+        });
+
+        mainHandler.removeCallbacks(periodicInjector);
+        mainHandler.postDelayed(periodicInjector, 900);
+    }
 private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
