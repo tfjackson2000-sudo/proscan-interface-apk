@@ -855,14 +855,16 @@ private void injectEnhancements() {
         js.append("      if (mHost) mHost.addEventListener('click', window.handleBrandCornerTap);\n");
         js.append("      window.__applySigMeterStyle(window.__sigMeterStyle, false);\n");
 
-        /* Real-Time 60fps Audio-Reactive Signal Meter Loop with Archive-Style Auto-Gain & Curve! */
+        /* Real-Time 60fps Audio-Reactive Signal Meter Loop with Smart Keypad-Beep Rejection + Auto-Gain! */
         js.append("      var smSmoothLvl = 0;\n");
         js.append("      var smAdaptiveMax = 14.0;\n");
         js.append("      var smPhase = 0;\n");
         js.append("      function renderLiveScannerSignalMeter() {\n");
         js.append("        requestAnimationFrame(renderLiveScannerSignalMeter);\n");
         js.append("        var rawLvl = 0;\n");
-        js.append("        if (typeof isConnected !== 'undefined' && isConnected && typeof analyser !== 'undefined' && analyser && typeof dataArray !== 'undefined' && dataArray) {\n");
+        js.append("        var rxLedEl = document.getElementById('rx-led');\n");
+        js.append("        var isRxVoiceActive = rxLedEl && rxLedEl.classList.contains('active');\n");
+        js.append("        if (isRxVoiceActive && typeof isConnected !== 'undefined' && isConnected && typeof analyser !== 'undefined' && analyser && typeof dataArray !== 'undefined' && dataArray) {\n");
         js.append("          try {\n");
         js.append("            analyser.getByteTimeDomainData(dataArray);\n");
         js.append("            var sumSq = 0, peak = 0;\n");
