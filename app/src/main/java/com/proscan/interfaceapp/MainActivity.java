@@ -258,7 +258,11 @@ public class MainActivity extends Activity {
 
         if (Build.VERSION.SDK_INT >= 33) {
             try {
-                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 101);
+                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO"}, 101);
+            } catch (Exception ignored) {}
+        } else if (Build.VERSION.SDK_INT >= 23) {
+            try {
+                requestPermissions(new String[]{"android.permission.RECORD_AUDIO"}, 101);
             } catch (Exception ignored) {}
         }
 
@@ -850,8 +854,10 @@ private void injectEnhancements() {
         js.append("      if (mHost) mHost.addEventListener('click', window.handleBrandCornerTap);\n");
         js.append("      window.__applySigMeterStyle(window.__sigMeterStyle, false);\n");
 
-        /* Real-Time 60fps Audio-Reactive Signal Meter Loop */
+        /* Real-Time 60fps Audio-Reactive Signal Meter Loop with Archive-Style Auto-Gain & Curve! */
         js.append("      var smSmoothLvl = 0;\n");
+        js.append("      var smAdaptiveMax = 14.0;\n");
+        js.append("      var smPhase = 0;\n");
         js.append("      function renderLiveScannerSignalMeter() {\n");
         js.append("        requestAnimationFrame(renderLiveScannerSignalMeter);\n");
         js.append("        var rawLvl = 0;\n");
@@ -865,13 +871,19 @@ private void injectEnhancements() {
         js.append("              sumSq += d * d;\n");
         js.append("            }\n");
         js.append("            var rms = Math.sqrt(sumSq / dataArray.length);\n");
-        js.append("            if (peak > 3) {\n");
-        js.append("              rawLvl = Math.min(1.0, (rms / 28.0) * 0.7 + (peak / 90.0) * 0.35);\n");
+        js.append("            var combined = (rms * 0.65) + (peak * 0.35);\n");
+        js.append("            if (peak > 2 && combined > 1.5) {\n");
+        js.append("              if (combined > smAdaptiveMax) smAdaptiveMax = combined;\n");
+        js.append("              else smAdaptiveMax = Math.max(12.0, smAdaptiveMax * 0.9992);\n");
+        js.append("              var noiseFloor = 1.4;\n");
+        js.append("              var norm = (combined - noiseFloor) / Math.max(4.0, (smAdaptiveMax * 0.82) - noiseFloor);\n");
+        js.append("              norm = Math.max(0, Math.min(1.0, norm));\n");
+        js.append("              rawLvl = Math.min(0.98, Math.pow(norm, 0.72));\n");
         js.append("            }\n");
         js.append("          } catch(e) {}\n");
         js.append("        }\n");
-        js.append("        smSmoothLvl += (rawLvl - smSmoothLvl) * (rawLvl > smSmoothLvl ? 0.38 : 0.18);\n");
-        js.append("        if (smSmoothLvl < 0.01) smSmoothLvl = 0;\n");
+        js.append("        smSmoothLvl += (rawLvl - smSmoothLvl) * (rawLvl > smSmoothLvl ? 0.42 : 0.22);\n");
+        js.append("        if (smSmoothLvl < 0.015) smSmoothLvl = 0;\n");
 
         js.append("        var stIdx = window.__sigMeterStyle || 0;\n");
         js.append("        if (stIdx === 0) {\n");
@@ -899,9 +911,15 @@ private void injectEnhancements() {
         js.append("          if (hasFreq) { try { analyser.getByteFrequencyData(freqArray); } catch(e) {} }\n");
         js.append("          for (var b = 0; b < bars.length; b++) {\n");
         js.append("            var h = 2;\n");
-        js.append("            if (hasFreq && smSmoothLvl >= 0.03) {\n");
-        js.append("              var bin = Math.min(freqArray.length - 1, 2 + b * 6);\n");
-        js.append("              h = Math.max(2, Math.min(15, Math.round((freqArray[bin] / 255.0) * 15)));\n");
+        js.append("            if (smSmoothLvl >= 0.03) {\n");
+        js.append("              var bell = Math.sin(((b + 1) / 11) * Math.PI);\n");
+        js.append("              var wv = 0.55 + 0.45 * Math.sin(b * 0.8 + smPhase) * Math.cos(b * 0.4 - smPhase * 0.7);\n");
+        js.append("              var binBoost = 0;\n");
+        js.append("              if (hasFreq) {\n");
+        js.append("                var bin = Math.min(freqArray.length - 1, 2 + b * 5);\n");
+        js.append("                binBoost = (freqArray[bin] / 255.0) * 6.0;\n");
+        js.append("              }\n");
+        js.append("              h = Math.max(2, Math.min(15, Math.round(bell * wv * smSmoothLvl * 16 + binBoost)));\n");
         js.append("            }\n");
         js.append("            bars[b].style.height = h + 'px';\n");
         js.append("          }\n");
@@ -914,13 +932,9 @@ private void injectEnhancements() {
         js.append("            c.strokeStyle = smSmoothLvl >= 0.03 ? '#39ff14' : '#334155';\n");
         js.append("            c.lineWidth = 1.4;\n");
         js.append("            c.beginPath();\n");
-        js.append("            var hasWave = (typeof isConnected !== 'undefined' && isConnected && typeof dataArray !== 'undefined' && dataArray && smSmoothLvl >= 0.03);\n");
         js.append("            for (var x = 0; x < W; x += 2) {\n");
-        js.append("              var y = H / 2;\n");
-        js.append("              if (hasWave) {\n");
-        js.append("                var wIdx = Math.min(dataArray.length - 1, Math.floor((x / W) * dataArray.length));\n");
-        js.append("                y = (H / 2) + ((dataArray[wIdx] - 128) / 128.0) * (H * 0.75);\n");
-        js.append("              }\n");
+        js.append("              var env = Math.sin((x / W) * Math.PI);\n");
+        js.append("              var y = (H / 2) + Math.sin(x * 0.14 + smPhase) * Math.cos(x * 0.06 - smPhase * 0.5) * env * (smSmoothLvl * (H * 0.48));\n");
         js.append("              if (x === 0) c.moveTo(x, y); else c.lineTo(x, y);\n");
         js.append("            }\n");
         js.append("            c.stroke();\n");
@@ -935,13 +949,14 @@ private void injectEnhancements() {
         js.append("            } else {\n");
         js.append("              var sUnit = Math.min(9, Math.max(1, Math.round(smSmoothLvl * 10)));\n");
         js.append("              var dbVal = -92 + Math.round(smSmoothLvl * 58);\n");
-        js.append("              var plusStr = smSmoothLvl > 0.82 ? ('S9+' + Math.round((smSmoothLvl - 0.8) * 150)) : ('S' + sUnit + ' ' + dbVal + 'dB');\n");
+        js.append("              var plusStr = smSmoothLvl > 0.80 ? ('S9+' + Math.round((smSmoothLvl - 0.78) * 140)) : ('S' + sUnit + ' ' + dbVal + 'dB');\n");
         js.append("              dTxt.innerText = plusStr;\n");
-        js.append("              dTxt.style.color = smSmoothLvl > 0.78 ? '#facc15' : '#39ff14';\n");
+        js.append("              dTxt.style.color = smSmoothLvl > 0.76 ? '#facc15' : '#39ff14';\n");
         js.append("            }\n");
         js.append("          }\n");
         js.append("          if (pFill) pFill.style.width = Math.min(100, Math.round(smSmoothLvl * 100)) + '%';\n");
         js.append("        }\n");
+        js.append("        smPhase += smSmoothLvl >= 0.03 ? (0.14 + smSmoothLvl * 0.28) : 0.02;\n");
         js.append("      }\n");
         js.append("      renderLiveScannerSignalMeter();\n");
         js.append("    }\n");
@@ -989,8 +1004,7 @@ private void injectEnhancements() {
         js.append("      newLiteBtn.addEventListener('pointerleave', function() { clearTimeout(lHoldTimer); lHoldTimer = null; });\n");
         js.append("      newLiteBtn.addEventListener('pointercancel', function() { clearTimeout(lHoldTimer); lHoldTimer = null; });\n");
         js.append("    }\n");
-
-        js.append("    var dispBox = document.querySelector('.scanner-display');\n");
+js.append("    var dispBox = document.querySelector('.scanner-display');\n");
         js.append("    if (dispBox) {\n");
         js.append("      var clkEl = document.getElementById('display-clock-hud');\n");
         js.append("      var batEl = document.getElementById('scanner-bat-hud');\n");
