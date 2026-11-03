@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.media.AudioAttributes;
@@ -91,6 +92,7 @@ public class PlayerActivity extends Activity {
     private String initialStartMode = "archive";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ExecutorService audioFetchExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService liveStreamTapExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private TextToSpeech tts = null;
     private boolean ttsReady = false;
@@ -99,6 +101,9 @@ public class PlayerActivity extends Activity {
     private Visualizer audioVisualizer = null;
     private volatile float liveVisualizerLevel = -1f;
     private volatile long lastVisualizerUpdateMs = 0L;
+    private volatile float visAdaptiveMax = 22f;
+    private volatile float liveStreamTapLevel = -1f;
+    private volatile long lastStreamTapUpdateMs = 0L;
     private boolean clarityFilterEnabled = false;
     private boolean isFetchingDrive = false;
     private boolean isLiveRadioStream = false;
@@ -206,6 +211,7 @@ public class PlayerActivity extends Activity {
     private synchronized void setupVisualizer(int audioSessionId) {
         releaseVisualizer();
         try {
+            visAdaptiveMax = 22f;
             audioVisualizer = new Visualizer(audioSessionId);
             int[] range = Visualizer.getCaptureSizeRange();
             int capSize = range != null && range.length > 0 ? Math.min(256, Math.max(range[0], 128)) : 128;
@@ -223,11 +229,26 @@ public class PlayerActivity extends Activity {
                         sumSq += centered * centered;
                     }
                     double rms = Math.sqrt(sumSq / waveform.length);
-                    if (peak <= 2 && rms < 1.0) {
+                    float combined = (float) ((rms * 0.65) + (peak * 0.35));
+                    if (peak <= 1 && rms < 0.8) {
+                        liveVisualizerLevel = 0.02f;
+                        lastVisualizerUpdateMs = System.currentTimeMillis();
                         return;
                     }
-                    float norm = (float) Math.min(1.0, (rms / 42.0) * 0.75 + (peak / 128.0) * 0.35);
-                    if (norm < 0.04f) norm = 0.02f;
+                    if (combined > visAdaptiveMax) {
+                        visAdaptiveMax = combined;
+                    } else {
+                        visAdaptiveMax = Math.max(14f, visAdaptiveMax * 0.996f);
+                    }
+                    float noiseFloor = visAdaptiveMax * 0.08f;
+                    float norm;
+                    if (combined <= noiseFloor) {
+                        norm = 0.02f;
+                    } else {
+                        norm = (combined - noiseFloor) / Math.max(4f, (visAdaptiveMax * 0.88f) - noiseFloor);
+                        norm = (float) Math.pow(Math.min(1f, Math.max(0f, norm)), 0.78);
+                        norm = Math.min(0.98f, Math.max(0.03f, norm));
+                    }
                     liveVisualizerLevel = norm;
                     lastVisualizerUpdateMs = System.currentTimeMillis();
                 }
@@ -381,23 +402,19 @@ public class PlayerActivity extends Activity {
                     int sec = 0, tot = 0;
                     float prog = 0.5f, level = 0.04f;
                     long now = System.currentTimeMillis();
-                    boolean hasLiveVis = (liveVisualizerLevel >= 0f && (now - lastVisualizerUpdateMs) < 400);
+                    boolean hasLiveVis = (liveVisualizerLevel >= 0f && (now - lastVisualizerUpdateMs) < 450);
+                    boolean hasStreamTap = (liveStreamTapLevel >= 0f && (now - lastStreamTapUpdateMs) < 550);
 
                     if (isLiveRadioStream) {
                         sec = (int) ((now / 1000) % 3600);
                         tot = 3600;
                         prog = (sec % 60) / 60f;
-                        if (hasLiveVis) {
+                        if (hasLiveVis && liveVisualizerLevel > 0.025f) {
                             level = liveVisualizerLevel;
-                        } else {
-                            double t = now / 95.0;
-                            double syll = Math.sin(t) * Math.sin(t * 0.63) + 0.5 * Math.cos(t * 1.9);
-                            double gate = Math.sin(now / 620.0) + 0.35 * Math.cos(now / 270.0);
-                            if (gate < -0.35) {
-                                level = 0.03f;
-                            } else {
-                                level = (float) Math.min(0.96, Math.max(0.05, Math.abs(syll) * 0.68));
-                            }
+                        } else if (hasStreamTap) {
+                            level = liveStreamTapLevel;
+                        } else if (hasLiveVis) {
+                            level = liveVisualizerLevel;
                         }
                     } else {
                         int posMs = nativePlayer.getCurrentPosition();
@@ -435,6 +452,14 @@ public class PlayerActivity extends Activity {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         hideSystemUI();
+
+        if (Build.VERSION.SDK_INT >= 23) {
+            try {
+                if (checkSelfPermission("android.permission.RECORD_AUDIO") != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{"android.permission.RECORD_AUDIO"}, 102);
+                }
+            } catch (Exception ignored) {}
+        }
 
         try {
             IntentFilter f = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
@@ -739,6 +764,12 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '.radio-row.playing, .radio-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
         js.append("    '.radio-row.selected:not(.playing){outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(0,0,0,0.16)!important;color:var(--log-text)!important;font-weight:800!important;}' +\n");
 
+        /* Top Screen Header: Clock on Left, Mode Title + Counter in Center, Battery on Right */
+        js.append("    '.disp-top-row{display:grid!important;grid-template-columns:auto 1fr auto!important;align-items:center!important;gap:6px!important;width:100%!important;}' +\n");
+        js.append("    '#top-header-center{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;min-width:0!important;overflow:hidden!important;}' +\n");
+        js.append("    '#deck-mode-hud{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;font-size:9.5px!important;}' +\n");
+        js.append("    '#rec-count-hud{font-family:\"JetBrains Mono\",monospace!important;font-size:9px!important;font-weight:900!important;color:var(--log-header-text)!important;padding:0 5px!important;border:1px solid var(--log-cell-border)!important;border-radius:4px!important;white-space:nowrap!important;flex-shrink:0!important;}' +\n");
+
         /* Top Row Navigation: Larger 35px Tall Buttons */
         js.append("    '.player-nav-row{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:6px!important;height:35px!important;}' +\n");
         js.append("    '.player-nav-row.radio-mode-nav{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important;}' +\n");
@@ -762,7 +793,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '#date-select, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
 
         /* 5-Style Live Signal Meter in #brand-logo-slot on Archive & Radio */
-        js.append("    '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:128px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
+        js.append("    '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:124px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
         js.append("    '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
         js.append("    '.sm-mode.active{display:flex;}' +\n");
         js.append("    '.sm-lbl{font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;color:#38bdf8;letter-spacing:0.3px;margin-right:3px;flex-shrink:0;}' +\n");
@@ -804,7 +835,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '#cd-laser-sled{position:absolute;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle,#ff2222 20%,rgba(255,0,0,0.7) 55%,transparent 100%);box-shadow:0 0 10px #ff0000;z-index:2;pointer-events:none;transition:transform 0.1s linear;}' +\n");
         js.append("    '#reactive-vu-strip{position:absolute;bottom:5px;left:50%;transform:translateX(-50%);display:flex;gap:3px;z-index:12;background:rgba(0,0,0,0.78);padding:3px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);}' +\n");
         js.append("    '.rvu-seg{width:6px;height:5px;border-radius:1px;background:#1e293b;}' +\n");
-        js.append("    '#player-wake-pill, #player-lamp-pill{display:inline-flex;align-items:center;gap:3px;cursor:pointer;padding:1px 5px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:4px;touch-action:manipulation;}' +\n");
+        js.append("    '#player-wake-pill, #player-lamp-pill{display:inline-flex;align-items:center;gap:3px;cursor:pointer;padding:1px 6px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:6px;touch-action:manipulation;}' +\n");
         js.append("    '#player-wake-dot, #player-lamp-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
         js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}' +\n");
         js.append("    '#player-lamp-pill.active #player-lamp-dot{background:#facc15;box-shadow:0 0 7px #facc15;}' +\n");
@@ -889,7 +920,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("    function updatePlayerTopSignalMeter() {\n");
         js.append("      requestAnimationFrame(updatePlayerTopSignalMeter);\n");
         js.append("      var target = isPlayingNow ? (window.__audioLevel || 0) : 0;\n");
-        js.append("      pSmSmooth += (target - pSmSmooth) * (target > pSmSmooth ? 0.35 : 0.18);\n");
+        js.append("      pSmSmooth += (target - pSmSmooth) * (target > pSmSmooth ? 0.38 : 0.20);\n");
         js.append("      if (pSmSmooth < 0.01) pSmSmooth = 0;\n");
         js.append("      var stIdx = window.__sigMeterStyle || 0;\n");
         js.append("      if (stIdx === 0) {\n");
@@ -955,13 +986,20 @@ private void injectReactiveDecksAndTheme() {
         js.append("    updatePlayerTopSignalMeter();\n");
         js.append("  }\n");
 
+        /* Move #rec-count-hud into the Top Screen Header (between Clock on left and Battery on right) */
         js.append("  var pClk = document.getElementById('player-clock-hud');\n");
+        js.append("  var recHud = document.getElementById('rec-count-hud');\n");
+        js.append("  var modeHudEl = document.getElementById('deck-mode-hud');\n");
         js.append("  if (pClk && !document.getElementById('player-bat-hud')) {\n");
         js.append("    var topBar = pClk.parentNode;\n");
         js.append("    var pBat = document.createElement('span');\n");
         js.append("    pBat.id = 'player-bat-hud';\n");
         js.append("    pBat.innerHTML = '<span class=\"bat-icon-box\"><span class=\"bat-icon-fill\" id=\"player-bat-fill\"></span></span><span id=\"player-bat-txt\">--%</span>';\n");
         js.append("    topBar.insertBefore(pClk, topBar.firstChild);\n");
+        js.append("    var centerWrap = document.createElement('div');\n");
+        js.append("    centerWrap.id = 'top-header-center';\n");
+        js.append("    if (modeHudEl) centerWrap.appendChild(modeHudEl);\n");
+        js.append("    topBar.appendChild(centerWrap);\n");
         js.append("    topBar.appendChild(pBat);\n");
         js.append("    function updatePlayerBattery() {\n");
         js.append("      if (window.PlayerBridge && typeof window.PlayerBridge.getBatteryStatus === 'function') {\n");
@@ -979,7 +1017,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("    setInterval(updatePlayerBattery, 10000);\n");
         js.append("  }\n");
 
-        js.append("  var recHud = document.getElementById('rec-count-hud');\n");
+        /* Middle Status Bar Left: Only WAKE and LAMP pills (Rec/Station Counter moved up into Top Screen Header!) */
         js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
         js.append("    var wWrap = document.createElement('div');\n");
         js.append("    wWrap.style.cssText = 'display:flex;align-items:center;padding-left:2px;';\n");
@@ -996,7 +1034,8 @@ private void injectReactiveDecksAndTheme() {
         js.append("    recHud.parentNode.insertBefore(wWrap, recHud);\n");
         js.append("    wWrap.appendChild(wPill);\n");
         js.append("    wWrap.appendChild(lPill);\n");
-        js.append("    wWrap.appendChild(recHud);\n");
+        js.append("    var hdrCenter = document.getElementById('top-header-center');\n");
+        js.append("    if (hdrCenter) hdrCenter.appendChild(recHud);\n");
         js.append("    window.__playerWakeActive = ").append(wakePref).append(";\n");
         js.append("    wPill.addEventListener('click', function() {\n");
         js.append("      window.__playerWakeActive = !window.__playerWakeActive;\n");
@@ -1519,7 +1558,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("      if (window.__isBroadcastRadioMode) {\n");
         js.append("        if (navRowEl) navRowEl.classList.add('radio-mode-nav');\n");
         js.append("        if (swBtn) swBtn.innerHTML = 'ARCHIVE';\n");
-        js.append("        document.getElementById('deck-mode-hud').innerText = 'BROADCAST // DAB+ FM TUNER';\n");
+        js.append("        document.getElementById('deck-mode-hud').innerText = 'BROADCAST // TUNER';\n");
         js.append("        if (hdr) {\n");
         js.append("          hdr.style.gridTemplateColumns = '36px 68px 48px 1fr';\n");
         js.append("          hdr.innerHTML = '<span>CH</span><span>BAND</span><span>MODE</span><span>STATION NAME</span>';\n");
@@ -1733,6 +1772,8 @@ private void stopNativePlayer() {
         releaseEqualizer();
         releasePlaybackLocks();
         currentStreamReqId++;
+        liveStreamTapLevel = -1f;
+        lastStreamTapUpdateMs = 0L;
         mainHandler.removeCallbacks(progressTicker);
         isLiveRadioStream = false;
         if (nativePlayer != null) {
@@ -1740,6 +1781,69 @@ private void stopNativePlayer() {
             try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
             nativePlayer = null;
         }
+    }
+
+    /* Live Stream Frame Energy & Bit-Entropy Analyzer for Broadcast Radio when Visualizer is blocked by ROM/HLS */
+    private void startLiveStreamEnergyTap(final String resolvedUrl, final int reqId) {
+        liveStreamTapExecutor.execute(() -> {
+            HttpURLConnection conn = null;
+            InputStream is = null;
+            try {
+                String streamTarget = resolvedUrl;
+                if (streamTarget.toLowerCase().contains(".m3u8")) {
+                    String m3uText = fetchUrlText(streamTarget);
+                    String[] lines = m3uText.split("\n");
+                    for (String l : lines) {
+                        l = l.trim();
+                        if (!l.isEmpty() && !l.startsWith("#")) {
+                            streamTarget = new URL(new URL(resolvedUrl), l).toString();
+                            break;
+                        }
+                    }
+                }
+                conn = (HttpURLConnection) new URL(streamTarget).openConnection();
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+                conn.setInstanceFollowRedirects(true);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+                is = conn.getInputStream();
+                byte[] buf = new byte[1024];
+                float runningMin = 120f;
+                float runningMax = 195f;
+                while (reqId == currentStreamReqId && isLiveRadioStream) {
+                    int n = is.read(buf);
+                    if (n <= 0) break;
+                    int zeroRuns = 0;
+                    long diffSum = 0;
+                    int prev = buf[0] & 0xFF;
+                    for (int i = 1; i < n; i++) {
+                        int cur = buf[i] & 0xFF;
+                        int d = Math.abs(cur - prev);
+                        diffSum += d;
+                        if (cur == 0 || cur == 0xFF || d < 3) zeroRuns++;
+                        prev = cur;
+                    }
+                    float avgDiff = (float) diffSum / Math.max(1, n - 1);
+                    float activity = avgDiff * (1f - ((float) zeroRuns / n) * 0.65f);
+                    if (activity < runningMin) runningMin = activity;
+                    else runningMin += (activity - runningMin) * 0.015f;
+                    if (activity > runningMax) runningMax = activity;
+                    else runningMax -= (runningMax - activity) * 0.012f;
+
+                    float span = Math.max(4f, runningMax - runningMin);
+                    float norm = (activity - runningMin) / span;
+                    norm = Math.max(0f, Math.min(1f, norm));
+                    float shaped = (float) Math.pow(norm, 0.78);
+                    liveStreamTapLevel = Math.min(0.96f, Math.max(0.03f, shaped));
+                    lastStreamTapUpdateMs = System.currentTimeMillis();
+                    try { Thread.sleep(38); } catch (InterruptedException ie) { break; }
+                }
+            } catch (Exception ignored) {
+            } finally {
+                try { if (is != null) is.close(); } catch (Exception ignored) {}
+                try { if (conn != null) conn.disconnect(); } catch (Exception ignored) {}
+            }
+        });
     }
 
     private float[] extractMp3AmplitudeEnvelope(File mp3File) {
@@ -1921,6 +2025,7 @@ private void stopNativePlayer() {
                             return;
                         }
                         setupEqualizer(mp.getAudioSessionId());
+                        startLiveStreamEnergyTap(resolvedUrl, reqId);
                         mp.start();
                         if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
                         mainHandler.post(progressTicker);
