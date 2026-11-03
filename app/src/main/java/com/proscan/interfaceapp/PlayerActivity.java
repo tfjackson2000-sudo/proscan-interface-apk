@@ -15,6 +15,7 @@ import android.graphics.Color;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaCodec;
 import android.media.MediaExtractor;
@@ -85,6 +86,7 @@ public class PlayerActivity extends Activity {
     private WebView playerWeb;
     private SharedPreferences prefs;
     private AudioManager audioManager;
+    private AudioFocusRequest audioFocusRequest = null;
     private PowerManager.WakeLock cpuWakeLock = null;
     private WifiManager.WifiLock wifiLock = null;
     private boolean wakeLockOn = true;
@@ -107,9 +109,14 @@ public class PlayerActivity extends Activity {
     private boolean clarityFilterEnabled = false;
     private boolean isFetchingDrive = false;
     private boolean isLiveRadioStream = false;
+    private String activeLiveRadioUrl = "";
     private volatile int currentStreamReqId = 0;
     private float[] currentEnvelope = new float[0];
     private boolean bedroomLampOn = false;
+
+    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
+        // Keep playing uninterrupted when screen is off unless user explicitly stops or disconnects headphones
+    };
 
     private void triggerAlexaWebhook(final boolean turnOn) {
         final String offUrl = prefs.getString("alexa_lamp_off_url", "").trim();
@@ -128,9 +135,6 @@ public class PlayerActivity extends Activity {
             bedroomLampOn = false;
             targetUrl = !offUrl.isEmpty() ? offUrl : onUrl;
             actionLabel = "Bedroom Lights: Triggered";
-        }
-        if (playerWeb != null) {
-            playerWeb.evaluateJavascript("var lp=document.getElementById('player-lamp-pill');if(lp)lp.classList.toggle('active'," + bedroomLampOn + ");", null);
         }
         Toast.makeText(this, actionLabel, Toast.LENGTH_SHORT).show();
         executor.execute(() -> {
@@ -158,7 +162,7 @@ public class PlayerActivity extends Activity {
         layout.setPadding(pad, pad, pad, pad);
 
         TextView l1 = new TextView(this);
-        l1.setText("Lights OFF Alexa Routine URL (Virtual Buttons / Voice Monkey):");
+        l1.setText("Lights Toggle / OFF Alexa Routine URL (Virtual Buttons / Voice Monkey):");
         layout.addView(l1);
         final EditText offInput = new EditText(this);
         offInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
@@ -167,7 +171,7 @@ public class PlayerActivity extends Activity {
         layout.addView(offInput);
 
         TextView l2 = new TextView(this);
-        l2.setText("\nLights ON Alexa Routine URL (Optional - leave blank for OFF only):");
+        l2.setText("\nSecond Routine URL (Optional - leave blank for single toggle URL):");
         layout.addView(l2);
         final EditText onInput = new EditText(this);
         onInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
@@ -185,7 +189,7 @@ public class PlayerActivity extends Activity {
                             .apply();
                     Toast.makeText(PlayerActivity.this, "Bedroom Light Routine Saved! Tap LAMP to trigger.", Toast.LENGTH_SHORT).show();
                 })
-                .setNeutralButton("Test OFF Now", (d, w) -> {
+                .setNeutralButton("Test Now", (d, w) -> {
                     prefs.edit()
                             .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
                             .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
@@ -304,6 +308,24 @@ public class PlayerActivity extends Activity {
 
     private synchronized void acquirePlaybackLocks() {
         try {
+            if (audioManager != null) {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    if (audioFocusRequest == null) {
+                        audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                                .setAudioAttributes(new AudioAttributes.Builder()
+                                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                                        .build())
+                                .setAcceptsDelayedFocusGain(true)
+                                .setWillPauseWhenDucked(false)
+                                .setOnAudioFocusChangeListener(focusChangeListener, mainHandler)
+                                .build();
+                    }
+                    audioManager.requestAudioFocus(audioFocusRequest);
+                } else {
+                    audioManager.requestAudioFocus(focusChangeListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+                }
+            }
             if (cpuWakeLock == null) {
                 PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
                 if (pm != null) {
@@ -333,6 +355,13 @@ public class PlayerActivity extends Activity {
 
     private synchronized void releasePlaybackLocks() {
         try {
+            if (audioManager != null) {
+                if (Build.VERSION.SDK_INT >= 26 && audioFocusRequest != null) {
+                    audioManager.abandonAudioFocusRequest(audioFocusRequest);
+                } else {
+                    audioManager.abandonAudioFocus(focusChangeListener);
+                }
+            }
             if (cpuWakeLock != null && cpuWakeLock.isHeld()) cpuWakeLock.release();
             if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
             stopService(new Intent(this, AudioKeepAliveService.class));
@@ -434,6 +463,12 @@ public class PlayerActivity extends Activity {
                     }
                     playerWeb.evaluateJavascript("if(window.onNativeTelemetry)window.onNativeTelemetry(" + sec + "," + tot + "," + prog + "," + level + ");", null);
                     mainHandler.postDelayed(this, 50);
+                } else if (isLiveRadioStream && !activeLiveRadioUrl.isEmpty() && nativePlayer != null) {
+                    // Screen-off watchdog: if live radio stream paused unexpectedly while still active, resume it
+                    try {
+                        nativePlayer.start();
+                        mainHandler.postDelayed(this, 250);
+                    } catch (Exception ignored) {}
                 }
             } catch (Exception ignored) {}
         }
@@ -835,11 +870,15 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '#cd-laser-sled{position:absolute;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle,#ff2222 20%,rgba(255,0,0,0.7) 55%,transparent 100%);box-shadow:0 0 10px #ff0000;z-index:2;pointer-events:none;transition:transform 0.1s linear;}' +\n");
         js.append("    '#reactive-vu-strip{position:absolute;bottom:5px;left:50%;transform:translateX(-50%);display:flex;gap:3px;z-index:12;background:rgba(0,0,0,0.78);padding:3px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);}' +\n");
         js.append("    '.rvu-seg{width:6px;height:5px;border-radius:1px;background:#1e293b;}' +\n");
-        js.append("    '#player-wake-pill, #player-lamp-pill{display:inline-flex;align-items:center;gap:3px;cursor:pointer;padding:1px 6px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:6px;touch-action:manipulation;}' +\n");
-        js.append("    '#player-wake-dot, #player-lamp-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
+        js.append("    '#player-wake-pill{display:inline-flex;align-items:center;gap:3px;cursor:pointer;padding:1px 6px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:6px;touch-action:manipulation;}' +\n");
+        js.append("    '#player-wake-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
         js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}' +\n");
-        js.append("    '#player-lamp-pill.active #player-lamp-dot{background:#facc15;box-shadow:0 0 7px #facc15;}' +\n");
-        js.append("    '#btn-player-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-left:6px;cursor:pointer;touch-action:manipulation;}' +\n");
+        /* LAMP Hardware Cap Button (Matches EXIT Cap style, placed directly to the left of EXIT) */
+        js.append("    '#btn-player-lamp{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-right:6px;cursor:pointer;touch-action:manipulation;}' +\n");
+        js.append("    '#btn-player-lamp .lamp-cap{width:22px;height:10px;border-radius:4px;background:linear-gradient(180deg,#eab308,#a16207);border:1px solid #422006;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.35);display:flex;align-items:center;justify-content:center;}' +\n");
+        js.append("    '#btn-player-lamp .lamp-cap::after{content:\"\";width:7px;height:2px;border-radius:1px;background:rgba(254,249,195,0.9);}' +\n");
+        js.append("    '#btn-player-lamp:active .lamp-cap{transform:translateY(1px);filter:brightness(1.25);}' +\n");
+        js.append("    '#btn-player-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-left:2px;cursor:pointer;touch-action:manipulation;}' +\n");
         js.append("    '#btn-player-exit .exit-cap{width:22px;height:10px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}' +\n");
         js.append("    '#btn-player-exit .exit-cap::after{content:\"\";width:7px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}' +\n");
         js.append("    '#btn-player-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
@@ -1017,7 +1056,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("    setInterval(updatePlayerBattery, 10000);\n");
         js.append("  }\n");
 
-        /* Middle Status Bar Left: Only WAKE and LAMP pills (Rec/Station Counter moved up into Top Screen Header!) */
+        /* Middle Status Bar Left: Only WAKE pill (Rec/Station Counter is in Top Screen Header!) */
         js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
         js.append("    var wWrap = document.createElement('div');\n");
         js.append("    wWrap.style.cssText = 'display:flex;align-items:center;padding-left:2px;';\n");
@@ -1026,14 +1065,8 @@ private void injectReactiveDecksAndTheme() {
         js.append("    wPill.className = ").append(wakePref ? "'active'" : "''").append(";\n");
         js.append("    wPill.innerHTML = '<span id=\"player-wake-dot\"></span><span style=\"font-size:7px;font-weight:900;color:var(--toggle-color);\">WAKE</span>';\n");
 
-        /* LAMP Button (Tap = Trigger Alexa Bedroom Lights Routine, Hold = Setup URL) */
-        js.append("    var lPill = document.createElement('button');\n");
-        js.append("    lPill.id = 'player-lamp-pill'; lPill.type = 'button';\n");
-        js.append("    lPill.innerHTML = '<span id=\"player-lamp-dot\"></span><span style=\"font-size:7px;font-weight:900;color:var(--toggle-color);\">LAMP</span>';\n");
-
         js.append("    recHud.parentNode.insertBefore(wWrap, recHud);\n");
         js.append("    wWrap.appendChild(wPill);\n");
-        js.append("    wWrap.appendChild(lPill);\n");
         js.append("    var hdrCenter = document.getElementById('top-header-center');\n");
         js.append("    if (hdrCenter) hdrCenter.appendChild(recHud);\n");
         js.append("    window.__playerWakeActive = ").append(wakePref).append(";\n");
@@ -1045,10 +1078,24 @@ private void injectReactiveDecksAndTheme() {
         js.append("        window.PlayerBridge.setWakeLock(window.__playerWakeActive);\n");
         js.append("      }\n");
         js.append("    });\n");
+        js.append("  }\n");
 
+        /* Middle Status Bar Right: LAMP Hardware Cap Button (left of EXIT) + EXIT Hardware Cap Button */
+        js.append("  var contHud = document.getElementById('cont-status-hud');\n");
+        js.append("  if (contHud && !document.getElementById('btn-player-exit')) {\n");
+        js.append("    var rWrap = document.createElement('div');\n");
+        js.append("    rWrap.style.cssText = 'justify-self:end;display:flex;align-items:center;padding-right:2px;';\n");
+        js.append("    contHud.parentNode.insertBefore(rWrap, contHud);\n");
+        js.append("    rWrap.appendChild(contHud);\n");
+
+        js.append("    var lampBtn = document.createElement('button');\n");
+        js.append("    lampBtn.id = 'btn-player-lamp'; lampBtn.type = 'button';\n");
+        js.append("    lampBtn.title = 'Tap: Bedroom Lights | Hold: Setup Alexa Routine URL';\n");
+        js.append("    lampBtn.innerHTML = '<div class=\"lamp-cap\"></div><span style=\"font-size:6.5px;font-weight:900;color:var(--toggle-color);letter-spacing:0.5px;\">LAMP</span>';\n");
+        js.append("    rWrap.appendChild(lampBtn);\n");
         js.append("    window.__playerLampState = false;\n");
         js.append("    var lpTimer = null, lpLong = false;\n");
-        js.append("    lPill.addEventListener('pointerdown', function() {\n");
+        js.append("    lampBtn.addEventListener('pointerdown', function() {\n");
         js.append("      clearTimeout(lpTimer); lpLong = false;\n");
         js.append("      lpTimer = setTimeout(function() {\n");
         js.append("        lpTimer = null; lpLong = true;\n");
@@ -1056,7 +1103,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("        if (window.PlayerBridge && window.PlayerBridge.openLampSetup) window.PlayerBridge.openLampSetup();\n");
         js.append("      }, 500);\n");
         js.append("    });\n");
-        js.append("    lPill.addEventListener('pointerup', function() {\n");
+        js.append("    lampBtn.addEventListener('pointerup', function() {\n");
         js.append("      var wasTap = lpTimer !== null; clearTimeout(lpTimer); lpTimer = null;\n");
         js.append("      if (wasTap && !lpLong) {\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
@@ -1066,16 +1113,9 @@ private void injectReactiveDecksAndTheme() {
         js.append("        }\n");
         js.append("      }\n");
         js.append("    });\n");
-        js.append("    lPill.addEventListener('pointerleave', function() { clearTimeout(lpTimer); lpTimer = null; });\n");
-        js.append("    lPill.addEventListener('pointercancel', function() { clearTimeout(lpTimer); lpTimer = null; });\n");
-        js.append("  }\n");
+        js.append("    lampBtn.addEventListener('pointerleave', function() { clearTimeout(lpTimer); lpTimer = null; });\n");
+        js.append("    lampBtn.addEventListener('pointercancel', function() { clearTimeout(lpTimer); lpTimer = null; });\n");
 
-        js.append("  var contHud = document.getElementById('cont-status-hud');\n");
-        js.append("  if (contHud && !document.getElementById('btn-player-exit')) {\n");
-        js.append("    var rWrap = document.createElement('div');\n");
-        js.append("    rWrap.style.cssText = 'justify-self:end;display:flex;align-items:center;padding-right:2px;';\n");
-        js.append("    contHud.parentNode.insertBefore(rWrap, contHud);\n");
-        js.append("    rWrap.appendChild(contHud);\n");
         js.append("    var exBtn = document.createElement('button');\n");
         js.append("    exBtn.id = 'btn-player-exit'; exBtn.type = 'button';\n");
         js.append("    exBtn.innerHTML = '<div class=\"exit-cap\"></div><span style=\"font-size:6.5px;font-weight:900;color:var(--toggle-color);letter-spacing:0.5px;\">EXIT</span>';\n");
@@ -1128,13 +1168,13 @@ private void injectReactiveDecksAndTheme() {
         js.append("    }\n");
         js.append("  };\n");
 
-        /* Build Clean 5-Button Top Row: [ SCANNER ] [ RADIO ] [ DECK ] [ CONT ] [ DSP ] */
+        /* Build Clean 5-Button Top Row: [ SCANNER ] [ RADIO ] [ DECK ] [ CONT ] [ DSP ] (No arrow symbols!) */
         js.append("  var origBackBtn = document.getElementById('btn-back-radio');\n");
         js.append("  var origTopRow = origBackBtn ? origBackBtn.parentNode : null;\n");
         js.append("  if (origTopRow && !document.getElementById('btn-switch-radio-archive')) {\n");
         js.append("    origTopRow.className = 'player-nav-row';\n");
         js.append("    var newScannerBtn = origBackBtn.cloneNode(true);\n");
-        js.append("    newScannerBtn.innerHTML = '&#9664; SCANNER';\n");
+        js.append("    newScannerBtn.innerText = 'SCANNER';\n");
         js.append("    origTopRow.replaceChild(newScannerBtn, origBackBtn);\n");
         js.append("    newScannerBtn.addEventListener('click', function() {\n");
         js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
@@ -1149,7 +1189,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("    modeSwitchBtn.id = 'btn-switch-radio-archive';\n");
         js.append("    modeSwitchBtn.className = 'btn';\n");
         js.append("    modeSwitchBtn.type = 'button';\n");
-        js.append("    modeSwitchBtn.innerHTML = 'RADIO &#9654;';\n");
+        js.append("    modeSwitchBtn.innerText = 'RADIO';\n");
         js.append("    origTopRow.insertBefore(modeSwitchBtn, newScannerBtn.nextSibling);\n");
         js.append("    modeSwitchBtn.addEventListener('click', function() {\n");
         js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
@@ -1557,7 +1597,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("      var dspBtnEl = document.getElementById('btn-dsp-filter');\n");
         js.append("      if (window.__isBroadcastRadioMode) {\n");
         js.append("        if (navRowEl) navRowEl.classList.add('radio-mode-nav');\n");
-        js.append("        if (swBtn) swBtn.innerHTML = 'ARCHIVE';\n");
+        js.append("        if (swBtn) swBtn.innerText = 'ARCHIVE';\n");
         js.append("        document.getElementById('deck-mode-hud').innerText = 'BROADCAST // TUNER';\n");
         js.append("        if (hdr) {\n");
         js.append("          hdr.style.gridTemplateColumns = '36px 68px 48px 1fr';\n");
@@ -1572,7 +1612,7 @@ private void injectReactiveDecksAndTheme() {
         js.append("        window.selectRadioStationOnly(window.__radioIdx || 0);\n");
         js.append("      } else {\n");
         js.append("        if (navRowEl) navRowEl.classList.remove('radio-mode-nav');\n");
-        js.append("        if (swBtn) swBtn.innerHTML = 'RADIO &#9654;';\n");
+        js.append("        if (swBtn) swBtn.innerText = 'RADIO';\n");
         js.append("        if (typeof applyDeck === 'function') applyDeck(deckIdx);\n");
         js.append("        if (hdr) {\n");
         js.append("          hdr.style.gridTemplateColumns = '62px 52px 58px 34px 1fr';\n");
@@ -1651,14 +1691,17 @@ private void injectReactiveDecksAndTheme() {
         js.append("      return;\n");
         js.append("    }\n");
 
-        /* Search + [ALL / NEW / UNPLAY] Filter Active on Archive Mode Only */
+        /* Search + [ALL / NEW / UNPLAY] Filter Active on Archive Mode Only (Keep active track visible until it finishes!) */
         js.append("    var q = (document.getElementById('search-box').value || '').trim().toLowerCase();\n");
         js.append("    var fMode = window.__archiveFilterMode || 0;\n");
         js.append("    filteredRecs = allRecs.filter(function(r) {\n");
         js.append("      var key = r.fileId || r.fileName;\n");
         js.append("      if (window.__deletedDriveIds && window.__deletedDriveIds[key]) return false;\n");
-        js.append("      if (fMode === 1 && window.__seenOnPrevVisit && window.__seenOnPrevVisit[key]) return false;\n");
-        js.append("      if (fMode === 2 && window.__playedDriveIds && window.__playedDriveIds[key]) return false;\n");
+        js.append("      var isCurrentlyPlayingTrack = (key && key === window.__activePlayingRecordKey && isPlayingNow);\n");
+        js.append("      if (!isCurrentlyPlayingTrack) {\n");
+        js.append("        if (fMode === 1 && window.__seenOnPrevVisit && window.__seenOnPrevVisit[key]) return false;\n");
+        js.append("        if (fMode === 2 && window.__playedDriveIds && window.__playedDriveIds[key]) return false;\n");
+        js.append("      }\n");
         js.append("      if (q && !r.name.toLowerCase().includes(q) && !r.freq.toLowerCase().includes(q) && !r.timeStr.toLowerCase().includes(q)) return false;\n");
         js.append("      return true;\n");
         js.append("    });\n");
@@ -1684,17 +1727,23 @@ private void injectReactiveDecksAndTheme() {
         js.append("    });\n");
         js.append("  };\n");
 
+        /* Mark previous track as played only when switching or finishing so current playing track stays visible while playing! */
+        js.append("  window.__commitPlayedRecordKey = function(key) {\n");
+        js.append("    if (!key) return;\n");
+        js.append("    window.__playedDriveIds[key] = true;\n");
+        js.append("    try { localStorage.setItem('proscan_played_recs_v1', JSON.stringify(window.__playedDriveIds)); } catch(e) {}\n");
+        js.append("  };\n");
+
         js.append("  var origPlayIndex = window.playIndex;\n");
         js.append("  window.playIndex = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= filteredRecs.length) return;\n");
+        js.append("    if (window.__activePlayingRecordKey) {\n");
+        js.append("      window.__commitPlayedRecordKey(window.__activePlayingRecordKey);\n");
+        js.append("    }\n");
         js.append("    window.__stopAllRadioAndNativeAudio();\n");
         js.append("    var r = filteredRecs[idx];\n");
         js.append("    var id = r.fileId || r.fileName;\n");
         js.append("    window.__activePlayingRecordKey = id;\n");
-        js.append("    if (id) {\n");
-        js.append("      window.__playedDriveIds[id] = true;\n");
-        js.append("      try { localStorage.setItem('proscan_played_recs_v1', JSON.stringify(window.__playedDriveIds)); } catch(e) {}\n");
-        js.append("    }\n");
         js.append("    var ro = document.getElementById('track-main-readout');\n");
         js.append("    if (ro) ro.innerText = r.name + ' • ' + r.freq;\n");
         js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
@@ -1703,14 +1752,28 @@ private void injectReactiveDecksAndTheme() {
         js.append("    origPlayIndex(idx);\n");
         js.append("  };\n");
 
-        /* Continuous & Single Track Loop Mode Logic */
+        /* Continuous & Single Track Loop Mode Logic: Mark track as played AFTER it finishes playing! */
         js.append("  window.onNativePlayEnded = function() {\n");
         js.append("    window.__stopAllRadioAndNativeAudio();\n");
         js.append("    if (window.__isBroadcastRadioMode) { renderPlaylist(); return; }\n");
+        js.append("    if (window.__isLoopMode && curIdx >= 0) {\n");
+        js.append("      playIndex(curIdx);\n");
+        js.append("      return;\n");
+        js.append("    }\n");
+        js.append("    if (window.__activePlayingRecordKey) {\n");
+        js.append("      window.__commitPlayedRecordKey(window.__activePlayingRecordKey);\n");
+        js.append("      window.__activePlayingRecordKey = '';\n");
+        js.append("    }\n");
         js.append("    window.__activePlayingFileId = '';\n");
         js.append("    renderPlaylist();\n");
-        js.append("    if (window.__isLoopMode && curIdx >= 0) playIndex(curIdx);\n");
-        js.append("    else if (isCont && curIdx > 0) playIndex(curIdx - 1);\n");
+        js.append("    if (isCont && curIdx > 0) {\n");
+        js.append("      var nextIdx = Math.min(curIdx - 1, filteredRecs.length - 1);\n");
+        js.append("      if (nextIdx >= 0) playIndex(nextIdx);\n");
+        js.append("    } else if (curIdx >= 0 && curIdx < filteredRecs.length) {\n");
+        js.append("      window.selectIndexOnly(curIdx);\n");
+        js.append("    } else if (filteredRecs.length > 0) {\n");
+        js.append("      window.selectIndexOnly(Math.min(curIdx, filteredRecs.length - 1));\n");
+        js.append("    }\n");
         js.append("  };\n");
 
         js.append("  var oldPlayBtn = document.getElementById('btn-play');\n");
@@ -1750,8 +1813,15 @@ private void injectReactiveDecksAndTheme() {
         js.append("      if (window.__isBroadcastRadioMode) {\n");
         js.append("        window.selectRadioStationOnly(window.__radioIdx || 0);\n");
         js.append("      } else {\n");
+        js.append("        if (window.__activePlayingRecordKey) {\n");
+        js.append("          window.__commitPlayedRecordKey(window.__activePlayingRecordKey);\n");
+        js.append("          window.__activePlayingRecordKey = '';\n");
+        js.append("        }\n");
         js.append("        window.__activePlayingFileId = '';\n");
+        js.append("        window.renderPlaylist();\n");
         js.append("        if (curIdx >= 0 && curIdx < filteredRecs.length) window.selectIndexOnly(curIdx);\n");
+        js.append("        else if (filteredRecs.length > 0) window.selectIndexOnly(Math.min(curIdx, filteredRecs.length - 1));\n");
+        js.append("        return;\n");
         js.append("      }\n");
         js.append("      window.renderPlaylist();\n");
         js.append("    });\n");
@@ -1776,6 +1846,7 @@ private void stopNativePlayer() {
         lastStreamTapUpdateMs = 0L;
         mainHandler.removeCallbacks(progressTicker);
         isLiveRadioStream = false;
+        activeLiveRadioUrl = "";
         if (nativePlayer != null) {
             try { if (nativePlayer.isPlaying()) nativePlayer.stop(); } catch (Exception ignored) {}
             try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
@@ -1997,6 +2068,7 @@ private void stopNativePlayer() {
     private void playLiveRadioUrlNatively(final String streamUrl) {
         stopNativePlayer();
         acquirePlaybackLocks();
+        activeLiveRadioUrl = streamUrl;
         final int reqId = ++currentStreamReqId;
         audioFetchExecutor.execute(() -> {
             final String resolvedUrl = resolveRedirects(streamUrl);
@@ -2010,6 +2082,7 @@ private void stopNativePlayer() {
                     }
                     isLiveRadioStream = true;
                     nativePlayer = new MediaPlayer();
+                    nativePlayer.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
                     if (Build.VERSION.SDK_INT >= 21) {
                         nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
                                 .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -2030,10 +2103,29 @@ private void stopNativePlayer() {
                         if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
                         mainHandler.post(progressTicker);
                     });
+                    nativePlayer.setOnCompletionListener(mp -> {
+                        // Live radio stream shouldn't end unless network dropped while screen is off — auto-reconnect!
+                        if (reqId == currentStreamReqId && isLiveRadioStream && !activeLiveRadioUrl.isEmpty()) {
+                            mainHandler.postDelayed(() -> {
+                                if (reqId == currentStreamReqId && isLiveRadioStream && !activeLiveRadioUrl.isEmpty()) {
+                                    playLiveRadioUrlNatively(activeLiveRadioUrl);
+                                }
+                            }, 1200);
+                        }
+                    });
                     nativePlayer.setOnErrorListener((mp, what, extra) -> {
                         if (reqId == currentStreamReqId) {
-                            stopNativePlayer();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM OFFLINE');", null);
+                            if (isLiveRadioStream && !activeLiveRadioUrl.isEmpty()) {
+                                final String retryUrl = activeLiveRadioUrl;
+                                mainHandler.postDelayed(() -> {
+                                    if (isLiveRadioStream && !retryUrl.isEmpty()) {
+                                        playLiveRadioUrlNatively(retryUrl);
+                                    }
+                                }, 2000);
+                            } else {
+                                stopNativePlayer();
+                                if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM OFFLINE');", null);
+                            }
                         }
                         return true;
                     });
@@ -2089,6 +2181,7 @@ private void stopNativePlayer() {
                         isLiveRadioStream = false;
                         currentEnvelope = env;
                         nativePlayer = new MediaPlayer();
+                        nativePlayer.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
                         if (Build.VERSION.SDK_INT >= 21) {
                             nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
                                     .setUsage(AudioAttributes.USAGE_MEDIA)
