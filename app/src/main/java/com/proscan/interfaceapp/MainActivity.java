@@ -96,7 +96,6 @@ public class MainActivity extends Activity {
         }
         if (webView != null) {
             webView.evaluateJavascript(
-                    "var lb=document.getElementById('btn-lamp-toggle');if(lb)lb.classList.toggle('active'," + bedroomLampOn + ");" +
                     "if(typeof showDisplayHud==='function')showDisplayHud('" + actionLabel + "',1500);",
                     null
             );
@@ -127,7 +126,7 @@ public class MainActivity extends Activity {
         layout.setPadding(pad, pad, pad, pad);
 
         TextView l1 = new TextView(this);
-        l1.setText("Lights OFF Alexa Routine URL (Virtual Buttons / Voice Monkey):");
+        l1.setText("Lights Toggle / OFF Alexa Routine URL (Virtual Buttons / Voice Monkey):");
         layout.addView(l1);
         final EditText offInput = new EditText(this);
         offInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
@@ -136,7 +135,7 @@ public class MainActivity extends Activity {
         layout.addView(offInput);
 
         TextView l2 = new TextView(this);
-        l2.setText("\nLights ON Alexa Routine URL (Optional - leave blank for OFF only):");
+        l2.setText("\nSecond Routine URL (Optional - leave blank for single toggle URL):");
         layout.addView(l2);
         final EditText onInput = new EditText(this);
         onInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
@@ -154,7 +153,7 @@ public class MainActivity extends Activity {
                             .apply();
                     Toast.makeText(MainActivity.this, "Bedroom Light Routine Saved! Tap LAMP to trigger.", Toast.LENGTH_SHORT).show();
                 })
-                .setNeutralButton("Test OFF Now", (d, w) -> {
+                .setNeutralButton("Test Now", (d, w) -> {
                     prefs.edit()
                             .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
                             .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
@@ -710,7 +709,7 @@ private void injectEnhancements() {
         js.append("        '.top-right-group{height:34px!important;}' +\n");
         js.append("        '.top-right-group .btn{font-size:11px!important;}' +\n");
         js.append("        '.scanner-nav-6{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:4px!important;height:32px!important;}' +\n");
-        js.append("        '.scanner-nav-6 .btn{font-size:9px!important;letter-spacing:-0.2px!important;padding:2px 1px!important;white-space:nowrap!important;}' +\n");
+        js.append("        '.scanner-nav-6 .btn{font-size:8.5px!important;letter-spacing:-0.3px!important;padding:2px 1px!important;white-space:nowrap!important;}' +\n");
         js.append("        '.essential-controls{grid-auto-rows:33px!important;gap:6px!important;}' +\n");
         js.append("        '.essential-controls > .btn{font-size:11.5px!important;}' +\n");
         js.append("        '.essential-controls .scroll-btn{font-size:9px!important;}' +\n");
@@ -752,10 +751,11 @@ private void injectEnhancements() {
         js.append("        '#voice-led{flex-shrink:0;width:10px;height:10px;border-radius:50%;background-color:var(--led-off-bg,#1a1a1a);border:var(--led-off-border,2px solid #000);box-shadow:var(--led-off-shadow,inset 1px 1px 3px rgba(0,0,0,0.8),0 1px 1px rgba(255,255,255,0.1));transition:all 0.3s ease;}' +\n");
         js.append("        '@keyframes voice-led-pulse-green{0%,100%{background-color:#10b981;border-color:#a7f3d0;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.9),0 0 0 1px rgba(0,0,0,0.65),0 0 8px #10b981,0 0 14px rgba(16,185,129,0.75);}50%{background-color:#065f46;border-color:#059669;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.35),0 0 0 1px rgba(0,0,0,0.65),0 0 2px rgba(16,185,129,0.25);}}' +\n");
         js.append("        '#btn-voice-toggle.active #voice-led{border-style:solid!important;border-width:2px!important;animation:voice-led-pulse-green 3.8s ease-in-out infinite!important;}' +\n");
-        /* Bedroom LAMP Button on Top Status Bar */
-        js.append("        '#btn-lamp-toggle{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0;cursor:pointer;touch-action:manipulation;}' +\n");
-        js.append("        '#lamp-led{width:10px;height:10px;border-radius:50%;background-color:var(--led-off-bg,#1a1a1a);border:var(--led-off-border,2px solid #000);box-shadow:var(--led-off-shadow,inset 1px 1px 3px rgba(0,0,0,0.8),0 1px 1px rgba(255,255,255,0.1));transition:all 0.3s ease;}' +\n");
-        js.append("        '#btn-lamp-toggle.active #lamp-led{background-color:#facc15!important;border:2px solid #fef08a!important;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.9),0 0 8px #facc15,0 0 14px rgba(250,204,21,0.75)!important;}' +\n");
+        /* Bedroom LAMP Button Cap (Like EXIT, placed directly to the left of EXIT) */
+        js.append("        '#btn-lamp-toggle{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 1px 0 1px;cursor:pointer;touch-action:manipulation;}' +\n");
+        js.append("        '#btn-lamp-toggle .lamp-cap{width:22px;height:10px;border-radius:4px;background:linear-gradient(180deg,#eab308,#a16207);border:1px solid #422006;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.35);display:flex;align-items:center;justify-content:center;}' +\n");
+        js.append("        '#btn-lamp-toggle .lamp-cap::after{content:\"\";width:7px;height:2px;border-radius:1px;background:rgba(254,249,195,0.9);}' +\n");
+        js.append("        '#btn-lamp-toggle:active .lamp-cap{transform:translateY(1px);filter:brightness(1.25);}' +\n");
         js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 1px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:22px;height:10px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:7px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
 
         /* 5-Style Live Signal Meter in #brand-logo-slot */
@@ -817,7 +817,8 @@ private void injectEnhancements() {
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
         js.append("      window.renderCustomBrand = function() {};\n");
-        js.append("      var mNames = ['S-BAR', 'VU DIAL', 'SPECTRUM', 'SCOPE', 'PEAK dB'];\n");
+        js.append("      var mShortNames = ['BAR', 'VU', 'EQ', 'SCP', 'dB'];\n");
+        js.append("      var mHudNames   = ['S-BAR', 'VU DIAL', 'SPECTRUM', 'SCOPE', 'PEAK dB'];\n");
         js.append("      window.__sigMeterStyle = parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0;\n");
         js.append("      var segHtml = ''; for (var s=0; s<12; s++) segHtml += '<div class=\"sm-seg\"></div>';\n");
         js.append("      var specHtml = ''; for (var sp=0; sp<10; sp++) specHtml += '<div class=\"sm-spec-bar\"></div>';\n");
@@ -837,9 +838,9 @@ private void injectEnhancements() {
         js.append("          if (el) el.classList.toggle('active', m === window.__sigMeterStyle);\n");
         js.append("        }\n");
         js.append("        var mBtn = document.getElementById('btn-brand-open');\n");
-        js.append("        if (mBtn) mBtn.innerText = 'MTR: ' + mNames[window.__sigMeterStyle];\n");
+        js.append("        if (mBtn) mBtn.innerText = 'MTR: ' + mShortNames[window.__sigMeterStyle];\n");
         js.append("        if (showHudMsg && typeof showDisplayHud === 'function') {\n");
-        js.append("          showDisplayHud('SIGNAL METER: ' + mNames[window.__sigMeterStyle], 1300);\n");
+        js.append("          showDisplayHud('SIGNAL METER: ' + mHudNames[window.__sigMeterStyle], 1300);\n");
         js.append("        }\n");
         js.append("      };\n");
 
@@ -1322,14 +1323,14 @@ js.append("    var dispBox = document.querySelector('.scanner-display');\n");
         js.append("      aBtn.addEventListener('pointercancel', function() { clearTimeout(aTimer); aTimer = null; });\n");
         js.append("    }\n");
 
-        /* Top LEDs Right: LAMP (Bedroom Lights), RX, LOG, EXIT */
+        /* Top LEDs Right: RX, LOG, then LAMP Button Cap (left of EXIT), then EXIT Button Cap */
         js.append("    var ledsRight = document.querySelector('.top-leds-right');\n");
         js.append("    if (ledsRight && !document.getElementById('btn-hardware-exit')) {\n");
         js.append("      var lampBtn = document.createElement('button');\n");
         js.append("      lampBtn.id = 'btn-lamp-toggle'; lampBtn.type = 'button';\n");
         js.append("      lampBtn.title = 'Tap: Bedroom Lights | Hold: Setup Alexa Routine URL';\n");
-        js.append("      lampBtn.innerHTML = '<div id=\"lamp-led\"></div><span class=\"rx-label\">LAMP</span>';\n");
-        js.append("      ledsRight.insertBefore(lampBtn, ledsRight.firstChild);\n");
+        js.append("      lampBtn.innerHTML = '<div class=\"lamp-cap\"></div><span class=\"rx-label\">LAMP</span>';\n");
+        js.append("      ledsRight.appendChild(lampBtn);\n");
         js.append("      window.__scannerLampState = false;\n");
         js.append("      var lpTimer = null, lpLong = false;\n");
         js.append("      lampBtn.addEventListener('pointerdown', function() {\n");
