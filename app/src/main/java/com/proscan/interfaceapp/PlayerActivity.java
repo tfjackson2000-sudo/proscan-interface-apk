@@ -98,6 +98,8 @@ public class PlayerActivity extends Activity {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private TextToSpeech tts = null;
     private boolean ttsReady = false;
+    private String lastSpokenCaption = "";
+    private long lastSpokenCaptionMs = 0L;
     private MediaPlayer nativePlayer = null;
     private Equalizer speechEqualizer = null;
     private Visualizer audioVisualizer = null;
@@ -750,7 +752,7 @@ public class PlayerActivity extends Activity {
                 .setNegativeButton("Cancel", null)
                 .show();
     }
-private void injectReactiveDecksAndTheme() {
+    private void injectReactiveDecksAndTheme() {
         String backupJson = prefs.getString("last_backup_json", "");
         String safeBackup = JSONObject.quote(backupJson);
         String savedStationsJson = prefs.getString("radio_stations_json", "");
@@ -791,6 +793,22 @@ private void injectReactiveDecksAndTheme() {
         js.append("    '.scanner-display{height:345px!important;transition:height 0.22s ease!important;}.top-controls-container{height:30px!important;}.buttons-box{gap:8px!important;padding:9px!important;}#mech-bay{height:216px!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] #mech-bay{display:none!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] .scanner-display{height:565px!important;}' +\n");
+
+        /* MOBILE LANDSCAPE SPLIT-SCREEN COCKPIT LAYOUT (Log Screen on Left, 3D Deck & Controls on Right) */
+        js.append("    '@media (orientation: landscape) and (max-height: 540px){' +\n");
+        js.append("      '#device-wrapper{width:96vw!important;max-width:96vw!important;height:94dvh!important;max-height:94dvh!important;}' +\n");
+        js.append("      '#custom-scanner-ui{display:grid!important;grid-template-columns:1.08fr 1fr!important;grid-template-rows:auto 1fr!important;gap:5px 12px!important;padding:10px 14px!important;height:100%!important;overflow:hidden!important;}' +\n");
+        js.append("      '.scanner-display, html[data-deck=\"lite\"] .scanner-display{grid-column:1!important;grid-row:1 / span 2!important;height:100%!important;min-height:0!important;}' +\n");
+        js.append("      '.top-controls-container{grid-column:2!important;grid-row:1!important;height:25px!important;}' +\n");
+        js.append("      '.buttons-box{grid-column:2!important;grid-row:2!important;height:100%!important;min-height:0!important;padding:6px!important;gap:5px!important;justify-content:space-between!important;}' +\n");
+        js.append("      '.player-nav-row{height:27px!important;gap:4px!important;}' +\n");
+        js.append("      '.player-nav-row .btn{font-size:9.5px!important;}' +\n");
+        js.append("      '#mech-bay{flex:1!important;height:auto!important;min-height:110px!important;}' +\n");
+        js.append("      '.btn-row-4{height:32px!important;gap:6px!important;}' +\n");
+        js.append("      '#btn-play, #btn-stop{font-size:12px!important;}' +\n");
+        js.append("      '.filter-row-archive, .radio-crud-bar{height:27px!important;gap:5px!important;}' +\n");
+        js.append("    '}' +\n");
+
         js.append("    '#playlist-box{overflow-y:scroll!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior:contain!important;}' +\n");
         js.append("    '.rec-row{padding:4.5px 4px!important;font-size:10px!important;touch-action:pan-y!important;}' +\n");
         js.append("    '.rec-row.playing, .rec-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
@@ -1838,7 +1856,7 @@ private void injectReactiveDecksAndTheme() {
 
         if (playerWeb != null) playerWeb.evaluateJavascript(js.toString(), null);
     }
-private void stopNativePlayer() {
+    private void stopNativePlayer() {
         releaseEqualizer();
         releasePlaybackLocks();
         currentStreamReqId++;
@@ -2396,12 +2414,21 @@ private void stopNativePlayer() {
         public void speakCaption(final String text) {
             mainHandler.post(() -> {
                 if (tts != null && ttsReady && text != null && !text.trim().isEmpty()) {
+                    String clean = text.trim();
+                    int commaIdx = clean.indexOf(',');
+                    String chKey = (commaIdx != -1 ? clean.substring(commaIdx + 1) : clean).trim().toLowerCase(Locale.ROOT);
+                    long now = System.currentTimeMillis();
+                    if (chKey.equals(lastSpokenCaption) && (now - lastSpokenCaptionMs < 30000L)) {
+                        return;
+                    }
+                    lastSpokenCaption = chKey;
+                    lastSpokenCaptionMs = now;
                     if (Build.VERSION.SDK_INT >= 21) {
                         Bundle params = new Bundle();
-                        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.35f);
-                        tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, params, "player_tts");
+                        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.25f);
+                        tts.speak(clean, TextToSpeech.QUEUE_FLUSH, params, "player_tts");
                     } else {
-                        tts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, null);
+                        tts.speak(clean, TextToSpeech.QUEUE_FLUSH, null);
                     }
                 }
             });
