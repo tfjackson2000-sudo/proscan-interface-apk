@@ -526,7 +526,6 @@ public class MainActivity extends Activity {
                 final String cleanText = text.trim();
 
                 long now = System.currentTimeMillis();
-                // 30-second cooldown for the same channel name so short consecutive transmissions don't repeat!
                 if (!cleanText.equalsIgnoreCase("Voice readout on")
                         && cleanText.equalsIgnoreCase(lastSpokenText)
                         && (now - lastSpokenTimestamp < 30000)) {
@@ -756,6 +755,16 @@ public class MainActivity extends Activity {
         js.append("        '}' +\n");
 
         js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:8px!important;gap:8px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
+        /* Seamless Transparent Log Header on Light Display Themes */
+        js.append("        '.scanner-display .log-container{display:flex!important;flex-direction:column!important;overflow:hidden!important;}' +\n");
+        js.append("        '#mini-log-table{display:flex!important;flex-direction:column!important;height:100%!important;width:100%!important;}' +\n");
+        js.append("        '#mini-log-table thead{flex:0 0 auto!important;display:table!important;width:100%!important;table-layout:fixed!important;background:transparent!important;}' +\n");
+        js.append("        '#mini-log-table thead th{background:transparent!important;position:static!important;}' +\n");
+        js.append("        '#mini-log-table tbody{flex:1 1 auto!important;display:block!important;overflow-y:auto!important;overflow-x:hidden!important;width:100%!important;scrollbar-width:thin!important;scrollbar-color:var(--log-header-text) transparent!important;}' +\n");
+        js.append("        '#mini-log-table tbody::-webkit-scrollbar{width:4px!important;}' +\n");
+        js.append("        '#mini-log-table tbody::-webkit-scrollbar-thumb{background:var(--log-header-text)!important;border-radius:2px!important;}' +\n");
+        js.append("        '#mini-log-table tbody tr{display:table!important;width:100%!important;table-layout:fixed!important;cursor:pointer;}' +\n");
+        js.append("        '#mini-log-table tbody tr:active{background:rgba(255,255,255,0.15)!important;}' +\n");
         js.append("        '.freq-hit-badge, #mini-log-table .freq-hit-badge, #mini-log-table td:nth-child(5) .freq-hit-badge, #mini-log-table td:nth-child(5) span[class*=\"hit\"], #mini-log-table td:nth-child(5) span[class*=\"badge\"]{display:none!important;visibility:hidden!important;width:0!important;height:0!important;padding:0!important;margin:0!important;border:none!important;overflow:hidden!important;font-size:0!important;}' +\n");
         js.append("        '#mini-log-table th,#mini-log-table td{padding:3.5px 2px 3.5px 4px!important;}' +\n");
         js.append("        '#mini-log-table th:nth-child(1),#mini-log-table td:nth-child(1){width:19%!important;}' +\n");
@@ -763,7 +772,6 @@ public class MainActivity extends Activity {
         js.append("        '#mini-log-table th:nth-child(3),#mini-log-table td:nth-child(3){width:13%!important;}' +\n");
         js.append("        '#mini-log-table th:nth-child(4),#mini-log-table td:nth-child(4){width:14%!important;}' +\n");
         js.append("        '#mini-log-table th:nth-child(5),#mini-log-table td:nth-child(5){width:34%!important;}' +\n");
-        js.append("        '#mini-log-table tbody tr{cursor:pointer;}#mini-log-table tbody tr:active{background:rgba(255,255,255,0.15)!important;}' +\n");
         js.append("        '.top-leds-left{gap:8px!important;}' +\n");
         js.append("        '.top-leds-right{gap:8px!important;}' +\n");
         js.append("        '#voice-switch-track{width:24px;height:11px;border-radius:999px;background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.16);box-shadow:inset 0 1px 3px rgba(0,0,0,0.85),0 1px 0 rgba(255,255,255,0.08);padding:1px;display:flex;align-items:center;position:relative;flex-shrink:0;}' +\n");
@@ -787,18 +795,18 @@ public class MainActivity extends Activity {
         js.append("        '.sm-lbl{font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;color:#38bdf8;letter-spacing:0.3px;margin-right:3px;flex-shrink:0;}' +\n");
         js.append("        '.sm-bar-wrap{display:flex;align-items:center;gap:2px;flex:1;height:11px;justify-content:space-between;}' +\n");
         js.append("        '.sm-seg{flex:1;height:100%;border-radius:1px;background:#1e293b;transition:background 0.04s linear;}' +\n");
-        /* Linear VU Dial with vertical indicator bar starting on the far left and moving right with sound */
+        /* Linear VU Dial with smooth carrier-level response */
         js.append("        '.sm-vu-wrap{width:100%;height:100%;background:linear-gradient(90deg,#fef9c3 0%,#fde047 68%,#f59e0b 100%);border-radius:3px;position:relative;overflow:hidden;border:1px solid #000;box-shadow:inset 0 1px 3px rgba(0,0,0,0.45);}' +\n");
         js.append("        '.sm-vu-wrap::after{content:\"\";position:absolute;left:3px;right:3px;bottom:2px;height:3px;background:repeating-linear-gradient(90deg,#1e293b 0px,#1e293b 1px,transparent 1px,transparent 6px);opacity:0.55;pointer-events:none;}' +\n");
         js.append("        '.sm-vu-scale{position:absolute;top:1px;left:4px;right:4px;font-family:monospace;font-size:6.5px;font-weight:900;color:#1e293b;display:flex;justify-content:space-between;line-height:1;z-index:1;pointer-events:none;}' +\n");
-        js.append("        '#sm-vu-needle{position:absolute;top:0;bottom:0;left:3px;width:2.5px;background:#dc2626;border-radius:1px;box-shadow:0 0 4px rgba(220,38,38,0.9),1px 0 2px rgba(0,0,0,0.6);transition:left 0.04s linear;z-index:2;}' +\n");
+        js.append("        '#sm-vu-needle{position:absolute;top:0;bottom:0;left:3px;width:2.5px;background:#dc2626;border-radius:1px;box-shadow:0 0 4px rgba(220,38,38,0.9),1px 0 2px rgba(0,0,0,0.6);transition:left 0.14s ease-out;z-index:2;}' +\n");
         js.append("        '.sm-spec-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:2px;width:100%;height:15px;padding-top:1px;}' +\n");
         js.append("        '.sm-spec-bar{flex:1;height:2px;background:linear-gradient(180deg,#ef4444 0%,#facc15 35%,#22c55e 100%);border-radius:1px 1px 0 0;transition:height 0.04s linear;}' +\n");
         js.append("        '#sm-scope-canvas{width:100%;height:16px;display:block;}' +\n");
         js.append("        '.sm-dig-wrap{display:flex;align-items:center;justify-content:space-between;width:100%;gap:4px;font-family:\"JetBrains Mono\",monospace;}' +\n");
         js.append("        '#sm-dig-txt{font-size:8.5px;font-weight:900;color:#39ff14;min-width:46px;text-align:left;letter-spacing:-0.3px;}' +\n");
         js.append("        '.sm-peak-track{flex:1;height:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;overflow:hidden;position:relative;}' +\n");
-        js.append("        '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.04s linear;}' +\n");
+        js.append("        '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.14s ease-out;}' +\n");
 
         js.append("        '#display-clock-hud{position:absolute!important;top:6px!important;left:10px!important;right:auto!important;z-index:3!important;}' +\n");
         js.append("        '#scanner-bat-hud{position:absolute!important;top:6px!important;right:9px!important;left:auto!important;z-index:3!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10px!important;font-weight:700!important;letter-spacing:0.8px!important;color:var(--log-text)!important;opacity:0.88;pointer-events:none;display:inline-flex!important;align-items:center!important;line-height:1;transition:opacity 0.3s ease,color 0.3s ease;}' +\n");
@@ -835,7 +843,7 @@ public class MainActivity extends Activity {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Build 5-Style Audio-Reactive Signal Meter in #brand-logo-slot & wire up METER button */
+        /* Build 5-Style Signal Meter in #brand-logo-slot (Steady RF Carrier for S-BAR, VU DIAL & PEAK dB; Voice-modulated for EQ & SCOPE) */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
         js.append("      window.renderCustomBrand = function() {};\n");
@@ -877,18 +885,20 @@ public class MainActivity extends Activity {
         js.append("      if (mHost) mHost.addEventListener('click', window.handleBrandCornerTap);\n");
         js.append("      window.__applySigMeterStyle(window.__sigMeterStyle, false);\n");
 
-        /* Real-Time 60fps Audio-Reactive Signal Meter Loop with Smart Keypad-Beep Rejection + Auto-Gain! */
-        js.append("      var smSmoothLvl = 0;\n");
+        /* Real-Time 60fps Signal Meter Loop: Steady Carrier for S-BAR/VU/dB + Voice-Modulated for EQ/SCOPE */
+        js.append("      var smCarrierLvl = 0;\n");
+        js.append("      var smAudioLvl = 0;\n");
         js.append("      var smAdaptiveMax = 14.0;\n");
         js.append("      var smPhase = 0;\n");
         js.append("      function renderLiveScannerSignalMeter() {\n");
         js.append("        requestAnimationFrame(renderLiveScannerSignalMeter);\n");
-        js.append("        var rawLvl = 0;\n");
+        js.append("        var rawAud = 0;\n");
         js.append("        var rxLedEl = document.getElementById('rx-led');\n");
         js.append("        var isRxVoiceActive = rxLedEl && rxLedEl.classList.contains('active');\n");
-        js.append("        if (isRxVoiceActive && typeof isConnected !== 'undefined' && isConnected && typeof analyser !== 'undefined' && analyser && typeof dataArray !== 'undefined' && dataArray) {\n");
+        js.append("        var activeAn = window.analyser || (typeof analyser !== 'undefined' ? analyser : null);\n");
+        js.append("        if (isRxVoiceActive && typeof isConnected !== 'undefined' && isConnected && activeAn && typeof dataArray !== 'undefined' && dataArray) {\n");
         js.append("          try {\n");
-        js.append("            analyser.getByteTimeDomainData(dataArray);\n");
+        js.append("            activeAn.getByteTimeDomainData(dataArray);\n");
         js.append("            var sumSq = 0, peak = 0;\n");
         js.append("            for (var i = 0; i < dataArray.length; i++) {\n");
         js.append("              var d = Math.abs(dataArray[i] - 128);\n");
@@ -903,16 +913,19 @@ public class MainActivity extends Activity {
         js.append("              var noiseFloor = 1.4;\n");
         js.append("              var norm = (combined - noiseFloor) / Math.max(4.0, (smAdaptiveMax * 0.82) - noiseFloor);\n");
         js.append("              norm = Math.max(0, Math.min(1.0, norm));\n");
-        js.append("              rawLvl = Math.min(0.98, Math.pow(norm, 0.72));\n");
+        js.append("              rawAud = Math.min(0.98, Math.pow(norm, 0.72));\n");
         js.append("            }\n");
         js.append("          } catch(e) {}\n");
         js.append("        }\n");
-        js.append("        smSmoothLvl += (rawLvl - smSmoothLvl) * (rawLvl > smSmoothLvl ? 0.42 : 0.22);\n");
-        js.append("        if (smSmoothLvl < 0.015) smSmoothLvl = 0;\n");
+        js.append("        var targetCarrier = isRxVoiceActive ? Math.min(0.94, 0.82 + rawAud * 0.12 + Math.sin(smPhase * 0.4) * 0.015) : 0;\n");
+        js.append("        smCarrierLvl += (targetCarrier - smCarrierLvl) * (targetCarrier > smCarrierLvl ? 0.16 : 0.10);\n");
+        js.append("        if (smCarrierLvl < 0.01) smCarrierLvl = 0;\n");
+        js.append("        smAudioLvl += (rawAud - smAudioLvl) * (rawAud > smAudioLvl ? 0.42 : 0.22);\n");
+        js.append("        if (smAudioLvl < 0.015) smAudioLvl = 0;\n");
 
         js.append("        var stIdx = window.__sigMeterStyle || 0;\n");
         js.append("        if (stIdx === 0) {\n");
-        js.append("          var activeSegs = smSmoothLvl < 0.03 ? 0 : Math.min(12, Math.ceil(smSmoothLvl * 12));\n");
+        js.append("          var activeSegs = smCarrierLvl < 0.03 ? 0 : Math.min(12, Math.ceil(smCarrierLvl * 12));\n");
         js.append("          var segs = document.querySelectorAll('#sm-led-bars .sm-seg');\n");
         js.append("          for (var k = 0; k < segs.length; k++) {\n");
         js.append("            if (k < activeSegs) {\n");
@@ -927,16 +940,16 @@ public class MainActivity extends Activity {
         js.append("        } else if (stIdx === 1) {\n");
         js.append("          var ndl = document.getElementById('sm-vu-needle');\n");
         js.append("          if (ndl) {\n");
-        js.append("            var pct = Math.min(100, Math.max(0, smSmoothLvl * 100));\n");
+        js.append("            var pct = Math.min(100, Math.max(0, smCarrierLvl * 100));\n");
         js.append("            ndl.style.left = 'calc(3px + ' + (pct * 0.92).toFixed(1) + '%)';\n");
         js.append("          }\n");
         js.append("        } else if (stIdx === 2) {\n");
         js.append("          var bars = document.querySelectorAll('#sm-spec-bars .sm-spec-bar');\n");
-        js.append("          var hasFreq = (typeof isConnected !== 'undefined' && isConnected && typeof analyser !== 'undefined' && analyser && typeof freqArray !== 'undefined' && freqArray);\n");
-        js.append("          if (hasFreq) { try { analyser.getByteFrequencyData(freqArray); } catch(e) {} }\n");
+        js.append("          var hasFreq = (typeof isConnected !== 'undefined' && isConnected && activeAn && typeof freqArray !== 'undefined' && freqArray);\n");
+        js.append("          if (hasFreq) { try { activeAn.getByteFrequencyData(freqArray); } catch(e) {} }\n");
         js.append("          for (var b = 0; b < bars.length; b++) {\n");
         js.append("            var h = 2;\n");
-        js.append("            if (smSmoothLvl >= 0.03) {\n");
+        js.append("            if (smAudioLvl >= 0.03) {\n");
         js.append("              var bell = Math.sin(((b + 1) / 11) * Math.PI);\n");
         js.append("              var wv = 0.55 + 0.45 * Math.sin(b * 0.8 + smPhase) * Math.cos(b * 0.4 - smPhase * 0.7);\n");
         js.append("              var binBoost = 0;\n");
@@ -944,7 +957,7 @@ public class MainActivity extends Activity {
         js.append("                var bin = Math.min(freqArray.length - 1, 2 + b * 5);\n");
         js.append("                binBoost = (freqArray[bin] / 255.0) * 6.0;\n");
         js.append("              }\n");
-        js.append("              h = Math.max(2, Math.min(15, Math.round(bell * wv * smSmoothLvl * 16 + binBoost)));\n");
+        js.append("              h = Math.max(2, Math.min(15, Math.round(bell * wv * smAudioLvl * 16 + binBoost)));\n");
         js.append("            }\n");
         js.append("            bars[b].style.height = h + 'px';\n");
         js.append("          }\n");
@@ -954,12 +967,12 @@ public class MainActivity extends Activity {
         js.append("            var c = cv.getContext('2d');\n");
         js.append("            var W = cv.width, H = cv.height;\n");
         js.append("            c.clearRect(0, 0, W, H);\n");
-        js.append("            c.strokeStyle = smSmoothLvl >= 0.03 ? '#39ff14' : '#334155';\n");
+        js.append("            c.strokeStyle = smAudioLvl >= 0.03 ? '#39ff14' : '#334155';\n");
         js.append("            c.lineWidth = 1.4;\n");
         js.append("            c.beginPath();\n");
         js.append("            for (var x = 0; x < W; x += 2) {\n");
         js.append("              var env = Math.sin((x / W) * Math.PI);\n");
-        js.append("              var y = (H / 2) + Math.sin(x * 0.14 + smPhase) * Math.cos(x * 0.06 - smPhase * 0.5) * env * (smSmoothLvl * (H * 0.48));\n");
+        js.append("              var y = (H / 2) + Math.sin(x * 0.14 + smPhase) * Math.cos(x * 0.06 - smPhase * 0.5) * env * (smAudioLvl * (H * 0.48));\n");
         js.append("              if (x === 0) c.moveTo(x, y); else c.lineTo(x, y);\n");
         js.append("            }\n");
         js.append("            c.stroke();\n");
@@ -968,20 +981,20 @@ public class MainActivity extends Activity {
         js.append("          var dTxt = document.getElementById('sm-dig-txt');\n");
         js.append("          var pFill = document.getElementById('sm-peak-fill');\n");
         js.append("          if (dTxt) {\n");
-        js.append("            if (smSmoothLvl < 0.03) {\n");
+        js.append("            if (smCarrierLvl < 0.03) {\n");
         js.append("              dTxt.innerText = 'S0 -98dB';\n");
         js.append("              dTxt.style.color = '#64748b';\n");
         js.append("            } else {\n");
-        js.append("              var sUnit = Math.min(9, Math.max(1, Math.round(smSmoothLvl * 10)));\n");
-        js.append("              var dbVal = -92 + Math.round(smSmoothLvl * 58);\n");
-        js.append("              var plusStr = smSmoothLvl > 0.80 ? ('S9+' + Math.round((smSmoothLvl - 0.78) * 140)) : ('S' + sUnit + ' ' + dbVal + 'dB');\n");
+        js.append("              var sUnit = Math.min(9, Math.max(1, Math.round(smCarrierLvl * 10)));\n");
+        js.append("              var dbVal = -92 + Math.round(smCarrierLvl * 58);\n");
+        js.append("              var plusStr = smCarrierLvl > 0.80 ? ('S9+' + Math.round((smCarrierLvl - 0.78) * 140)) : ('S' + sUnit + ' ' + dbVal + 'dB');\n");
         js.append("              dTxt.innerText = plusStr;\n");
-        js.append("              dTxt.style.color = smSmoothLvl > 0.76 ? '#facc15' : '#39ff14';\n");
+        js.append("              dTxt.style.color = smCarrierLvl > 0.76 ? '#facc15' : '#39ff14';\n");
         js.append("            }\n");
         js.append("          }\n");
-        js.append("          if (pFill) pFill.style.width = Math.min(100, Math.round(smSmoothLvl * 100)) + '%';\n");
+        js.append("          if (pFill) pFill.style.width = Math.min(100, Math.round(smCarrierLvl * 100)) + '%';\n");
         js.append("        }\n");
-        js.append("        smPhase += smSmoothLvl >= 0.03 ? (0.14 + smSmoothLvl * 0.28) : 0.02;\n");
+        js.append("        smPhase += isRxVoiceActive ? (0.14 + smAudioLvl * 0.28) : 0.02;\n");
         js.append("      }\n");
         js.append("      renderLiveScannerSignalMeter();\n");
         js.append("    }\n");
@@ -1173,39 +1186,62 @@ public class MainActivity extends Activity {
         js.append("        setTimeout(function() { if (window.AndroidApp) window.AndroidApp.openBroadcastRadio(); }, 160);\n");
         js.append("      });\n");
 
-        /* Live Web Audio DSP Speech Filter & Squelch De-Hiss Compressor */
+        /* Live Web Audio DSP Speech Filter & Squelch De-Hiss Compressor (Exposes window.source in setupAudioDetection!) */
+        js.append("      window.setupAudioDetection = function() {\n");
+        js.append("        var player = document.getElementById('audio_player');\n");
+        js.append("        if (typeof isAudioSetup !== 'undefined' && isAudioSetup) {\n");
+        js.append("          if (typeof detectAudio === 'function') detectAudio();\n");
+        js.append("          return;\n");
+        js.append("        }\n");
+        js.append("        if (!player) return;\n");
+        js.append("        try {\n");
+        js.append("          var AudioCtx = window.AudioContext || window.webkitAudioContext;\n");
+        js.append("          audioContext = window.audioContext = new AudioCtx();\n");
+        js.append("          analyser = window.analyser = audioContext.createAnalyser();\n");
+        js.append("          analyser.smoothingTimeConstant = 0.5;\n");
+        js.append("          window.source = audioContext.createMediaElementSource(player);\n");
+        js.append("          window.source.connect(analyser);\n");
+        js.append("          analyser.connect(audioContext.destination);\n");
+        js.append("          analyser.fftSize = 512;\n");
+        js.append("          dataArray = new Uint8Array(analyser.frequencyBinCount);\n");
+        js.append("          freqArray = new Uint8Array(analyser.frequencyBinCount);\n");
+        js.append("          isAudioSetup = true;\n");
+        js.append("          if (window.__applyScannerDspRouting) window.__applyScannerDspRouting();\n");
+        js.append("          if (typeof detectAudio === 'function') detectAudio();\n");
+        js.append("        } catch(e) {}\n");
+        js.append("      };\n");
+
         js.append("      window.__scannerDspOn = localStorage.getItem('proscan_scanner_dsp_v1') === 'true';\n");
         js.append("      window.__applyScannerDspRouting = function() {\n");
-        js.append("        if (!window.audioContext) return;\n");
-        js.append("        var player = document.getElementById('audio_player');\n");
-        js.append("        if (!player) return;\n");
+        js.append("        if (!window.audioContext || !window.source || !window.analyser) return;\n");
         js.append("        if (!window.__dspNodes) {\n");
         js.append("          try {\n");
         js.append("            var ctx = window.audioContext;\n");
         js.append("            var hp = ctx.createBiquadFilter();\n");
         js.append("            hp.type = 'highpass';\n");
-        js.append("            hp.frequency.value = 320;\n");
+        js.append("            hp.frequency.value = 340;\n");
         js.append("            var peak = ctx.createBiquadFilter();\n");
         js.append("            peak.type = 'peaking';\n");
-        js.append("            peak.frequency.value = 2200;\n");
-        js.append("            peak.Q.value = 1.2;\n");
-        js.append("            peak.gain.value = 6.5;\n");
+        js.append("            peak.frequency.value = 2150;\n");
+        js.append("            peak.Q.value = 1.1;\n");
+        js.append("            peak.gain.value = 8.5;\n");
         js.append("            var lp = ctx.createBiquadFilter();\n");
         js.append("            lp.type = 'lowpass';\n");
-        js.append("            lp.frequency.value = 4500;\n");
+        js.append("            lp.frequency.value = 3900;\n");
         js.append("            var comp = ctx.createDynamicsCompressor();\n");
-        js.append("            comp.threshold.value = -24;\n");
-        js.append("            comp.knee.value = 12;\n");
-        js.append("            comp.ratio.value = 4;\n");
+        js.append("            comp.threshold.value = -26;\n");
+        js.append("            comp.knee.value = 10;\n");
+        js.append("            comp.ratio.value = 5;\n");
         js.append("            comp.attack.value = 0.003;\n");
-        js.append("            comp.release.value = 0.25;\n");
+        js.append("            comp.release.value = 0.22;\n");
         js.append("            hp.connect(peak); peak.connect(lp); lp.connect(comp);\n");
         js.append("            window.__dspNodes = { hp: hp, comp: comp };\n");
         js.append("          } catch(e) {}\n");
         js.append("        }\n");
-        js.append("        if (window.__dspNodes && window.source && window.analyser) {\n");
+        js.append("        if (window.__dspNodes) {\n");
         js.append("          try {\n");
         js.append("            window.source.disconnect();\n");
+        js.append("            window.__dspNodes.comp.disconnect();\n");
         js.append("            if (window.__scannerDspOn) {\n");
         js.append("              window.source.connect(window.__dspNodes.hp);\n");
         js.append("              window.__dspNodes.comp.connect(window.analyser);\n");
