@@ -466,7 +466,6 @@ public class PlayerActivity extends Activity {
                     playerWeb.evaluateJavascript("if(window.onNativeTelemetry)window.onNativeTelemetry(" + sec + "," + tot + "," + prog + "," + level + ");", null);
                     mainHandler.postDelayed(this, 50);
                 } else if (isLiveRadioStream && !activeLiveRadioUrl.isEmpty() && nativePlayer != null) {
-                    // Screen-off watchdog: if live radio stream paused unexpectedly while still active, resume it
                     try {
                         nativePlayer.start();
                         mainHandler.postDelayed(this, 250);
@@ -790,7 +789,7 @@ public class PlayerActivity extends Activity {
         js.append("    '#device-wrapper.fading-out{opacity:0!important;}' +\n");
         js.append("    '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;}' +\n");
         /* Expanded Log Screen (345px in Normal Mode, 565px in Lite Mode) & Taller Controls */
-        js.append("    '.scanner-display{height:345px!important;transition:height 0.22s ease!important;}.top-controls-container{height:30px!important;}.buttons-box{gap:8px!important;padding:9px!important;}#mech-bay{height:216px!important;}' +\n");
+        js.append("    '.scanner-display{height:345px!important;transition:height 0.22s ease!important;}.top-controls-container{height:34px!important;}.buttons-box{gap:8px!important;padding:9px!important;}#mech-bay{height:216px!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] #mech-bay{display:none!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] .scanner-display{height:565px!important;}' +\n");
 
@@ -799,7 +798,7 @@ public class PlayerActivity extends Activity {
         js.append("      '#device-wrapper{width:96vw!important;max-width:96vw!important;height:94dvh!important;max-height:94dvh!important;}' +\n");
         js.append("      '#custom-scanner-ui{display:grid!important;grid-template-columns:1.08fr 1fr!important;grid-template-rows:auto 1fr!important;gap:5px 12px!important;padding:10px 14px!important;height:100%!important;overflow:hidden!important;}' +\n");
         js.append("      '.scanner-display, html[data-deck=\"lite\"] .scanner-display{grid-column:1!important;grid-row:1 / span 2!important;height:100%!important;min-height:0!important;}' +\n");
-        js.append("      '.top-controls-container{grid-column:2!important;grid-row:1!important;height:25px!important;}' +\n");
+        js.append("      '.top-controls-container{grid-column:2!important;grid-row:1!important;height:30px!important;}' +\n");
         js.append("      '.buttons-box{grid-column:2!important;grid-row:2!important;height:100%!important;min-height:0!important;padding:6px!important;gap:5px!important;justify-content:space-between!important;}' +\n");
         js.append("      '.player-nav-row{height:27px!important;gap:4px!important;}' +\n");
         js.append("      '.player-nav-row .btn{font-size:9.5px!important;}' +\n");
@@ -845,7 +844,7 @@ public class PlayerActivity extends Activity {
         /* Completely Hide Unwanted Elements */
         js.append("    '#date-select, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
 
-        /* 5-Style Live Signal Meter in #brand-logo-slot on Archive & Radio */
+        /* 5-Style Live Signal Meter in #brand-logo-slot on Archive & Radio (With crisp black VU tick marks) */
         js.append("    '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:124px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
         js.append("    '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
         js.append("    '.sm-mode.active{display:flex;}' +\n");
@@ -853,16 +852,16 @@ public class PlayerActivity extends Activity {
         js.append("    '.sm-bar-wrap{display:flex;align-items:center;gap:2px;flex:1;height:11px;justify-content:space-between;}' +\n");
         js.append("    '.sm-seg{flex:1;height:100%;border-radius:1px;background:#1e293b;transition:background 0.04s linear;}' +\n");
         js.append("    '.sm-vu-wrap{width:100%;height:100%;background:linear-gradient(90deg,#fef9c3 0%,#fde047 68%,#f59e0b 100%);border-radius:3px;position:relative;overflow:hidden;border:1px solid #000;box-shadow:inset 0 1px 3px rgba(0,0,0,0.45);}' +\n");
-        js.append("    '.sm-vu-wrap::after{content:\"\";position:absolute;left:3px;right:3px;bottom:2px;height:3px;background:repeating-linear-gradient(90deg,#1e293b 0px,#1e293b 1px,transparent 1px,transparent 6px);opacity:0.55;pointer-events:none;}' +\n");
-        js.append("    '.sm-vu-scale{position:absolute;top:1px;left:4px;right:4px;font-family:monospace;font-size:6.5px;font-weight:900;color:#1e293b;display:flex;justify-content:space-between;line-height:1;z-index:1;pointer-events:none;}' +\n");
-        js.append("    '#sm-vu-needle{position:absolute;top:0;bottom:0;left:3px;width:2.5px;background:#dc2626;border-radius:1px;box-shadow:0 0 4px rgba(220,38,38,0.9),1px 0 2px rgba(0,0,0,0.6);transition:left 0.04s linear;z-index:2;}' +\n");
+        js.append("    '.sm-vu-wrap::after{content:\"\";position:absolute;left:4px;right:4px;bottom:1px;height:5px;border-bottom:1.5px solid #0f172a;background:repeating-linear-gradient(90deg,#0f172a 0px,#0f172a 2px,transparent 2px,transparent 8px);opacity:0.9;z-index:1;pointer-events:none;}' +\n");
+        js.append("    '.sm-vu-scale{position:absolute;top:1px;left:4px;right:4px;font-family:monospace;font-size:6.5px;font-weight:900;color:#0f172a;display:flex;justify-content:space-between;line-height:1;z-index:2;pointer-events:none;}' +\n");
+        js.append("    '#sm-vu-needle{position:absolute;top:0;bottom:0;left:3px;width:2.5px;background:#dc2626;border-radius:1px;box-shadow:0 0 4px rgba(220,38,38,0.9),1px 0 2px rgba(0,0,0,0.6);transition:left 0.14s ease-out;z-index:3;}' +\n");
         js.append("    '.sm-spec-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:2px;width:100%;height:15px;padding-top:1px;}' +\n");
         js.append("    '.sm-spec-bar{flex:1;height:2px;background:linear-gradient(180deg,#ef4444 0%,#facc15 35%,#22c55e 100%);border-radius:1px 1px 0 0;transition:height 0.04s linear;}' +\n");
         js.append("    '#sm-scope-canvas{width:100%;height:16px;display:block;}' +\n");
         js.append("    '.sm-dig-wrap{display:flex;align-items:center;justify-content:space-between;width:100%;gap:4px;font-family:\"JetBrains Mono\",monospace;}' +\n");
         js.append("    '#sm-dig-txt{font-size:8.5px;font-weight:900;color:#39ff14;min-width:46px;text-align:left;letter-spacing:-0.3px;}' +\n");
         js.append("    '.sm-peak-track{flex:1;height:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;overflow:hidden;position:relative;}' +\n");
-        js.append("    '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.04s linear;}' +\n");
+        js.append("    '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.14s ease-out;}' +\n");
 
         js.append("    '#deck-vinyl{background:radial-gradient(circle at 46% 54%,#1e2229 0%,#0c0e12 85%)!important;}' +\n");
         js.append("    '.tt-platter{position:absolute!important;left:90px!important;top:38px!important;width:140px!important;height:140px!important;box-shadow:0 8px 20px rgba(0,0,0,0.95),0 0 0 3px #18181b!important;}' +\n");
@@ -891,14 +890,15 @@ public class PlayerActivity extends Activity {
         js.append("    '#player-wake-pill{display:inline-flex;align-items:center;gap:3px;cursor:pointer;padding:1px 6px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:6px;touch-action:manipulation;}' +\n");
         js.append("    '#player-wake-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
         js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}' +\n");
-        /* LAMP Hardware Cap Button (Matches EXIT Cap style, placed directly to the left of EXIT) */
-        js.append("    '#btn-player-lamp{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-right:6px;cursor:pointer;touch-action:manipulation;}' +\n");
-        js.append("    '#btn-player-lamp .lamp-cap{width:22px;height:10px;border-radius:4px;background:linear-gradient(180deg,#eab308,#a16207);border:1px solid #422006;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.35);display:flex;align-items:center;justify-content:center;}' +\n");
-        js.append("    '#btn-player-lamp .lamp-cap::after{content:\"\";width:7px;height:2px;border-radius:1px;background:rgba(254,249,195,0.9);}' +\n");
+
+        /* Larger, More Square LAMP & EXIT Hardware Cap Buttons (22x16px) */
+        js.append("    '#btn-player-lamp{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-right:8px;cursor:pointer;touch-action:manipulation;}' +\n");
+        js.append("    '#btn-player-lamp .lamp-cap{width:22px;height:16px;border-radius:5px;background:linear-gradient(180deg,#eab308,#a16207);border:1px solid #422006;box-shadow:0 2px 3px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;}' +\n");
+        js.append("    '#btn-player-lamp .lamp-cap::after{content:\"\";width:8px;height:3px;border-radius:1.5px;background:rgba(254,249,195,0.92);box-shadow:0 0 4px rgba(254,249,195,0.5);}' +\n");
         js.append("    '#btn-player-lamp:active .lamp-cap{transform:translateY(1px);filter:brightness(1.25);}' +\n");
         js.append("    '#btn-player-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-left:2px;cursor:pointer;touch-action:manipulation;}' +\n");
-        js.append("    '#btn-player-exit .exit-cap{width:22px;height:10px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}' +\n");
-        js.append("    '#btn-player-exit .exit-cap::after{content:\"\";width:7px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}' +\n");
+        js.append("    '#btn-player-exit .exit-cap{width:22px;height:16px;border-radius:5px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 2px 3px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.32);display:flex;align-items:center;justify-content:center;}' +\n");
+        js.append("    '#btn-player-exit .exit-cap::after{content:\"\";width:8px;height:3px;border-radius:1.5px;background:rgba(255,220,220,0.88);}' +\n");
         js.append("    '#btn-player-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
         js.append("    '#player-bat-hud{display:inline-flex;align-items:center;gap:3px;font-family:\"JetBrains Mono\",monospace;font-size:10px;font-weight:800;color:var(--log-text);}' +\n");
         js.append("    '.bat-icon-box{display:inline-block;width:15px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;margin-right:3px;}' +\n");
@@ -946,7 +946,7 @@ public class PlayerActivity extends Activity {
         js.append("    newCycBtn.addEventListener('pointercancel', function() { clearTimeout(dHoldTimer); dHoldTimer = null; });\n");
         js.append("  }\n");
 
-        /* Inject 5-Style Audio-Reactive Signal Meter into #brand-logo-slot on Archive & Radio */
+        /* Inject 5-Style Signal Meter: Steady RF Carrier for S-BAR (0), VU DIAL (1) & PEAK dB (4); Voice-Modulated for EQ (2) & SCOPE (3) */
         js.append("  var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("  if (bSlot && !document.getElementById('sig-meter-host')) {\n");
         js.append("    window.__sigMeterStyle = parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0;\n");
@@ -973,15 +973,19 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("    window.__applyPlayerSigMeterStyle(window.__sigMeterStyle);\n");
 
-        js.append("    var pSmSmooth = 0, pSmPhase = 0;\n");
+        js.append("    var pSmCarrier = 0, pSmAudio = 0, pSmPhase = 0;\n");
         js.append("    function updatePlayerTopSignalMeter() {\n");
         js.append("      requestAnimationFrame(updatePlayerTopSignalMeter);\n");
-        js.append("      var target = isPlayingNow ? (window.__audioLevel || 0) : 0;\n");
-        js.append("      pSmSmooth += (target - pSmSmooth) * (target > pSmSmooth ? 0.38 : 0.20);\n");
-        js.append("      if (pSmSmooth < 0.01) pSmSmooth = 0;\n");
+        js.append("      var rawAud = isPlayingNow ? (window.__audioLevel || 0) : 0;\n");
+        js.append("      var targetCarrier = isPlayingNow ? Math.min(0.94, 0.82 + rawAud * 0.12 + Math.sin(pSmPhase * 0.4) * 0.015) : 0;\n");
+        js.append("      pSmCarrier += (targetCarrier - pSmCarrier) * (targetCarrier > pSmCarrier ? 0.16 : 0.10);\n");
+        js.append("      if (pSmCarrier < 0.01) pSmCarrier = 0;\n");
+        js.append("      pSmAudio += (rawAud - pSmAudio) * (rawAud > pSmAudio ? 0.42 : 0.22);\n");
+        js.append("      if (pSmAudio < 0.015) pSmAudio = 0;\n");
+
         js.append("      var stIdx = window.__sigMeterStyle || 0;\n");
         js.append("      if (stIdx === 0) {\n");
-        js.append("        var activeSegs = pSmSmooth < 0.03 ? 0 : Math.min(12, Math.ceil(pSmSmooth * 12));\n");
+        js.append("        var activeSegs = pSmCarrier < 0.03 ? 0 : Math.min(12, Math.ceil(pSmCarrier * 12));\n");
         js.append("        var segs = document.querySelectorAll('#sm-led-bars .sm-seg');\n");
         js.append("        for (var k = 0; k < segs.length; k++) {\n");
         js.append("          if (k < activeSegs) {\n");
@@ -994,17 +998,17 @@ public class PlayerActivity extends Activity {
         js.append("      } else if (stIdx === 1) {\n");
         js.append("        var ndl = document.getElementById('sm-vu-needle');\n");
         js.append("        if (ndl) {\n");
-        js.append("          var pct = Math.min(100, Math.max(0, pSmSmooth * 100));\n");
+        js.append("          var pct = Math.min(100, Math.max(0, pSmCarrier * 100));\n");
         js.append("          ndl.style.left = 'calc(3px + ' + (pct * 0.92).toFixed(1) + '%)';\n");
         js.append("        }\n");
         js.append("      } else if (stIdx === 2) {\n");
         js.append("        var bars = document.querySelectorAll('#sm-spec-bars .sm-spec-bar');\n");
         js.append("        for (var b = 0; b < bars.length; b++) {\n");
         js.append("          var h = 2;\n");
-        js.append("          if (pSmSmooth >= 0.03) {\n");
+        js.append("          if (pSmAudio >= 0.03) {\n");
         js.append("            var bell = Math.sin(((b + 1) / 11) * Math.PI);\n");
         js.append("            var wv = 0.55 + 0.45 * Math.sin(b * 0.8 + pSmPhase) * Math.cos(b * 0.4 - pSmPhase * 0.7);\n");
-        js.append("            h = Math.max(2, Math.min(15, Math.round(bell * wv * pSmSmooth * 17)));\n");
+        js.append("            h = Math.max(2, Math.min(15, Math.round(bell * wv * pSmAudio * 17)));\n");
         js.append("          }\n");
         js.append("          bars[b].style.height = h + 'px';\n");
         js.append("        }\n");
@@ -1013,11 +1017,11 @@ public class PlayerActivity extends Activity {
         js.append("        if (cv) {\n");
         js.append("          var c = cv.getContext('2d'), W = cv.width, H = cv.height;\n");
         js.append("          c.clearRect(0, 0, W, H);\n");
-        js.append("          c.strokeStyle = pSmSmooth >= 0.03 ? '#39ff14' : '#334155';\n");
+        js.append("          c.strokeStyle = pSmAudio >= 0.03 ? '#39ff14' : '#334155';\n");
         js.append("          c.lineWidth = 1.4; c.beginPath();\n");
         js.append("          for (var x = 0; x < W; x += 2) {\n");
         js.append("            var env = Math.sin((x / W) * Math.PI);\n");
-        js.append("            var y = (H / 2) + Math.sin(x * 0.14 + pSmPhase) * Math.cos(x * 0.06 - pSmPhase * 0.5) * env * (pSmSmooth * (H * 0.48));\n");
+        js.append("            var y = (H / 2) + Math.sin(x * 0.14 + pSmPhase) * Math.cos(x * 0.06 - pSmPhase * 0.5) * env * (pSmAudio * (H * 0.48));\n");
         js.append("            if (x === 0) c.moveTo(x, y); else c.lineTo(x, y);\n");
         js.append("          }\n");
         js.append("          c.stroke();\n");
@@ -1026,19 +1030,19 @@ public class PlayerActivity extends Activity {
         js.append("        var dTxt = document.getElementById('sm-dig-txt');\n");
         js.append("        var pFill = document.getElementById('sm-peak-fill');\n");
         js.append("        if (dTxt) {\n");
-        js.append("          if (pSmSmooth < 0.03) {\n");
+        js.append("          if (pSmCarrier < 0.03) {\n");
         js.append("            dTxt.innerText = 'S0 -98dB'; dTxt.style.color = '#64748b';\n");
         js.append("          } else {\n");
-        js.append("            var sUnit = Math.min(9, Math.max(1, Math.round(pSmSmooth * 10)));\n");
-        js.append("            var dbVal = -92 + Math.round(pSmSmooth * 58);\n");
-        js.append("            var plusStr = pSmSmooth > 0.82 ? ('S9+' + Math.round((pSmSmooth - 0.8) * 150)) : ('S' + sUnit + ' ' + dbVal + 'dB');\n");
+        js.append("            var sUnit = Math.min(9, Math.max(1, Math.round(pSmCarrier * 10)));\n");
+        js.append("            var dbVal = -92 + Math.round(pSmCarrier * 58);\n");
+        js.append("            var plusStr = pSmCarrier > 0.80 ? ('S9+' + Math.round((pSmCarrier - 0.78) * 140)) : ('S' + sUnit + ' ' + dbVal + 'dB');\n");
         js.append("            dTxt.innerText = plusStr;\n");
-        js.append("            dTxt.style.color = pSmSmooth > 0.78 ? '#facc15' : '#39ff14';\n");
+        js.append("            dTxt.style.color = pSmCarrier > 0.76 ? '#facc15' : '#39ff14';\n");
         js.append("          }\n");
         js.append("        }\n");
-        js.append("        if (pFill) pFill.style.width = Math.min(100, Math.round(pSmSmooth * 100)) + '%';\n");
+        js.append("        if (pFill) pFill.style.width = Math.min(100, Math.round(pSmCarrier * 100)) + '%';\n");
         js.append("      }\n");
-        js.append("      pSmPhase += isPlayingNow ? (0.14 + pSmSmooth * 0.25) : 0.02;\n");
+        js.append("      pSmPhase += isPlayingNow ? (0.14 + pSmAudio * 0.25) : 0.02;\n");
         js.append("    }\n");
         js.append("    updatePlayerTopSignalMeter();\n");
         js.append("  }\n");
@@ -1074,7 +1078,7 @@ public class PlayerActivity extends Activity {
         js.append("    setInterval(updatePlayerBattery, 10000);\n");
         js.append("  }\n");
 
-        /* Middle Status Bar Left: Only WAKE pill (Rec/Station Counter is in Top Screen Header!) */
+        /* Middle Status Bar Left: Only WAKE pill */
         js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
         js.append("    var wWrap = document.createElement('div');\n");
         js.append("    wWrap.style.cssText = 'display:flex;align-items:center;padding-left:2px;';\n");
@@ -1098,7 +1102,7 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
-        /* Middle Status Bar Right: LAMP Hardware Cap Button (left of EXIT) + EXIT Hardware Cap Button */
+        /* Middle Status Bar Right: Larger Square LAMP + EXIT Cap Buttons (EXIT: 1 Tap = System Bars, 2 Taps = Exit App, Long Press = Nothing) */
         js.append("  var contHud = document.getElementById('cont-status-hud');\n");
         js.append("  if (contHud && !document.getElementById('btn-player-exit')) {\n");
         js.append("    var rWrap = document.createElement('div');\n");
@@ -1136,35 +1140,37 @@ public class PlayerActivity extends Activity {
 
         js.append("    var exBtn = document.createElement('button');\n");
         js.append("    exBtn.id = 'btn-player-exit'; exBtn.type = 'button';\n");
+        js.append("    exBtn.title = '1 Tap: System Bars | 2 Taps: Exit App';\n");
         js.append("    exBtn.innerHTML = '<div class=\"exit-cap\"></div><span style=\"font-size:6.5px;font-weight:900;color:var(--toggle-color);letter-spacing:0.5px;\">EXIT</span>';\n");
         js.append("    rWrap.appendChild(exBtn);\n");
-        js.append("    var exTimer = null, exLong = false, lastExTap = 0;\n");
+        js.append("    var exDownTime = 0, lastExTap = 0, singleTapTimer = null;\n");
         js.append("    exBtn.addEventListener('pointerdown', function() {\n");
-        js.append("      clearTimeout(exTimer); exLong = false;\n");
-        js.append("      exTimer = setTimeout(function() {\n");
-        js.append("        exTimer = null; exLong = true;\n");
+        js.append("      exDownTime = Date.now();\n");
+        js.append("    });\n");
+        js.append("    exBtn.addEventListener('pointerup', function() {\n");
+        js.append("      var heldMs = Date.now() - exDownTime;\n");
+        js.append("      exDownTime = 0;\n");
+        js.append("      if (heldMs >= 450) return;\n"); /* Long press does nothing */
+        js.append("      var now = Date.now();\n");
+        js.append("      if (now - lastExTap < 360) {\n");
+        js.append("        clearTimeout(singleTapTimer);\n");
+        js.append("        lastExTap = 0;\n");
         js.append("        if (navigator.vibrate) navigator.vibrate([45, 60, 55]);\n");
         js.append("        if (window.__stopAllRadioAndNativeAudio) window.__stopAllRadioAndNativeAudio();\n");
         js.append("        var dw = document.getElementById('device-wrapper');\n");
         js.append("        if (dw) dw.classList.add('fading-out');\n");
         js.append("        setTimeout(function() { if (window.PlayerBridge && window.PlayerBridge.exitEntireApp) window.PlayerBridge.exitEntireApp(); }, 350);\n");
-        js.append("      }, 550);\n");
-        js.append("    });\n");
-        js.append("    exBtn.addEventListener('pointerup', function() {\n");
-        js.append("      var wasTap = exTimer !== null; clearTimeout(exTimer); exTimer = null;\n");
-        js.append("      if (wasTap && !exLong) {\n");
-        js.append("        var now = Date.now();\n");
-        js.append("        if (now - lastExTap < 420) {\n");
+        js.append("      } else {\n");
+        js.append("        lastExTap = now;\n");
+        js.append("        clearTimeout(singleTapTimer);\n");
+        js.append("        singleTapTimer = setTimeout(function() {\n");
         js.append("          lastExTap = 0;\n");
-        js.append("          if (window.PlayerBridge && window.PlayerBridge.minimizeApp) window.PlayerBridge.minimizeApp();\n");
-        js.append("        } else {\n");
-        js.append("          lastExTap = now;\n");
         js.append("          if (window.PlayerBridge && window.PlayerBridge.showSystemBars) window.PlayerBridge.showSystemBars();\n");
-        js.append("        }\n");
+        js.append("        }, 320);\n");
         js.append("      }\n");
         js.append("    });\n");
-        js.append("    exBtn.addEventListener('pointerleave', function() { clearTimeout(exTimer); exTimer = null; });\n");
-        js.append("    exBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
+        js.append("    exBtn.addEventListener('pointerleave', function() { exDownTime = 0; });\n");
+        js.append("    exBtn.addEventListener('pointercancel', function() { exDownTime = 0; });\n");
         js.append("  }\n");
 
         /* Stop all native audio AND immediately stop deck animations & reset VU meters */
@@ -1186,7 +1192,7 @@ public class PlayerActivity extends Activity {
         js.append("    }\n");
         js.append("  };\n");
 
-        /* Build Clean 5-Button Top Row: [ SCANNER ] [ RADIO ] [ DECK ] [ CONT ] [ DSP ] (No arrow symbols!) */
+        /* Build Clean 5-Button Top Row: [ SCANNER ] [ RADIO ] [ DECK ] [ CONT ] [ DSP ] */
         js.append("  var origBackBtn = document.getElementById('btn-back-radio');\n");
         js.append("  var origTopRow = origBackBtn ? origBackBtn.parentNode : null;\n");
         js.append("  if (origTopRow && !document.getElementById('btn-switch-radio-archive')) {\n");
@@ -1375,7 +1381,6 @@ public class PlayerActivity extends Activity {
         js.append("    } catch(e) {}\n");
         js.append("  };\n");
 
-        /* Handle Adding or Editing a Radio Station from the Native Dialog */
         js.append("  window.onNativeStationSaved = function(editIdx, name, freq, url) {\n");
         js.append("    try {\n");
         js.append("      var stItem = { name: name, freq: (freq && freq.trim() ? freq.trim() : 'DAB+'), band: 'LIVE', url: url };\n");
@@ -1460,6 +1465,7 @@ public class PlayerActivity extends Activity {
         js.append("  window.__audioLevel = 0;\n");
         js.append("  window.__audioProgress = 0;\n");
 
+        /* 3D Decks (Tonearm, Spools, Analog VU Needles, Laser Sled, LED Strip & HACK Scope) Modulate with Voice */
         js.append("  window.onNativeTelemetry = function(sec, totSec, prog, level) {\n");
         js.append("    window.__audioProgress = prog || 0;\n");
         js.append("    window.__audioLevel = level || 0;\n");
@@ -1621,7 +1627,6 @@ public class PlayerActivity extends Activity {
         js.append("          hdr.style.gridTemplateColumns = '36px 68px 48px 1fr';\n");
         js.append("          hdr.innerHTML = '<span>CH</span><span>BAND</span><span>MODE</span><span>STATION NAME</span>';\n");
         js.append("        }\n");
-        /* Lock entire filter row to display: none !important; whenever Radio mode is active */
         js.append("        if (fRowEl) fRowEl.style.setProperty('display', 'none', 'important');\n");
         js.append("        if (cRowEl) cRowEl.style.setProperty('display', 'grid', 'important');\n");
         js.append("        if (cModeBtn) cModeBtn.style.display = 'none';\n");
@@ -1709,7 +1714,6 @@ public class PlayerActivity extends Activity {
         js.append("      return;\n");
         js.append("    }\n");
 
-        /* Search + [ALL / NEW / UNPLAY] Filter Active on Archive Mode Only (Keep active track visible until it finishes!) */
         js.append("    var q = (document.getElementById('search-box').value || '').trim().toLowerCase();\n");
         js.append("    var fMode = window.__archiveFilterMode || 0;\n");
         js.append("    filteredRecs = allRecs.filter(function(r) {\n");
@@ -1745,7 +1749,6 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  };\n");
 
-        /* Mark previous track as played only when switching or finishing so current playing track stays visible while playing! */
         js.append("  window.__commitPlayedRecordKey = function(key) {\n");
         js.append("    if (!key) return;\n");
         js.append("    window.__playedDriveIds[key] = true;\n");
@@ -1770,7 +1773,6 @@ public class PlayerActivity extends Activity {
         js.append("    origPlayIndex(idx);\n");
         js.append("  };\n");
 
-        /* Continuous & Single Track Loop Mode Logic: Mark track as played AFTER it finishes playing! */
         js.append("  window.onNativePlayEnded = function() {\n");
         js.append("    window.__stopAllRadioAndNativeAudio();\n");
         js.append("    if (window.__isBroadcastRadioMode) { renderPlaylist(); return; }\n");
@@ -2122,7 +2124,6 @@ public class PlayerActivity extends Activity {
                         mainHandler.post(progressTicker);
                     });
                     nativePlayer.setOnCompletionListener(mp -> {
-                        // Live radio stream shouldn't end unless network dropped while screen is off — auto-reconnect!
                         if (reqId == currentStreamReqId && isLiveRadioStream && !activeLiveRadioUrl.isEmpty()) {
                             mainHandler.postDelayed(() -> {
                                 if (reqId == currentStreamReqId && isLiveRadioStream && !activeLiveRadioUrl.isEmpty()) {
