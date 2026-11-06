@@ -304,7 +304,7 @@
         100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1.03); }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-blur #custom-imgd:not(.disconnected) {
-        animation: bcBlurPulse 0.75s ease-in-out forwards;
+        animation: bcBlurPulse 0.75s ease-in-out forwards !important;
     }
 
     /* 2. Deep Sustained Blurry Drift */
@@ -317,7 +317,7 @@
         100% { opacity: 0.95; transform: translate3d(0, 0, 0) scale(1.03); }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-deep-blur #custom-imgd:not(.disconnected) {
-        animation: bcDeepBlurMain 1.05s ease-in-out forwards;
+        animation: bcDeepBlurMain 1.05s ease-in-out forwards !important;
     }
 
     /* 3. Wobbly Text */
@@ -340,10 +340,10 @@
         100% { transform: translate3d(0, 0, 0) scale(1) skewX(0deg); }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wobble #custom-imgd:not(.disconnected) {
-        animation: bcWobbleMain 0.46s steps(2, end) forwards;
+        animation: bcWobbleMain 0.46s steps(2, end) forwards !important;
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wobble #custom-imgf:not(.disconnected) {
-        animation: bcWobbleSub 0.46s steps(2, end) forwards;
+        animation: bcWobbleSub 0.46s steps(2, end) forwards !important;
     }
 
     /* 4. Fuzzy Text */
@@ -363,10 +363,10 @@
         70%      { opacity: 0.72; transform: translate3d(-2px, 0, 0) scale(1); }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-fuzzy #custom-imgd:not(.disconnected) {
-        animation: bcFuzzyMain 0.58s ease-in-out forwards;
+        animation: bcFuzzyMain 0.58s ease-in-out forwards !important;
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-fuzzy #custom-imgf:not(.disconnected) {
-        animation: bcFuzzySub 0.58s ease-in-out forwards;
+        animation: bcFuzzySub 0.58s ease-in-out forwards !important;
     }
 
     /* 5. Intermittent Contact Drop / Flicker */
@@ -389,10 +389,10 @@
         24%, 66% { opacity: 0.85; transform: translate3d(-1px, 0, 0) scale(1); }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-flicker #custom-imgd:not(.disconnected) {
-        animation: bcFlickerMain 0.62s steps(1, end) forwards;
+        animation: bcFlickerMain 0.62s steps(1, end) forwards !important;
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-flicker #custom-imgf:not(.disconnected) {
-        animation: bcFlickerSub 0.62s steps(1, end) forwards;
+        animation: bcFlickerSub 0.62s steps(1, end) forwards !important;
     }
 
     /* 6. Old TV Switch-Off Collapse & Blink Back Into Life */
@@ -424,10 +424,10 @@
         100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1, 1); }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-off #custom-imgd:not(.disconnected) {
-        animation: bcTvOffMain 1.35s ease-in-out forwards;
+        animation: bcTvOffMain 1.35s ease-in-out forwards !important;
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-off #custom-imgf:not(.disconnected) {
-        animation: bcTvOffSub 1.35s ease-in-out forwards;
+        animation: bcTvOffSub 1.35s ease-in-out forwards !important;
     }
 
     /* 7. Very Fast Strobe Blinking Text */
@@ -456,10 +456,10 @@
         14%, 28%, 42%, 56%, 70%, 84% { opacity: 0.95; }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-fast-blink #custom-imgd:not(.disconnected) {
-        animation: bcFastBlinkMain 0.64s steps(1, end) forwards;
+        animation: bcFastBlinkMain 0.64s steps(1, end) forwards !important;
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-fast-blink #custom-imgf:not(.disconnected) {
-        animation: bcFastBlinkSub 0.64s steps(1, end) forwards;
+        animation: bcFastBlinkSub 0.64s steps(1, end) forwards !important;
     }
 
     /* 8. Very Wavy Undulating Text */
@@ -484,10 +484,10 @@
         100% { transform: translate3d(0, 0, 0) scale(1) skewX(0deg); }
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wavy #custom-imgd:not(.disconnected) {
-        animation: bcWavyMain 0.82s ease-in-out forwards;
+        animation: bcWavyMain 0.82s ease-in-out forwards !important;
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wavy #custom-imgf:not(.disconnected) {
-        animation: bcWavySub 0.82s ease-in-out forwards;
+        animation: bcWavySub 0.82s ease-in-out forwards !important;
     }
 
     /* 9. Mixed Glitch: Very Wavy + Very Fast Blinking */
@@ -495,10 +495,10 @@
         --glitch-fx: url(#proscan-fx-wavy) blur(0.45px);
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wavy-blink #custom-imgd:not(.disconnected) {
-        animation: bcWavyMain 0.78s ease-in-out forwards, bcFastBlinkMain 0.78s steps(1, end) forwards;
+        animation: bcWavyMain 0.78s ease-in-out forwards, bcFastBlinkMain 0.78s steps(1, end) forwards !important;
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wavy-blink #custom-imgf:not(.disconnected) {
-        animation: bcWavySub 0.78s ease-in-out forwards, bcFastBlinkSub 0.78s steps(1, end) forwards;
+        animation: bcWavySub 0.78s ease-in-out forwards, bcFastBlinkSub 0.78s steps(1, end) forwards !important;
     }
 
     /* 10. Mixed Glitch: Blurry + Very Fast Blinking */
@@ -506,10 +506,10 @@
         --glitch-fx: blur(2.4px);
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-blur-blink #custom-imgd:not(.disconnected) {
-        animation: bcBlurPulse 0.72s ease-in-out forwards, bcFastBlinkMain 0.72s steps(1, end) forwards;
+        animation: bcBlurPulse 0.72s ease-in-out forwards, bcFastBlinkMain 0.72s steps(1, end) forwards !important;
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-blur-blink #custom-imgf:not(.disconnected) {
-        animation: bcFastBlinkSub 0.72s steps(1, end) forwards;
+        animation: bcFastBlinkSub 0.72s steps(1, end) forwards !important;
     }
 
     /* 11. Mixed Glitch: Very Wavy + Blurry Focus Sag */
@@ -517,10 +517,10 @@
         --glitch-fx: url(#proscan-fx-wavy) blur(1.9px);
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wavy-blur #custom-imgd:not(.disconnected) {
-        animation: bcWavyMain 0.88s ease-in-out forwards, bcBlurPulse 0.88s ease-in-out forwards;
+        animation: bcWavyMain 0.88s ease-in-out forwards, bcBlurPulse 0.88s ease-in-out forwards !important;
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wavy-blur #custom-imgf:not(.disconnected) {
-        animation: bcWavySub 0.88s ease-in-out forwards;
+        animation: bcWavySub 0.88s ease-in-out forwards !important;
     }
 
     /* 12 & 13. Full-Screen CRT No-Signal White Noise Static Snow */
@@ -555,30 +555,30 @@
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-snow .scanner-display::after,
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-snow-wavy .scanner-display::after {
-        opacity: 1;
+        opacity: 1 !important;
         background-image:
             url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='2.8 0 0 0 -0.9  2.8 0 0 0 -0.9  2.8 0 0 0 -0.9  0 0 0 0.92 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E"),
             url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'%3E%3Cfilter id='n2'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.75 1.15' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='2.4 0 0 0 -0.7  2.4 0 0 0 -0.7  2.4 0 0 0 -0.7  0 0 0 0.75 0'/%3E%3C/filter%3E%3Crect width='96' height='96' filter='url(%23n2)'/%3E%3C/svg%3E"),
-            repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.38) 0px, rgba(0, 0, 0, 0.38) 2px, rgba(255, 255, 255, 0.14) 2px, rgba(255, 255, 255, 0.14) 4px, transparent 4px, transparent 10px);
-        background-size: 120px 120px, 96px 96px, 100% 36px;
+            repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.38) 0px, rgba(0, 0, 0, 0.38) 2px, rgba(255, 255, 255, 0.14) 2px, rgba(255, 255, 255, 0.14) 4px, transparent 4px, transparent 10px) !important;
+        background-size: 120px 120px, 96px 96px, 100% 36px !important;
         mix-blend-mode: hard-light;
-        animation: bcCrtSnowStatic 0.86s steps(1, end) forwards;
+        animation: bcCrtSnowStatic 0.86s steps(1, end) forwards !important;
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-snow #custom-imgd:not(.disconnected) {
-        animation: bcSnowDropMain 0.86s steps(2, end) forwards;
+        animation: bcSnowDropMain 0.86s steps(2, end) forwards !important;
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-snow #custom-imgf:not(.disconnected) {
-        animation: bcSnowDropSub 0.86s steps(2, end) forwards;
+        animation: bcSnowDropSub 0.86s steps(2, end) forwards !important;
     }
 
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-snow-wavy {
         --glitch-fx: url(#proscan-fx-wavy) blur(0.8px);
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-snow-wavy #custom-imgd:not(.disconnected) {
-        animation: bcWavyMain 0.86s ease-in-out forwards, bcSnowDropMain 0.86s steps(2, end) forwards;
+        animation: bcWavyMain 0.86s ease-in-out forwards, bcSnowDropMain 0.86s steps(2, end) forwards !important;
     }
     html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-snow-wavy #custom-imgf:not(.disconnected) {
-        animation: bcWavySub 0.86s ease-in-out forwards, bcSnowDropSub 0.86s steps(2, end) forwards;
+        animation: bcWavySub 0.86s ease-in-out forwards, bcSnowDropSub 0.86s steps(2, end) forwards !important;
     }
 
     /* ========================================================
@@ -1024,7 +1024,7 @@
         grid-template-columns: 1fr auto 1fr;
         align-items: center;
         width: 100%;
-        height: 26px;
+        height: 28px;
         flex: 0 0 auto;
         position: relative;
         margin: 0;
@@ -1371,7 +1371,7 @@
         font-size: 14px;
         font-weight: 900;
     }
-@media (min-width: 768px) and (min-height: 500px) {
+    @media (min-width: 768px) and (min-height: 500px) {
         #device-wrapper {
             max-width: 560px;
         }
@@ -1384,7 +1384,7 @@
             padding: 16px 18px 16px 18px;
         }
         .top-controls-container {
-            height: 30px;
+            height: 32px;
         }
         #wake-switch-track {
             width: 28px;
@@ -1761,7 +1761,7 @@
         0%   { opacity: 0; transform: perspective(220px) rotateX(-90deg); background-color: var(--log-text); color: var(--display-bg); }
         28%  { opacity: 1; transform: perspective(220px) rotateX(22deg); background-color: transparent; color: var(--log-text); }
         52%  { transform: perspective(220px) rotateX(-55deg); background-color: var(--log-text); color: var(--display-bg); }
-        76%  { transform: perspective(220px) rotateX(10deg); background-color: transparent; color: var(--log-text); }
+        76%  { opacity: 1; transform: perspective(220px) rotateX(10deg); background-color: transparent; color: var(--log-text); }
         100% { opacity: 1; transform: perspective(220px) rotateX(0deg); background-color: transparent; color: var(--log-text); }
     }
     html[data-log-fx="fx-flap"] .new-log-row td {
@@ -1816,9 +1816,8 @@
     #mini-log-table th:nth-child(3) { width: 11%; }
     #mini-log-table th:nth-child(4) { width: 13%; }
     #mini-log-table th:nth-child(5) { width: 34%; }
-
-    /* ========================================================
-       SKINS
+   /* ========================================================
+       SKINS (With 3D Bevelled Buttons on WIRE, TRON, NEON & TERM)
        ======================================================== */
     html[data-skin="neumorphic"] {
         --ui-bg: linear-gradient(145deg, #2b3138, #1c2025);
@@ -1881,22 +1880,22 @@
     }
 
     html[data-skin="whiteline"] {
-        --ui-bg: #000000;
+        --ui-bg: radial-gradient(circle at 50% 12%, #26292e 0%, #121417 65%, #070809 100%);
         --ui-border: 1px solid rgba(255,255,255,0.75);
         --ui-radius: 20px;
         --ui-shadow: 0 0 0 1px #242424, 0 0 0 2px #202020, 0 0 0 3px #1c1c1c, 0 0 0 4px #181818, 0 0 0 5px #141414, 0 0 0 6px #101010, 0 0 0 7px #0c0c0c, 0 0 0 8px rgba(255,255,255,0.45), 0 12px 26px rgba(0,0,0,0.85);
-        --ui-bevel: none;
-        --buttons-box-border: 1px solid #ffffff;
+        --ui-bevel: inset 0 1px 2px rgba(255,255,255,0.25), inset 0 -2px 4px rgba(0,0,0,0.8);
+        --buttons-box-border: 1px solid rgba(255,255,255,0.65);
         --buttons-box-radius: 12px;
         --buttons-box-padding: 8px;
-        --btn-bg: #000000;
+        --btn-bg: linear-gradient(180deg, #2e3238 0%, #181a1e 55%, #0d0e11 100%);
         --btn-color: #ffffff;
-        --btn-active-color: #000000;
-        --btn-border: 1px solid #ffffff;
-        --btn-radius: 8px;
-        --btn-shadow: none;
-        --btn-shadow-active: none;
-        --btn-active-transform: scale(0.96);
+        --btn-active-color: #38bdf8;
+        --btn-border: 1px solid rgba(255,255,255,0.75);
+        --btn-radius: 7px;
+        --btn-shadow: 0 3px 0 #94a3b8, 0 4px 6px rgba(0,0,0,0.85), inset 0 1px 1px rgba(255,255,255,0.45);
+        --btn-shadow-active: 0 0 0 #94a3b8, inset 0 2px 5px rgba(0,0,0,0.9);
+        --btn-active-transform: translateY(2px);
         --toggle-color: #ffffff;
         --brand-primary: #ffffff;
         --brand-secondary: #cccccc;
@@ -1906,28 +1905,28 @@
         --led-off-shadow: none;
     }
     html[data-skin="whiteline"] .btn:active {
-        background: #ffffff;
-        color: #000000;
+        background: linear-gradient(180deg, #181a1e 0%, #0d0e11 100%);
+        color: #38bdf8;
     }
 
     html[data-skin="tron"] {
-        --ui-bg: #000000;
+        --ui-bg: radial-gradient(circle at 50% 12%, #0c2e36 0%, #06161a 65%, #02080a 100%);
         --ui-border: 1px solid rgba(0,255,255,0.75);
         --ui-radius: 20px;
         --ui-shadow: 0 0 0 1px #062b30, 0 0 0 2px #05262b, 0 0 0 3px #042126, 0 0 0 4px #041d21, 0 0 0 5px #03181c, 0 0 0 6px #021317, 0 0 0 7px #010e11, 0 0 0 8px rgba(0,255,255,0.5), 0 12px 26px rgba(0,0,0,0.85);
-        --ui-bevel: none;
+        --ui-bevel: inset 0 1px 2px rgba(0,255,255,0.25), inset 0 -2px 4px rgba(0,0,0,0.85);
         --buttons-box-border: 1px solid #00ffff;
         --buttons-box-radius: 12px;
         --buttons-box-padding: 8px;
         --buttons-box-shadow: 0 0 8px rgba(0, 255, 255, 0.15), inset 0 0 8px rgba(0, 255, 255, 0.08);
-        --btn-bg: #000000;
+        --btn-bg: linear-gradient(180deg, #103c47 0%, #071f26 55%, #031014 100%);
         --btn-color: #00ffff;
-        --btn-active-color: #000000;
+        --btn-active-color: #ffffff;
         --btn-border: 1px solid #00ffff;
-        --btn-radius: 8px;
-        --btn-shadow: 0 0 4px rgba(0, 255, 255, 0.2);
-        --btn-shadow-active: none;
-        --btn-active-transform: scale(0.96);
+        --btn-radius: 7px;
+        --btn-shadow: 0 3px 0 #008b8b, 0 4px 7px rgba(0,0,0,0.85), inset 0 1px 1px rgba(180,255,255,0.45);
+        --btn-shadow-active: 0 0 0 #008b8b, inset 0 2px 5px rgba(0,0,0,0.9);
+        --btn-active-transform: translateY(2px);
         --toggle-color: #00ffff;
         --brand-primary: #00ffff;
         --brand-secondary: #00b3b3;
@@ -1937,29 +1936,29 @@
         --led-off-shadow: none;
     }
     html[data-skin="tron"] .btn:active {
-        background: #00ffff;
-        color: #000000;
-        box-shadow: 0 0 15px rgba(0, 255, 255, 0.6);
+        background: linear-gradient(180deg, #071f26 0%, #031014 100%);
+        color: #ffffff;
+        box-shadow: 0 0 12px rgba(0, 255, 255, 0.5), inset 0 2px 5px rgba(0,0,0,0.9);
     }
 
     html[data-skin="neongreen"] {
-        --ui-bg: #000000;
+        --ui-bg: radial-gradient(circle at 50% 12%, #11330d 0%, #081906 65%, #030a02 100%);
         --ui-border: 1px solid rgba(57,255,20,0.75);
         --ui-radius: 20px;
         --ui-shadow: 0 0 0 1px #0c2b07, 0 0 0 2px #0a2606, 0 0 0 3px #092105, 0 0 0 4px #071c04, 0 0 0 5px #061703, 0 0 0 6px #041202, 0 0 0 7px #030d01, 0 0 0 8px rgba(57,255,20,0.5), 0 12px 26px rgba(0,0,0,0.85);
-        --ui-bevel: none;
+        --ui-bevel: inset 0 1px 2px rgba(57,255,20,0.25), inset 0 -2px 4px rgba(0,0,0,0.85);
         --buttons-box-border: 1px solid #39ff14;
         --buttons-box-radius: 12px;
         --buttons-box-padding: 8px;
         --buttons-box-shadow: 0 0 8px rgba(57, 255, 20, 0.15), inset 0 0 8px rgba(57, 255, 20, 0.08);
-        --btn-bg: #000000;
+        --btn-bg: linear-gradient(180deg, #184212 0%, #0b2108 55%, #051104 100%);
         --btn-color: #39ff14;
-        --btn-active-color: #000000;
+        --btn-active-color: #ffffff;
         --btn-border: 1px solid #39ff14;
-        --btn-radius: 8px;
-        --btn-shadow: 0 0 4px rgba(57, 255, 20, 0.2);
-        --btn-shadow-active: none;
-        --btn-active-transform: scale(0.96);
+        --btn-radius: 7px;
+        --btn-shadow: 0 3px 0 #1b8a08, 0 4px 7px rgba(0,0,0,0.85), inset 0 1px 1px rgba(190,255,180,0.45);
+        --btn-shadow-active: 0 0 0 #1b8a08, inset 0 2px 5px rgba(0,0,0,0.9);
+        --btn-active-transform: translateY(2px);
         --toggle-color: #39ff14;
         --brand-primary: #39ff14;
         --brand-secondary: #28b80e;
@@ -1969,29 +1968,29 @@
         --led-off-shadow: none;
     }
     html[data-skin="neongreen"] .btn:active {
-        background: #39ff14;
-        color: #000000;
-        box-shadow: 0 0 15px rgba(57, 255, 20, 0.6);
+        background: linear-gradient(180deg, #0b2108 0%, #051104 100%);
+        color: #ffffff;
+        box-shadow: 0 0 12px rgba(57, 255, 20, 0.5), inset 0 2px 5px rgba(0,0,0,0.9);
     }
 
     html[data-skin="amber"] {
-        --ui-bg: #000000;
+        --ui-bg: radial-gradient(circle at 50% 12%, #332406 0%, #1a1203 65%, #0a0701 100%);
         --ui-border: 1px solid rgba(255,176,0,0.75);
         --ui-radius: 20px;
         --ui-shadow: 0 0 0 1px #2e2000, 0 0 0 2px #291c00, 0 0 0 3px #241800, 0 0 0 4px #1f1500, 0 0 0 5px #1a1100, 0 0 0 6px #140d00, 0 0 0 7px #0f0a00, 0 0 0 8px rgba(255,176,0,0.5), 0 12px 26px rgba(0,0,0,0.85);
-        --ui-bevel: none;
+        --ui-bevel: inset 0 1px 2px rgba(255,176,0,0.25), inset 0 -2px 4px rgba(0,0,0,0.85);
         --buttons-box-border: 1px solid #ffb000;
         --buttons-box-radius: 12px;
         --buttons-box-padding: 8px;
         --buttons-box-shadow: 0 0 8px rgba(255, 176, 0, 0.15), inset 0 0 8px rgba(255, 176, 0, 0.08);
-        --btn-bg: #000000;
+        --btn-bg: linear-gradient(180deg, #422f08 0%, #211704 55%, #120c02 100%);
         --btn-color: #ffb000;
-        --btn-active-color: #000000;
+        --btn-active-color: #ffffff;
         --btn-border: 1px solid #ffb000;
-        --btn-radius: 6px;
-        --btn-shadow: none;
-        --btn-shadow-active: none;
-        --btn-active-transform: scale(0.96);
+        --btn-radius: 7px;
+        --btn-shadow: 0 3px 0 #996900, 0 4px 7px rgba(0,0,0,0.85), inset 0 1px 1px rgba(255,230,170,0.45);
+        --btn-shadow-active: 0 0 0 #996900, inset 0 2px 5px rgba(0,0,0,0.9);
+        --btn-active-transform: translateY(2px);
         --toggle-color: #ffb000;
         --brand-primary: #ffb000;
         --brand-secondary: #cc8d00;
@@ -2001,8 +2000,9 @@
         --led-off-shadow: none;
     }
     html[data-skin="amber"] .btn:active {
-        background: #ffb000;
-        color: #000000;
+        background: linear-gradient(180deg, #211704 0%, #120c02 100%);
+        color: #ffffff;
+        box-shadow: 0 0 12px rgba(255, 176, 0, 0.5), inset 0 2px 5px rgba(0,0,0,0.9);
     }
 
     html[data-skin="ham"] {
@@ -2256,7 +2256,6 @@
         --brand-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
     }
 
-    /* 19. 3D Twill Carbon Fiber (CARBON - Clean dark border, no red ring) */
     html[data-skin="carbon"] {
         --ui-bg:
             radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.12) 0%, transparent 65%),
@@ -2281,7 +2280,6 @@
         --brand-shadow: 0 1px 3px rgba(0,0,0,0.9);
     }
 
-    /* 20. Brushed Anodized Titanium (TITAN) */
     html[data-skin="titanium"] {
         --ui-bg:
             repeating-linear-gradient(90deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 3px),
@@ -2306,7 +2304,6 @@
         --brand-shadow: 0 1px 2px rgba(0,0,0,0.85);
     }
 
-    /* 21. Vintage Pebbled Leatherette / Bakelite (PEBBLE - Clean dark border, no white ring) */
     html[data-skin="bakelite"] {
         --ui-bg:
             radial-gradient(rgba(255,255,255,0.05) 1px, transparent 0),
@@ -2331,7 +2328,6 @@
         --brand-shadow: 0 1px 2px rgba(0,0,0,0.95);
     }
 
-    /* 22. Classic Walnut Woodgrain Receiver (WOOD - Clean dark wood border, no orange ring) */
     html[data-skin="wood"] {
         --ui-bg:
             repeating-linear-gradient(178deg, rgba(0,0,0,0.12) 0px, rgba(0,0,0,0.12) 2px, transparent 2px, transparent 7px),
@@ -2356,7 +2352,6 @@
         --brand-shadow: 0 1px 3px rgba(0,0,0,0.9);
     }
 
-    /* 23. CARC Olive Drab Tactical Field Radio (TACTIC) */
     html[data-skin="milspec"] {
         --ui-bg:
             radial-gradient(rgba(255,255,255,0.03) 1px, transparent 0),
@@ -2384,7 +2379,6 @@
         --brand-shadow: 0 1px 2px rgba(0,0,0,0.9);
     }
 
-    /* 24. Brushed Antique Copper & Brass (COPPER) */
     html[data-skin="copper"] {
         --ui-bg:
             repeating-linear-gradient(0deg, rgba(255,255,255,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 2px),
@@ -2616,42 +2610,42 @@
         --log-cell-border: rgba(255, 68, 68, 0.25);
     }
 
-    /* Sync Bad Contact Glitches to the entire Log Container (including Scrollbar) AND the 24h Clock */
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-blur, .bc-blur-blink, .bc-wavy-blur) .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
-        filter: blur(2.2px);
+    /* Sync Bad Contact Glitches to the entire Log Container (including Scrollbar) AND the 24h Clock with !important */
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-blur, .bc-blur-blink, .bc-wavy-blur) .scanner-display :is(.log-container, #mini-log-table, #display-clock-hud:not(.disconnected)) {
+        filter: blur(2.2px) !important;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-deep-blur .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
-        filter: blur(2.9px);
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-deep-blur .scanner-display :is(.log-container, #mini-log-table, #display-clock-hud:not(.disconnected)) {
+        filter: blur(2.9px) !important;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-fuzzy, .bc-flicker, .bc-tv-snow) .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
-        filter: blur(1.2px);
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-fuzzy, .bc-flicker, .bc-tv-snow) .scanner-display :is(.log-container, #mini-log-table, #display-clock-hud:not(.disconnected)) {
+        filter: blur(1.2px) !important;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wobble .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
-        animation: bcWobbleSub 0.46s steps(2, end) forwards;
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wobble .scanner-display :is(.log-container, #mini-log-table, #display-clock-hud:not(.disconnected)) {
+        animation: bcWobbleSub 0.46s steps(2, end) forwards !important;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-fuzzy .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
-        animation: bcFuzzySub 0.58s ease-in-out forwards;
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-fuzzy .scanner-display :is(.log-container, #mini-log-table, #display-clock-hud:not(.disconnected)) {
+        animation: bcFuzzySub 0.58s ease-in-out forwards !important;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-flicker .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
-        animation: bcFlickerSub 0.62s steps(1, end) forwards;
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-flicker .scanner-display :is(.log-container, #mini-log-table, #display-clock-hud:not(.disconnected)) {
+        animation: bcFlickerSub 0.62s steps(1, end) forwards !important;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-off .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
-        animation: bcTvOffSub 1.35s ease-in-out forwards;
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-off .scanner-display :is(.log-container, #mini-log-table, #display-clock-hud:not(.disconnected)) {
+        animation: bcTvOffSub 1.35s ease-in-out forwards !important;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-fast-blink, .bc-blur-blink) .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
-        animation: bcFastBlinkSub 0.64s steps(1, end) forwards;
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-fast-blink, .bc-blur-blink) .scanner-display :is(.log-container, #mini-log-table, #display-clock-hud:not(.disconnected)) {
+        animation: bcFastBlinkSub 0.64s steps(1, end) forwards !important;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-wavy, .bc-wavy-blur) .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
-        animation: bcWavySub 0.82s ease-in-out forwards;
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]):is(.bc-wavy, .bc-wavy-blur) .scanner-display :is(.log-container, #mini-log-table, #display-clock-hud:not(.disconnected)) {
+        animation: bcWavySub 0.82s ease-in-out forwards !important;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wavy-blink .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
-        animation: bcWavySub 0.78s ease-in-out forwards, bcFastBlinkSub 0.78s steps(1, end) forwards;
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-wavy-blink .scanner-display :is(.log-container, #mini-log-table, #display-clock-hud:not(.disconnected)) {
+        animation: bcWavySub 0.78s ease-in-out forwards, bcFastBlinkSub 0.78s steps(1, end) forwards !important;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-snow .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
-        animation: bcSnowDropSub 0.86s steps(2, end) forwards;
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-tv-snow .scanner-display :is(.log-container, #mini-log-table, #display-clock-hud:not(.disconnected)) {
+        animation: bcSnowDropSub 0.86s steps(2, end) forwards !important;
     }
-    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-snow-wavy .scanner-display :is(.log-container, #display-clock-hud:not(.disconnected)) {
-        animation: bcWavySub 0.86s ease-in-out forwards, bcSnowDropSub 0.86s steps(2, end) forwards;
+    html:is([data-disp-tex="glitch"], [data-disp-tex="cracked-glitch"]).bc-snow-wavy .scanner-display :is(.log-container, #mini-log-table, #display-clock-hud:not(.disconnected)) {
+        animation: bcWavySub 0.86s ease-in-out forwards, bcSnowDropSub 0.86s steps(2, end) forwards !important;
     }
 </style>
 </head>
@@ -2839,7 +2833,7 @@
                         <h3>1. Primary Control Rows (Top 6 Buttons)</h3>
                         <p>The primary controls at the top are arranged into two dedicated rows: <span class="manual-key">AUDIO</span> and <span class="manual-key">DISPLAY</span> on their own row at the very top, followed by <span class="manual-key">LOG IN</span>, <span class="manual-key">LOG OUT</span>, <span class="manual-key">BRAND</span>, and <span class="manual-key">GUIDE</span> on the row directly beneath:</p>
                         <ul class="manual-list">
-                            <li><span class="manual-key">AUDIO</span> Connects or disconnects the live scanner audio stream. Its inline LED turns green when active and enables real-time audio modulation detection.</li>
+                            <li><span class="manual-key">AUDIO</span> Connects or disconnects the live scanner audio stream. Its inline LED turns green when active and enables real-time audio modulation detection. Switching AUDIO off automatically turns off VOICE readout (which can still be turned back on independently).</li>
                             <li><span class="manual-key">DISPLAY</span> Powers the unified scanner screen, 24-hour clock, and integrated live history log ON or OFF in unison. Turning it ON randomly triggers one of <strong>6 synchronized hardware start-up boot animations</strong>: <em>AV1 / SCART</em>, <em>RF TUNE // LOCK</em>, <em>LCD SELF-TEST 8888</em>, <em>CRT RASTER SCAN</em>, <em>CAPACITOR WARMUP</em>, or <em>V-HOLD SYNC</em>. Turning it OFF immediately cuts the screen to <strong>pure black across all themes</strong> and collapses it into a <strong>crisp white SCART CRT horizontal line and phosphor center dot</strong>.</li>
                             <li><span class="manual-key">LOG IN</span> Opens the Super User password prompt so you can remotely control scanner keys. Viewing the display, listening to audio, and changing themes work without logging in.</li>
                             <li><span class="manual-key">LOG OUT</span> Ends your active ProScan Super User control session.</li>
@@ -3064,7 +3058,6 @@
         </div>
     </div>
 </div>
-
 <script>
     const skins = [
         { id: 'neumorphic', name: 'SOFT' },
@@ -3181,7 +3174,8 @@
     ];
     let badContactTimer = null;
     let badContactActiveTimer = null;
-/* Haptic Vibration Feedback for Long Presses */
+
+    /* Haptic Vibration Feedback for Long Presses */
     function triggerHaptic(pattern) {
         try {
             if (navigator && typeof navigator.vibrate === 'function') {
@@ -3190,8 +3184,8 @@
         } catch (e) {}
     }
 
-    /* 1. Seamless Header Blend (removes the squared-off box over the screen's inner vignette shadow)
-       2. Fixed-width alignment for .freq-hit-badge so all channel names start on a dead-straight vertical line */
+    /* 1. Seamless Header Blend
+       2. Fixed-width alignment for .freq-hit-badge */
     (function injectSeamlessHeaderAndBadgeCss() {
         const st = document.createElement('style');
         st.textContent = `
@@ -3295,7 +3289,6 @@
                 <button id="app-menu-exit-btn" class="login-action logout-action" type="button" style="margin-top:7px;">EXIT / SHUT DOWN</button>
                 <button id="app-menu-cancel-btn" class="login-action" type="button" style="margin-top:7px;background:linear-gradient(180deg,#e2e8f0,#94a3b8);border-color:#64748b;color:#1e293b;">CANCEL</button>
             `;
-            /* Stop any pointer/touch events inside the popup from bleeding through to the keypad buttons behind it */
             ['pointerdown', 'pointerup', 'click', 'touchstart', 'touchend'].forEach(function (evtName) {
                 menuDiv.addEventListener(evtName, function (ev) {
                     ev.stopPropagation();
@@ -3339,6 +3332,7 @@
                     isConnected = false;
                     const aBtn = document.getElementById('btn-audio-toggle');
                     if (aBtn) aBtn.classList.remove('active');
+                    if (window.__setVoiceReadoutState) window.__setVoiceReadoutState(false, false);
                 }
                 if (isWakeLockActive) {
                     toggleWakeLock();
@@ -4456,6 +4450,11 @@
                 isConnected = false;
                 if (player && !player.paused) player.pause();
                 audioBtn.classList.remove('active');
+                /* Automatically switch off VOICE when AUDIO is switched off (VOICE can still be turned back on independently) */
+                window.__voiceReadoutEnabled = false;
+                const vBtn = document.getElementById('btn-voice-toggle');
+                if (vBtn) vBtn.classList.remove('active');
+                if (window.__setVoiceReadoutState) window.__setVoiceReadoutState(false, false);
             }
         });
     }
@@ -4653,7 +4652,6 @@
             let dataLines = lines.filter(line => line.includes(',') && !line.toLowerCase().includes('frequency'));
             if (dataLines.length === 0) return;
 
-            /* Calculate the sequential (running) hit count for each transmission row in chronological order */
             const freqRunningCounts = {};
             const rowHitNumber = new Array(dataLines.length);
             for (let k = 0; k < dataLines.length; k++) {
@@ -4867,6 +4865,7 @@
 </body>
 
 <script>
+/* PC Archive Tape Deck: Follows Mobile's Live Google Drive Logic (Filters out trashed/deleted files & bypasses browser cache) */
 (function() {
   function initTapeDeck() {
     var topControls = document.querySelector('.top-controls');
@@ -4877,6 +4876,7 @@
     var tracks = [];
     var currentIdx = -1;
     var player = new Audio();
+    window.__deletedDriveIds = JSON.parse(localStorage.getItem('proscan_deleted_recs_v1') || '{}');
 
     // 1. Add Styles
     if (!document.getElementById('tape-deck-styles')) {
@@ -4955,7 +4955,7 @@
     function renderTracks() {
       listEl.innerHTML = '';
       if (!tracks.length) {
-        listEl.textContent = 'No audio recordings found in Drive folder.';
+        listEl.textContent = 'No active audio recordings found in Drive folder.';
         return;
       }
       tracks.forEach(function(item, idx) {
@@ -4963,10 +4963,27 @@
         row.className = 'td-item' + (idx === currentIdx ? ' selected' : '');
         var cleanName = item.name.replace(/\.(mp3|wav|m4a)$/i, '');
         var dateStr = item.createdTime ? new Date(item.createdTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
-        row.innerHTML = '<span>' + cleanName + '</span><span>' + dateStr + '</span>';
-        row.addEventListener('click', function() {
-          startTrack(idx);
+        row.innerHTML = '<span title="Tap to play | Hold to hide/delete">' + cleanName + '</span><span>' + dateStr + '</span>';
+
+        var rTimer = null, rLong = false;
+        row.addEventListener('pointerdown', function() {
+          clearTimeout(rTimer); rLong = false;
+          rTimer = setTimeout(function() {
+            rTimer = null; rLong = true;
+            window.__deletedDriveIds[item.id] = true;
+            window.__deletedDriveIds[item.name] = true;
+            localStorage.setItem('proscan_deleted_recs_v1', JSON.stringify(window.__deletedDriveIds));
+            tracks.splice(idx, 1);
+            nowPlayingEl.textContent = 'REMOVED: ' + cleanName;
+            renderTracks();
+          }, 550);
         });
+        row.addEventListener('pointerup', function() {
+          var wasTap = rTimer !== null; clearTimeout(rTimer); rTimer = null;
+          if (wasTap && !rLong) startTrack(idx);
+        });
+        row.addEventListener('pointerleave', function() { clearTimeout(rTimer); rTimer = null; });
+        row.addEventListener('pointercancel', function() { clearTimeout(rTimer); rTimer = null; });
         listEl.appendChild(row);
       });
     }
@@ -4976,11 +4993,14 @@
         listEl.textContent = 'Missing Google Drive API Key. Tap [API KEY] above.';
         return;
       }
-      listEl.textContent = 'Loading recordings from Google Drive...';
+      window.__deletedDriveIds = JSON.parse(localStorage.getItem('proscan_deleted_recs_v1') || '{}');
+      listEl.textContent = 'Syncing active recordings from Google Drive...';
       var q = encodeURIComponent("'" + FOLDER_ID + "' in parents and trashed = false");
-      var url = 'https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,createdTime,mimeType)&orderBy=createdTime+desc&pageSize=100&key=' + encodeURIComponent(apiKey);
+      var url = 'https://www.googleapis.com/drive/v3/files?q=' + q +
+                '&fields=files(id,name,createdTime,mimeType,trashed,size)&orderBy=createdTime+desc&pageSize=100' +
+                '&key=' + encodeURIComponent(apiKey) + '&_t=' + Date.now();
 
-      fetch(url)
+      fetch(url, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } })
         .then(function(r) { return r.json(); })
         .then(function(data) {
           if (data.error) {
@@ -4988,6 +5008,9 @@
             return;
           }
           tracks = (data.files || []).filter(function(f) {
+            if (!f || f.trashed === true) return false;
+            if (f.size !== undefined && parseInt(f.size, 10) <= 0) return false;
+            if (window.__deletedDriveIds[f.id] || window.__deletedDriveIds[f.name]) return false;
             return /\.(mp3|wav|m4a|ogg)$/i.test(f.name) || (f.mimeType && f.mimeType.indexOf('audio/') === 0);
           });
           renderTracks();
@@ -5002,12 +5025,17 @@
       currentIdx = idx;
       var t = tracks[idx];
       nowPlayingEl.textContent = t.name.replace(/\.(mp3|wav|m4a)$/i, '');
-      player.src = 'https://www.googleapis.com/drive/v3/files/' + t.id + '?alt=media&key=' + encodeURIComponent(apiKey);
+      player.src = 'https://www.googleapis.com/drive/v3/files/' + t.id + '?alt=media&key=' + encodeURIComponent(apiKey) + '&_t=' + Date.now();
       player.play().then(function() {
         playBtn.textContent = 'PAUSE';
         playBtn.classList.add('playing');
       }).catch(function() {
-        nowPlayingEl.textContent = 'ERR: CANNOT STREAM FILE';
+        /* If a file was deleted on Google Drive since last sync, auto-remove it from the PC list just like mobile */
+        nowPlayingEl.textContent = 'FILE DELETED ON DRIVE — REMOVING...';
+        window.__deletedDriveIds[t.id] = true;
+        localStorage.setItem('proscan_deleted_recs_v1', JSON.stringify(window.__deletedDriveIds));
+        tracks.splice(idx, 1);
+        renderTracks();
       });
       renderTracks();
     }
@@ -5016,7 +5044,7 @@
     tapeBtn.addEventListener('click', function() {
       var isOpen = modal.classList.toggle('open');
       tapeBtn.classList.toggle('active', isOpen);
-      if (isOpen && tracks.length === 0 && apiKey) {
+      if (isOpen && apiKey) {
         fetchRecordings();
       }
     });
