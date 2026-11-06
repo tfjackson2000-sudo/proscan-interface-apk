@@ -194,7 +194,8 @@ public class MainActivity extends Activity {
                 webView.evaluateJavascript(
                         "try{if(window.__stopScannerAudioFromBt)window.__stopScannerAudioFromBt();" +
                         "var p=document.getElementById('audio_player');if(p){p.pause();}" +
-                        "isConnected=false;var b=document.getElementById('btn-audio-toggle');if(b)b.classList.remove('active');}catch(e){}",
+                        "isConnected=false;var b=document.getElementById('btn-audio-toggle');if(b)b.classList.remove('active');" +
+                        "window.__voiceReadoutEnabled=false;var vb=document.getElementById('btn-voice-toggle');if(vb)vb.classList.remove('active');}catch(e){}",
                         null
                 );
             }
@@ -707,7 +708,7 @@ public class MainActivity extends Activity {
 
         /* Normal Mode: Larger 325px Scanner Display & Taller Keys to utilize vertical space */
         js.append("        '.scanner-display{height:325px!important;transition:height 0.22s ease!important;}' +\n");
-        js.append("        '.top-controls-container{height:29px!important;}' +\n");
+        js.append("        '.top-controls-container{height:34px!important;}' +\n");
         js.append("        '.top-right-group{height:34px!important;}' +\n");
         js.append("        '.top-right-group .btn{font-size:11px!important;}' +\n");
         js.append("        '.scanner-nav-6{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:4px!important;height:32px!important;}' +\n");
@@ -717,6 +718,16 @@ public class MainActivity extends Activity {
         js.append("        '.essential-controls .scroll-btn{font-size:9px!important;}' +\n");
         js.append("        '.numpad{grid-auto-rows:34px!important;gap:6px!important;}' +\n");
         js.append("        '.numpad .btn{font-size:15.5px!important;font-weight:900!important;}' +\n");
+
+        /* 3D Bevelled Buttons on WIRE, TRON, NEON & TERM Skins (Matches Archive Player) */
+        js.append("        'html[data-skin=\"whiteline\"]{--ui-bg:radial-gradient(circle at 50% 12%,#26292e 0%,#121417 65%,#070809 100%)!important;--btn-bg:linear-gradient(180deg,#2e3238 0%,#181a1e 55%,#0d0e11 100%)!important;--btn-color:#ffffff!important;--btn-active-color:#38bdf8!important;--btn-border:1px solid rgba(255,255,255,0.75)!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #94a3b8,0 4px 6px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.45)!important;--btn-shadow-active:0 0 0 #94a3b8,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
+        js.append("        'html[data-skin=\"whiteline\"] .btn:active{background:linear-gradient(180deg,#181a1e 0%,#0d0e11 100%)!important;color:#38bdf8!important;}' +\n");
+        js.append("        'html[data-skin=\"tron\"]{--ui-bg:radial-gradient(circle at 50% 12%,#0c2e36 0%,#06161a 65%,#02080a 100%)!important;--btn-bg:linear-gradient(180deg,#103c47 0%,#071f26 55%,#031014 100%)!important;--btn-color:#00ffff!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #00ffff!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #008b8b,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(180,255,255,0.45)!important;--btn-shadow-active:0 0 0 #008b8b,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
+        js.append("        'html[data-skin=\"tron\"] .btn:active{background:linear-gradient(180deg,#071f26 0%,#031014 100%)!important;color:#ffffff!important;box-shadow:0 0 12px rgba(0,255,255,0.5),inset 0 2px 5px rgba(0,0,0,0.9)!important;}' +\n");
+        js.append("        'html[data-skin=\"neongreen\"]{--ui-bg:radial-gradient(circle at 50% 12%,#11330d 0%,#081906 65%,#030a02 100%)!important;--btn-bg:linear-gradient(180deg,#184212 0%,#0b2108 55%,#051104 100%)!important;--btn-color:#39ff14!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #39ff14!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #1b8a08,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(190,255,180,0.45)!important;--btn-shadow-active:0 0 0 #1b8a08,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
+        js.append("        'html[data-skin=\"neongreen\"] .btn:active{background:linear-gradient(180deg,#0b2108 0%,#051104 100%)!important;color:#ffffff!important;box-shadow:0 0 12px rgba(57,255,20,0.5),inset 0 2px 5px rgba(0,0,0,0.9)!important;}' +\n");
+        js.append("        'html[data-skin=\"amber\"]{--ui-bg:radial-gradient(circle at 50% 12%,#332406 0%,#1a1203 65%,#0a0701 100%)!important;--btn-bg:linear-gradient(180deg,#422f08 0%,#211704 55%,#120c02 100%)!important;--btn-color:#ffb000!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #ffb000!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #996900,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,230,170,0.45)!important;--btn-shadow-active:0 0 0 #996900,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
+        js.append("        'html[data-skin=\"amber\"] .btn:active{background:linear-gradient(180deg,#211704 0%,#120c02 100%)!important;color:#ffffff!important;box-shadow:0 0 12px rgba(255,176,0,0.5),inset 0 2px 5px rgba(0,0,0,0.9)!important;}' +\n");
 
         /* SCANNER LITE MODE: Hide secondary buttons, expand Display & Log to 420px, and make remaining Main + Numpad buttons extra-large! */
         js.append("        'html[data-scanner-lite=\"true\"] .scanner-display{height:420px!important;}' +\n");
@@ -741,7 +752,7 @@ public class MainActivity extends Activity {
         js.append("          '#custom-scanner-ui{display:grid!important;grid-template-columns:1.08fr 1fr!important;grid-template-rows:auto 1fr!important;gap:6px 12px!important;padding:10px 14px!important;height:100%!important;overflow:hidden!important;}' +\n");
         js.append("          '.scanner-display, html[data-scanner-lite=\"true\"] .scanner-display{grid-column:1!important;grid-row:1 / span 2!important;height:100%!important;min-height:0!important;}' +\n");
         js.append("          '#custom-imgd{max-height:92px!important;}' +\n");
-        js.append("          '.top-controls-container{grid-column:2!important;grid-row:1!important;height:25px!important;}' +\n");
+        js.append("          '.top-controls-container{grid-column:2!important;grid-row:1!important;height:30px!important;}' +\n");
         js.append("          '.buttons-box{grid-column:2!important;grid-row:2!important;height:100%!important;min-height:0!important;padding:6px!important;gap:5px!important;justify-content:space-between!important;}' +\n");
         js.append("          '.top-btn-wrapper{gap:4px!important;}' +\n");
         js.append("          '.top-right-group, html[data-scanner-lite=\"true\"] .top-right-group{height:26px!important;}' +\n");
@@ -781,25 +792,28 @@ public class MainActivity extends Activity {
         js.append("        '#voice-led{flex-shrink:0;width:10px;height:10px;border-radius:50%;background-color:var(--led-off-bg,#1a1a1a);border:var(--led-off-border,2px solid #000);box-shadow:var(--led-off-shadow,inset 1px 1px 3px rgba(0,0,0,0.8),0 1px 1px rgba(255,255,255,0.1));transition:all 0.3s ease;}' +\n");
         js.append("        '@keyframes voice-led-pulse-green{0%,100%{background-color:#10b981;border-color:#a7f3d0;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.9),0 0 0 1px rgba(0,0,0,0.65),0 0 8px #10b981,0 0 14px rgba(16,185,129,0.75);}50%{background-color:#065f46;border-color:#059669;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.35),0 0 0 1px rgba(0,0,0,0.65),0 0 2px rgba(16,185,129,0.25);}}' +\n");
         js.append("        '#btn-voice-toggle.active #voice-led{border-style:solid!important;border-width:2px!important;animation:voice-led-pulse-green 3.8s ease-in-out infinite!important;}' +\n");
-        /* Bedroom LAMP Button Cap (Like EXIT, placed directly to the left of EXIT) */
-        js.append("        '#btn-lamp-toggle{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 1px 0 1px;cursor:pointer;touch-action:manipulation;}' +\n");
-        js.append("        '#btn-lamp-toggle .lamp-cap{width:22px;height:10px;border-radius:4px;background:linear-gradient(180deg,#eab308,#a16207);border:1px solid #422006;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.35);display:flex;align-items:center;justify-content:center;}' +\n");
-        js.append("        '#btn-lamp-toggle .lamp-cap::after{content:\"\";width:7px;height:2px;border-radius:1px;background:rgba(254,249,195,0.9);}' +\n");
-        js.append("        '#btn-lamp-toggle:active .lamp-cap{transform:translateY(1px);filter:brightness(1.25);}' +\n");
-        js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 1px;cursor:pointer;touch-action:manipulation;}#btn-hardware-exit .exit-cap{width:22px;height:10px;border-radius:4px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;}#btn-hardware-exit .exit-cap::after{content:\"\";width:7px;height:2px;border-radius:1px;background:rgba(255,220,220,0.85);}#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
 
-        /* 5-Style Live Signal Meter in #brand-logo-slot */
+        /* Larger, More Square Bedroom LAMP & EXIT Button Caps (22x16px) */
+        js.append("        '#btn-lamp-toggle{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 3px 0 1px;cursor:pointer;touch-action:manipulation;}' +\n");
+        js.append("        '#btn-lamp-toggle .lamp-cap{width:22px;height:16px;border-radius:5px;background:linear-gradient(180deg,#eab308,#a16207);border:1px solid #422006;box-shadow:0 2px 3px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;}' +\n");
+        js.append("        '#btn-lamp-toggle .lamp-cap::after{content:\"\";width:8px;height:3px;border-radius:1.5px;background:rgba(254,249,195,0.92);box-shadow:0 0 4px rgba(254,249,195,0.5);}' +\n");
+        js.append("        '#btn-lamp-toggle:active .lamp-cap{transform:translateY(1px);filter:brightness(1.25);}' +\n");
+        js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}' +\n");
+        js.append("        '#btn-hardware-exit .exit-cap{width:22px;height:16px;border-radius:5px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 2px 3px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.32);display:flex;align-items:center;justify-content:center;}' +\n");
+        js.append("        '#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:3px;border-radius:1.5px;background:rgba(255,220,220,0.88);}' +\n");
+        js.append("        '#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
+
+        /* 5-Style Live Signal Meter in #brand-logo-slot (With crisp black VU tick marks) */
         js.append("        '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:124px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
         js.append("        '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
         js.append("        '.sm-mode.active{display:flex;}' +\n");
         js.append("        '.sm-lbl{font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;color:#38bdf8;letter-spacing:0.3px;margin-right:3px;flex-shrink:0;}' +\n");
         js.append("        '.sm-bar-wrap{display:flex;align-items:center;gap:2px;flex:1;height:11px;justify-content:space-between;}' +\n");
         js.append("        '.sm-seg{flex:1;height:100%;border-radius:1px;background:#1e293b;transition:background 0.04s linear;}' +\n");
-        /* Linear VU Dial with smooth carrier-level response */
         js.append("        '.sm-vu-wrap{width:100%;height:100%;background:linear-gradient(90deg,#fef9c3 0%,#fde047 68%,#f59e0b 100%);border-radius:3px;position:relative;overflow:hidden;border:1px solid #000;box-shadow:inset 0 1px 3px rgba(0,0,0,0.45);}' +\n");
-        js.append("        '.sm-vu-wrap::after{content:\"\";position:absolute;left:3px;right:3px;bottom:2px;height:3px;background:repeating-linear-gradient(90deg,#1e293b 0px,#1e293b 1px,transparent 1px,transparent 6px);opacity:0.55;pointer-events:none;}' +\n");
-        js.append("        '.sm-vu-scale{position:absolute;top:1px;left:4px;right:4px;font-family:monospace;font-size:6.5px;font-weight:900;color:#1e293b;display:flex;justify-content:space-between;line-height:1;z-index:1;pointer-events:none;}' +\n");
-        js.append("        '#sm-vu-needle{position:absolute;top:0;bottom:0;left:3px;width:2.5px;background:#dc2626;border-radius:1px;box-shadow:0 0 4px rgba(220,38,38,0.9),1px 0 2px rgba(0,0,0,0.6);transition:left 0.14s ease-out;z-index:2;}' +\n");
+        js.append("        '.sm-vu-wrap::after{content:\"\";position:absolute;left:4px;right:4px;bottom:1px;height:5px;border-bottom:1.5px solid #0f172a;background:repeating-linear-gradient(90deg,#0f172a 0px,#0f172a 2px,transparent 2px,transparent 8px);opacity:0.9;z-index:1;pointer-events:none;}' +\n");
+        js.append("        '.sm-vu-scale{position:absolute;top:1px;left:4px;right:4px;font-family:monospace;font-size:6.5px;font-weight:900;color:#0f172a;display:flex;justify-content:space-between;line-height:1;z-index:2;pointer-events:none;}' +\n");
+        js.append("        '#sm-vu-needle{position:absolute;top:0;bottom:0;left:3px;width:2.5px;background:#dc2626;border-radius:1px;box-shadow:0 0 4px rgba(220,38,38,0.9),1px 0 2px rgba(0,0,0,0.6);transition:left 0.14s ease-out;z-index:3;}' +\n");
         js.append("        '.sm-spec-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:2px;width:100%;height:15px;padding-top:1px;}' +\n");
         js.append("        '.sm-spec-bar{flex:1;height:2px;background:linear-gradient(180deg,#ef4444 0%,#facc15 35%,#22c55e 100%);border-radius:1px 1px 0 0;transition:height 0.04s linear;}' +\n");
         js.append("        '#sm-scope-canvas{width:100%;height:16px;display:block;}' +\n");
@@ -817,18 +831,44 @@ public class MainActivity extends Activity {
         js.append("        '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
         js.append("        '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}' +\n");
 
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-blur,.bc-blur-blink,.bc-wavy-blur) .scanner-display #scanner-bat-hud:not(.disconnected){filter:blur(2.2px)!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-deep-blur .scanner-display #scanner-bat-hud:not(.disconnected){filter:blur(2.9px)!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-fuzzy,.bc-flicker,.bc-tv-snow) .scanner-display #scanner-bat-hud:not(.disconnected){filter:blur(1.2px)!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wobble .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcWobbleSub 0.46s steps(2,end) forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-fuzzy .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcFuzzySub 0.58s ease-in-out forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-flicker .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcFlickerSub 0.62s steps(1,end) forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-tv-off .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcTvOffSub 1.35s ease-in-out forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-fast-blink,.bc-blur-blink) .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcFastBlinkSub 0.64s steps(1,end) forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-wavy,.bc-wavy-blur) .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcWavySub 0.82s ease-in-out forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wavy-blink .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcWavySub 0.78s ease-in-out forwards,bcFastBlinkSub 0.78s steps(1,end) forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-tv-snow .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcSnowDropSub 0.86s steps(2,end) forwards!important;}' +\n");
-        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-snow-wavy .scanner-display #scanner-bat-hud:not(.disconnected){animation:bcWavySub 0.86s ease-in-out forwards,bcSnowDropSub 0.86s steps(2,end) forwards!important;}' +\n");
+        /* Force Bad Contact / Crack+Glitch animations with !important across all Display/Log colour mixes and Smooth Text */
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-blur #custom-imgd:not(.disconnected){animation:bcBlurPulse 0.75s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-deep-blur #custom-imgd:not(.disconnected){animation:bcDeepBlurMain 1.05s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wobble #custom-imgd:not(.disconnected){animation:bcWobbleMain 0.46s steps(2,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wobble #custom-imgf:not(.disconnected){animation:bcWobbleSub 0.46s steps(2,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-fuzzy #custom-imgd:not(.disconnected){animation:bcFuzzyMain 0.58s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-fuzzy #custom-imgf:not(.disconnected){animation:bcFuzzySub 0.58s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-flicker #custom-imgd:not(.disconnected){animation:bcFlickerMain 0.62s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-flicker #custom-imgf:not(.disconnected){animation:bcFlickerSub 0.62s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-tv-off #custom-imgd:not(.disconnected){animation:bcTvOffMain 1.35s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-tv-off #custom-imgf:not(.disconnected){animation:bcTvOffSub 1.35s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-fast-blink #custom-imgd:not(.disconnected){animation:bcFastBlinkMain 0.64s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-fast-blink #custom-imgf:not(.disconnected){animation:bcFastBlinkSub 0.64s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wavy #custom-imgd:not(.disconnected){animation:bcWavyMain 0.82s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wavy #custom-imgf:not(.disconnected){animation:bcWavySub 0.82s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wavy-blink #custom-imgd:not(.disconnected){animation:bcWavyMain 0.78s ease-in-out forwards,bcFastBlinkMain 0.78s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wavy-blink #custom-imgf:not(.disconnected){animation:bcWavySub 0.78s ease-in-out forwards,bcFastBlinkSub 0.78s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-blur-blink #custom-imgd:not(.disconnected){animation:bcBlurPulse 0.72s ease-in-out forwards,bcFastBlinkMain 0.72s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-blur-blink #custom-imgf:not(.disconnected){animation:bcFastBlinkSub 0.72s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wavy-blur #custom-imgd:not(.disconnected){animation:bcWavyMain 0.88s ease-in-out forwards,bcBlurPulse 0.88s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wavy-blur #custom-imgf:not(.disconnected){animation:bcWavySub 0.88s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-tv-snow #custom-imgd:not(.disconnected){animation:bcSnowDropMain 0.86s steps(2,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-tv-snow #custom-imgf:not(.disconnected){animation:bcSnowDropSub 0.86s steps(2,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-snow-wavy #custom-imgd:not(.disconnected){animation:bcWavyMain 0.86s ease-in-out forwards,bcSnowDropMain 0.86s steps(2,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-snow-wavy #custom-imgf:not(.disconnected){animation:bcWavySub 0.86s ease-in-out forwards,bcSnowDropSub 0.86s steps(2,end) forwards!important;}' +\n");
+
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-blur,.bc-blur-blink,.bc-wavy-blur) .scanner-display :is(.log-container,#mini-log-table,#display-clock-hud:not(.disconnected),#scanner-bat-hud:not(.disconnected)){filter:blur(2.2px)!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-deep-blur .scanner-display :is(.log-container,#mini-log-table,#display-clock-hud:not(.disconnected),#scanner-bat-hud:not(.disconnected)){filter:blur(2.9px)!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-fuzzy,.bc-flicker,.bc-tv-snow) .scanner-display :is(.log-container,#mini-log-table,#display-clock-hud:not(.disconnected),#scanner-bat-hud:not(.disconnected)){filter:blur(1.2px)!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wobble .scanner-display :is(.log-container,#mini-log-table,#display-clock-hud:not(.disconnected),#scanner-bat-hud:not(.disconnected)){animation:bcWobbleSub 0.46s steps(2,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-fuzzy .scanner-display :is(.log-container,#mini-log-table,#display-clock-hud:not(.disconnected),#scanner-bat-hud:not(.disconnected)){animation:bcFuzzySub 0.58s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-flicker .scanner-display :is(.log-container,#mini-log-table,#display-clock-hud:not(.disconnected),#scanner-bat-hud:not(.disconnected)){animation:bcFlickerSub 0.62s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-tv-off .scanner-display :is(.log-container,#mini-log-table,#display-clock-hud:not(.disconnected),#scanner-bat-hud:not(.disconnected)){animation:bcTvOffSub 1.35s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-fast-blink,.bc-blur-blink) .scanner-display :is(.log-container,#mini-log-table,#display-clock-hud:not(.disconnected),#scanner-bat-hud:not(.disconnected)){animation:bcFastBlinkSub 0.64s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-wavy,.bc-wavy-blur) .scanner-display :is(.log-container,#mini-log-table,#display-clock-hud:not(.disconnected),#scanner-bat-hud:not(.disconnected)){animation:bcWavySub 0.82s ease-in-out forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-wavy-blink .scanner-display :is(.log-container,#mini-log-table,#display-clock-hud:not(.disconnected),#scanner-bat-hud:not(.disconnected)){animation:bcWavySub 0.78s ease-in-out forwards,bcFastBlinkSub 0.78s steps(1,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-tv-snow .scanner-display :is(.log-container,#mini-log-table,#display-clock-hud:not(.disconnected),#scanner-bat-hud:not(.disconnected)){animation:bcSnowDropSub 0.86s steps(2,end) forwards!important;}' +\n");
+        js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]).bc-snow-wavy .scanner-display :is(.log-container,#mini-log-table,#display-clock-hud:not(.disconnected),#scanner-bat-hud:not(.disconnected)){animation:bcWavySub 0.86s ease-in-out forwards,bcSnowDropSub 0.86s steps(2,end) forwards!important;}' +\n");
 
         js.append("        'html.tv-off #scanner-bat-hud,.scanner-display.tv-shutting-down #scanner-bat-hud{filter:grayscale(1) brightness(2.5)!important;animation:crtPowerOffImgF 0.38s cubic-bezier(0.4,0,0.2,1) forwards!important;}' +\n");
 
@@ -842,7 +882,6 @@ public class MainActivity extends Activity {
         js.append("    } else if (existingSt && document.head.lastElementChild !== existingSt) {\n");
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
-
         /* Build 5-Style Signal Meter in #brand-logo-slot (Steady RF Carrier for S-BAR, VU DIAL & PEAK dB; Voice-modulated for EQ & SCOPE) */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
@@ -1042,6 +1081,7 @@ public class MainActivity extends Activity {
         js.append("      newLiteBtn.addEventListener('pointerleave', function() { clearTimeout(lHoldTimer); lHoldTimer = null; });\n");
         js.append("      newLiteBtn.addEventListener('pointercancel', function() { clearTimeout(lHoldTimer); lHoldTimer = null; });\n");
         js.append("    }\n");
+
         js.append("    var dispBox = document.querySelector('.scanner-display');\n");
         js.append("    if (dispBox) {\n");
         js.append("      var clkEl = document.getElementById('display-clock-hud');\n");
@@ -1186,7 +1226,7 @@ public class MainActivity extends Activity {
         js.append("        setTimeout(function() { if (window.AndroidApp) window.AndroidApp.openBroadcastRadio(); }, 160);\n");
         js.append("      });\n");
 
-        /* Live Web Audio DSP Speech Filter & Squelch De-Hiss Compressor (Exposes window.source in setupAudioDetection!) */
+        /* Live Web Audio DSP Speech Filter & Squelch De-Hiss Compressor */
         js.append("      window.setupAudioDetection = function() {\n");
         js.append("        var player = document.getElementById('audio_player');\n");
         js.append("        if (typeof isAudioSetup !== 'undefined' && isAudioSetup) {\n");
@@ -1273,7 +1313,7 @@ public class MainActivity extends Activity {
         js.append("      rowParent.appendChild(dspBtn);\n");
         js.append("    }\n");
 
-        /* Top LEDs Left: Clean, uncrowded layout with just VOICE and WAKE */
+        /* Top LEDs Left: WAKE and VOICE (VOICE can always be turned on/off independently, and auto-turns off when AUDIO turns off) */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
         js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = '';\n");
@@ -1295,20 +1335,26 @@ public class MainActivity extends Activity {
         js.append("      var vBtn = document.createElement('button');\n");
         js.append("      vBtn.id = 'btn-voice-toggle'; vBtn.className = 'wake-btn-wrapper'; vBtn.type = 'button';\n");
         js.append("      vBtn.innerHTML = '<div class=\"wake-switch-col\"><div id=\"voice-switch-track\"><div id=\"voice-switch-thumb\"></div></div><span class=\"rx-label\">VOICE</span></div><div id=\"voice-led\"></div>';\n");
+        js.append("      window.__setVoiceReadoutState = function(enable, showHud) {\n");
+        js.append("        window.__voiceReadoutEnabled = Boolean(enable);\n");
+        js.append("        var vb = document.getElementById('btn-voice-toggle');\n");
+        js.append("        if (vb) vb.classList.toggle('active', window.__voiceReadoutEnabled);\n");
+        js.append("        if (!window.__voiceReadoutEnabled) {\n");
+        js.append("          clearTimeout(rxWaitTimer);\n");
+        js.append("        }\n");
+        js.append("        if (showHud && typeof showDisplayHud === 'function') {\n");
+        js.append("          showDisplayHud('VOICE READOUT: ' + (window.__voiceReadoutEnabled ? 'ON' : 'OFF'), 1400);\n");
+        js.append("        }\n");
+        js.append("      };\n");
         js.append("      vBtn.addEventListener('click', function() {\n");
-        js.append("        window.__voiceReadoutEnabled = !window.__voiceReadoutEnabled;\n");
-        js.append("        vBtn.classList.toggle('active', window.__voiceReadoutEnabled);\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("        window.__setVoiceReadoutState(!window.__voiceReadoutEnabled, true);\n");
         js.append("        if (window.__voiceReadoutEnabled) {\n");
         js.append("          speakTextNow('Voice readout on', true);\n");
-        js.append("          if (typeof showDisplayHud === 'function') showDisplayHud('VOICE READOUT: ON', 1400);\n");
-        js.append("        } else if (typeof showDisplayHud === 'function') {\n");
-        js.append("          showDisplayHud('VOICE READOUT: OFF', 1400);\n");
         js.append("        }\n");
         js.append("      });\n");
         js.append("      ledsLeft.appendChild(vBtn);\n");
 
-        // Speech Detector with Duplicate Suppression & Live Audio Buffer Resync
         js.append("      var logBody = document.getElementById('mini-log-data');\n");
         js.append("      if (logBody) {\n");
         js.append("        var speechThrottleTimer = null;\n");
@@ -1360,6 +1406,7 @@ public class MainActivity extends Activity {
         js.append("      });\n");
         js.append("    }\n");
 
+        /* AUDIO Toggle: Switching AUDIO off automatically switches VOICE off (VOICE can still be turned back on independently!) */
         js.append("    var oldAudioBtn = document.getElementById('btn-audio-toggle');\n");
         js.append("    if (oldAudioBtn && !oldAudioBtn.__vlcUnifiedHooked) {\n");
         js.append("      var aBtn = oldAudioBtn.cloneNode(true); aBtn.__vlcUnifiedHooked = true;\n");
@@ -1385,6 +1432,7 @@ public class MainActivity extends Activity {
         js.append("          isConnected = false; isVlcMode = false;\n");
         js.append("          if (player && !player.paused) player.pause();\n");
         js.append("          aBtn.classList.remove('active');\n");
+        js.append("          if (window.__setVoiceReadoutState) window.__setVoiceReadoutState(false, false);\n");
         js.append("          if (window.AndroidApp) window.AndroidApp.setBackgroundAudioMode(false);\n");
         js.append("        }\n");
         js.append("        renderAudioLabel();\n");
@@ -1406,7 +1454,7 @@ public class MainActivity extends Activity {
         js.append("      aBtn.addEventListener('pointercancel', function() { clearTimeout(aTimer); aTimer = null; });\n");
         js.append("    }\n");
 
-        /* Top LEDs Right: RX, LOG, then LAMP Button Cap (left of EXIT), then EXIT Button Cap */
+        /* Top LEDs Right: RX, LOG, then Larger Square LAMP Button Cap, then Larger Square EXIT Button Cap (1 Tap = Bars, 2 Taps = Exit, Long Press = Nothing) */
         js.append("    var ledsRight = document.querySelector('.top-leds-right');\n");
         js.append("    if (ledsRight && !document.getElementById('btn-hardware-exit')) {\n");
         js.append("      var lampBtn = document.createElement('button');\n");
@@ -1439,31 +1487,40 @@ public class MainActivity extends Activity {
 
         js.append("      var exitBtn = document.createElement('button');\n");
         js.append("      exitBtn.id = 'btn-hardware-exit'; exitBtn.type = 'button';\n");
+        js.append("      exitBtn.title = '1 Tap: System Bars | 2 Taps: Exit App';\n");
         js.append("      exitBtn.innerHTML = '<div class=\"exit-cap\"></div><span class=\"rx-label\">EXIT</span>';\n");
         js.append("      ledsRight.appendChild(exitBtn);\n");
-        js.append("      var exTimer = null, exLong = false, lastTapTime = 0;\n");
+        js.append("      var exDownTime = 0, lastTapTime = 0, singleTapTimer = null;\n");
         js.append("      exitBtn.addEventListener('pointerdown', function() {\n");
-        js.append("        clearTimeout(exTimer); exLong = false;\n");
-        js.append("        exTimer = setTimeout(function() {\n");
-        js.append("          exTimer = null; exLong = true; if (navigator.vibrate) navigator.vibrate([45, 60, 55]);\n");
+        js.append("        exDownTime = Date.now();\n");
+        js.append("      });\n");
+        js.append("      exitBtn.addEventListener('pointerup', function() {\n");
+        js.append("        var heldMs = Date.now() - exDownTime;\n");
+        js.append("        exDownTime = 0;\n");
+        js.append("        if (heldMs >= 450) return;\n"); /* Long press does nothing */
+        js.append("        var now = Date.now();\n");
+        js.append("        if (now - lastTapTime < 360) {\n");
+        js.append("          clearTimeout(singleTapTimer);\n");
+        js.append("          lastTapTime = 0;\n");
+        js.append("          if (navigator.vibrate) navigator.vibrate([45, 60, 55]);\n");
         js.append("          if (typeof isConnected !== 'undefined' && isConnected) {\n");
         js.append("            var p = document.getElementById('audio_player'); if (p && !p.paused) p.pause();\n");
         js.append("            isConnected = false; var ab = document.getElementById('btn-audio-toggle'); if (ab) ab.classList.remove('active');\n");
+        js.append("            if (window.__setVoiceReadoutState) window.__setVoiceReadoutState(false, false);\n");
         js.append("          }\n");
         js.append("          if (typeof isDisplayOn !== 'undefined' && isDisplayOn && typeof toggleDisplay === 'function') toggleDisplay();\n");
         js.append("          setTimeout(function() { if (window.AndroidApp) window.AndroidApp.exitApp(); }, 550);\n");
-        js.append("        }, 550);\n");
-        js.append("      });\n");
-        js.append("      exitBtn.addEventListener('pointerup', function() {\n");
-        js.append("        var wasActive = exTimer !== null; clearTimeout(exTimer); exTimer = null;\n");
-        js.append("        if (wasActive && !exLong) {\n");
-        js.append("          var now = Date.now();\n");
-        js.append("          if (now - lastTapTime < 420) { lastTapTime = 0; if (window.AndroidApp) window.AndroidApp.minimizeApp(); }\n");
-        js.append("          else { lastTapTime = now; if (window.AndroidApp) window.AndroidApp.showSystemBars(); }\n");
+        js.append("        } else {\n");
+        js.append("          lastTapTime = now;\n");
+        js.append("          clearTimeout(singleTapTimer);\n");
+        js.append("          singleTapTimer = setTimeout(function() {\n");
+        js.append("            lastTapTime = 0;\n");
+        js.append("            if (window.AndroidApp) window.AndroidApp.showSystemBars();\n");
+        js.append("          }, 320);\n");
         js.append("        }\n");
         js.append("      });\n");
-        js.append("      exitBtn.addEventListener('pointerleave', function() { clearTimeout(exTimer); exTimer = null; });\n");
-        js.append("      exitBtn.addEventListener('pointercancel', function() { clearTimeout(exTimer); exTimer = null; });\n");
+        js.append("      exitBtn.addEventListener('pointerleave', function() { exDownTime = 0; });\n");
+        js.append("      exitBtn.addEventListener('pointercancel', function() { exDownTime = 0; });\n");
         js.append("    }\n");
         js.append("  } catch (e) {}\n");
         js.append("})();");
