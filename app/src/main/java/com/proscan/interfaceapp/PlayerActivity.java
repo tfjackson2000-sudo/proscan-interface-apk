@@ -621,6 +621,7 @@ public class PlayerActivity extends Activity {
     private void saveRadioStationsJsonToDownloads(String stationsJson, boolean showToast) {
         try {
             prefs.edit().putString("radio_stations_json", stationsJson).apply();
+            if (!showToast) return;
             JSONArray arr = new JSONArray(stationsJson);
             byte[] bytes = arr.toString(2).getBytes(StandardCharsets.UTF_8);
             boolean written = false;
@@ -677,7 +678,7 @@ public class PlayerActivity extends Activity {
                 written = true;
             }
 
-            if (showToast && written) {
+            if (written) {
                 Toast.makeText(this, "Saved to Downloads/proscan_radio_stations.json", Toast.LENGTH_SHORT).show();
             }
         } catch (Exception e) {
@@ -705,16 +706,35 @@ public class PlayerActivity extends Activity {
                         JSONObject obj = new JSONObject(raw);
                         if (obj.has("web_storage")) {
                             stationsArrayStr = obj.getJSONObject("web_storage").optString("proscan_radio_stations_v3", "");
+                        } else if (obj.has("stations")) {
+                            stationsArrayStr = obj.optString("stations", "[]");
                         }
                     }
-                    JSONArray testArr = new JSONArray(stationsArrayStr);
-                    if (testArr.length() > 0) {
-                        prefs.edit().putString("radio_stations_json", testArr.toString()).apply();
-                        final String safeArr = JSONObject.quote(testArr.toString());
+                    JSONArray rawArr = new JSONArray(stationsArrayStr);
+                    JSONArray cleanArr = new JSONArray();
+                    /* Support both new JSONs and legacy JSONs (automatically strips legacy freq/band/mode fields) */
+                    for (int i = 0; i < rawArr.length(); i++) {
+                        JSONObject item = rawArr.optJSONObject(i);
+                        if (item != null) {
+                            String name = item.optString("name", "").trim();
+                            String url = item.optString("url", "").trim();
+                            if (!name.isEmpty() && !url.isEmpty()) {
+                                JSONObject cleanItem = new JSONObject();
+                                cleanItem.put("name", name);
+                                cleanItem.put("url", url);
+                                cleanArr.put(cleanItem);
+                            }
+                        }
+                    }
+                    if (cleanArr.length() > 0) {
+                        prefs.edit().putString("radio_stations_json", cleanArr.toString()).apply();
+                        final String safeArr = JSONObject.quote(cleanArr.toString());
                         if (playerWeb != null) {
                             playerWeb.evaluateJavascript("if(window.onNativeStationsJsonLoaded)window.onNativeStationsJsonLoaded(" + safeArr + ");", null);
                         }
-                        Toast.makeText(this, "Loaded " + testArr.length() + " Radio Stations from JSON!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Loaded " + cleanArr.length() + " Radio Stations from JSON!", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this, "No valid stations found in JSON", Toast.LENGTH_SHORT).show();
                     }
                 }
             } catch (Exception e) {
@@ -723,10 +743,10 @@ public class PlayerActivity extends Activity {
         }
     }
 
-    private void showStationMenuDialog(final int curIdx, final String curName, final String curFreq, final String curUrl) {
+    private void showStationMenuDialog(final int curIdx, final String curName, final String curUrl) {
         String[] items = new String[]{
                 "+ Add New Station",
-                "Edit Selected (" + (curName != null && !curName.isEmpty() ? curName : "Station") + ")",
+                "Edit Selected (" + (curName != null && !curName.isEmpty() ? curName : "None") + ")",
                 "Save Stations JSON to Downloads (proscan_radio_stations.json)",
                 "Load Stations JSON from Downloads"
         };
@@ -734,9 +754,13 @@ public class PlayerActivity extends Activity {
                 .setTitle("Radio Station Manager")
                 .setItems(items, (d, which) -> {
                     if (which == 0) {
-                        openAddOrEditStationDialog(-1, "", "", "");
+                        openAddOrEditStationDialog(-1, "", "");
                     } else if (which == 1) {
-                        openAddOrEditStationDialog(curIdx, curName, curFreq, curUrl);
+                        if (curIdx >= 0 && curName != null && !curName.isEmpty()) {
+                            openAddOrEditStationDialog(curIdx, curName, curUrl);
+                        } else {
+                            openAddOrEditStationDialog(-1, "", "");
+                        }
                     } else if (which == 2) {
                         if (playerWeb != null) {
                             playerWeb.evaluateJavascript("if(window.PlayerBridge)window.PlayerBridge.saveStationsJson(JSON.stringify(window.__radioStations), true);", null);
@@ -776,7 +800,7 @@ public class PlayerActivity extends Activity {
         js.append("      }\n");
         js.append("    }\n");
         js.append("    var nativeSt = ").append(safeStations).append(";\n");
-        js.append("    if (nativeSt && nativeSt.length > 10) localStorage.setItem('proscan_radio_stations_v3', nativeSt);\n");
+        js.append("    if (nativeSt && nativeSt.length > 2) localStorage.setItem('proscan_radio_stations_v3', nativeSt);\n");
         js.append("  } catch(e) {}\n");
 
         js.append("  var nameHdr = document.querySelector('.screen-log-header span:last-child');\n");
@@ -812,9 +836,13 @@ public class PlayerActivity extends Activity {
         js.append("    '.rec-row{padding:4.5px 4px!important;font-size:10px!important;touch-action:pan-y!important;}' +\n");
         js.append("    '.rec-row.playing, .rec-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
         js.append("    '.rec-row.selected:not(.playing){outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(0,0,0,0.16)!important;color:var(--log-text)!important;font-weight:800!important;}' +\n");
-        js.append("    '.radio-row{display:grid!important;grid-template-columns:36px 68px 48px 1fr!important;gap:4px!important;padding:5.5px 6px!important;border-bottom:1px solid var(--log-cell-border)!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10.5px!important;color:var(--log-text)!important;align-items:center!important;text-align:left!important;cursor:pointer!important;touch-action:pan-y!important;}' +\n");
-        js.append("    '.radio-row.playing, .radio-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
-        js.append("    '.radio-row.selected:not(.playing){outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(0,0,0,0.16)!important;color:var(--log-text)!important;font-weight:800!important;}' +\n");
+
+        /* Large Square-Proportioned Station Tiles for Radio Mode (No CH / BAND / MODE headings) */
+        js.append("    '.radio-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;padding:8px 6px!important;width:100%!important;}' +\n");
+        js.append("    '.radio-tile{min-height:66px!important;padding:8px 10px!important;border:1.5px solid var(--log-cell-border)!important;border-radius:8px!important;background:rgba(0,0,0,0.14)!important;font-family:\"JetBrains Mono\",monospace!important;font-size:12px!important;font-weight:800!important;color:var(--log-text)!important;display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important;cursor:pointer!important;touch-action:pan-y!important;word-break:break-word!important;line-height:1.25!important;box-shadow:inset 0 1px 3px rgba(0,0,0,0.35)!important;transition:transform 0.1s ease,background 0.15s ease!important;}' +\n");
+        js.append("    '.radio-tile:active{transform:scale(0.97)!important;}' +\n");
+        js.append("    '.radio-tile.playing, .radio-tile.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:900!important;border-color:var(--log-text)!important;box-shadow:0 0 10px rgba(0,0,0,0.5)!important;outline:none!important;}' +\n");
+        js.append("    '.radio-tile.selected:not(.playing){outline:2px dashed var(--log-text,#38bdf8)!important;outline-offset:-2px!important;background:rgba(0,0,0,0.28)!important;color:var(--log-text)!important;font-weight:900!important;}' +\n");
 
         /* Top Screen Header: Clock on Left, Mode Title + Counter in Center, Battery on Right */
         js.append("    '.disp-top-row{display:grid!important;grid-template-columns:auto 1fr auto!important;align-items:center!important;gap:6px!important;width:100%!important;}' +\n");
@@ -1298,9 +1326,9 @@ public class PlayerActivity extends Activity {
         js.append("    fRow.parentNode.appendChild(rBar);\n");
 
         js.append("    document.getElementById('btn-rad-edit').addEventListener('click', function() {\n");
-        js.append("      var stObj = window.__radioStations[window.__radioIdx] || {};\n");
+        js.append("      var stObj = (window.__radioIdx >= 0 && window.__radioIdx < window.__radioStations.length) ? window.__radioStations[window.__radioIdx] : {};\n");
         js.append("      if (window.PlayerBridge && window.PlayerBridge.openStationJsonMenu) {\n");
-        js.append("        window.PlayerBridge.openStationJsonMenu(window.__radioIdx, stObj.name || '', stObj.freq || '', stObj.url || '');\n");
+        js.append("        window.PlayerBridge.openStationJsonMenu(window.__radioIdx, stObj.name || '', stObj.url || '');\n");
         js.append("      }\n");
         js.append("    });\n");
         js.append("    document.getElementById('btn-rad-up').addEventListener('click', function() {\n");
@@ -1326,36 +1354,35 @@ public class PlayerActivity extends Activity {
         js.append("      window.renderPlaylist();\n");
         js.append("    });\n");
         js.append("    document.getElementById('btn-rad-del').addEventListener('click', function() {\n");
-        js.append("      if (window.__radioStations.length <= 1) return;\n");
+        js.append("      if (window.__radioStations.length === 0 || window.__radioIdx < 0 || window.__radioIdx >= window.__radioStations.length) return;\n");
         js.append("      if (navigator.vibrate) navigator.vibrate(25);\n");
         js.append("      window.__radioStations.splice(window.__radioIdx, 1);\n");
         js.append("      if (window.__radioIdx >= window.__radioStations.length) window.__radioIdx = window.__radioStations.length - 1;\n");
         js.append("      window.__saveRadioStations(false);\n");
         js.append("      window.renderPlaylist();\n");
+        js.append("      if (window.__radioStations.length > 0 && window.__radioIdx >= 0) {\n");
+        js.append("        window.selectRadioStationOnly(window.__radioIdx);\n");
+        js.append("      } else {\n");
+        js.append("        document.getElementById('track-main-readout').innerText = 'NO STATIONS // TAP MANAGE';\n");
+        js.append("      }\n");
         js.append("    });\n");
         js.append("  }\n");
 
-        js.append("  var defaultStations = [\n");
-        js.append("    { name: 'Radio City Swansea', freq: '1386 AM', band: 'LOCAL', url: 'https://radiocity1386am.radioca.st/stream' },\n");
-        js.append("    { name: 'BBC Radio 5 Live', freq: '909 AM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_five_live&bitrate=128000' },\n");
-        js.append("    { name: 'BBC Radio 5 Sports Extra', freq: 'DAB+', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_five_live_sports_extra&bitrate=128000' },\n");
-        js.append("    { name: 'talkSPORT', freq: '1089 AM', band: 'SPORT', url: 'https://radio.talksport.com/stream' },\n");
-        js.append("    { name: 'talkSPORT 2', freq: 'DAB+', band: 'SPORT', url: 'https://radio.talksport.com/stream2' },\n");
-        js.append("    { name: 'BBC Radio 1', freq: '97.9 FM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_one&bitrate=128000' },\n");
-        js.append("    { name: 'BBC Radio 2', freq: '88.8 FM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_two&bitrate=128000' },\n");
-        js.append("    { name: 'BBC Radio 3', freq: '90.9 FM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_three&bitrate=320000' },\n");
-        js.append("    { name: 'BBC Radio 4', freq: '93.5 FM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_fourfm&bitrate=128000' },\n");
-        js.append("    { name: 'BBC Radio 6 Music', freq: 'DAB+', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_6music&bitrate=128000' },\n");
-        js.append("    { name: 'BBC World Service', freq: '198 LW', band: 'WORLD', url: 'https://stream.live.vc.bbcmedia.co.uk/bbc_world_service' },\n");
-        js.append("    { name: 'BBC Radio Wales', freq: '882 AM', band: 'BBC', url: 'https://lsn.lv/bbcradio.m3u8?station=bbc_radio_wales_fm&bitrate=128000' }\n");
-        js.append("  ];\n");
+        /* No Default Preset Stations: Starts Empty on First Load, and Normalizes Legacy JSONs ({name, url}) */
+        js.append("  window.__normalizeStationList = function(arr) {\n");
+        js.append("    if (!Array.isArray(arr)) return [];\n");
+        js.append("    var out = [];\n");
+        js.append("    arr.forEach(function(item) {\n");
+        js.append("      if (item && item.name && item.url) {\n");
+        js.append("        out.push({ name: String(item.name).trim(), url: String(item.url).trim() });\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("    return out;\n");
+        js.append("  };\n");
         js.append("  try {\n");
-        js.append("    var savedSt = JSON.parse(localStorage.getItem('proscan_radio_stations_v3') || 'null');\n");
-        js.append("    window.__radioStations = (Array.isArray(savedSt) && savedSt.length > 0) ? savedSt : defaultStations.slice();\n");
-        js.append("    if (!window.__radioStations.some(function(s){ return s.url && s.url.indexOf('radiocity1386am') !== -1; })) {\n");
-        js.append("      window.__radioStations.unshift(defaultStations[0]);\n");
-        js.append("    }\n");
-        js.append("  } catch(e) { window.__radioStations = defaultStations.slice(); }\n");
+        js.append("    var savedSt = JSON.parse(localStorage.getItem('proscan_radio_stations_v3') || '[]');\n");
+        js.append("    window.__radioStations = window.__normalizeStationList(savedSt);\n");
+        js.append("  } catch(e) { window.__radioStations = []; }\n");
 
         js.append("  window.__saveRadioStations = function(exportToDownloads) {\n");
         js.append("    try {\n");
@@ -1370,20 +1397,20 @@ public class PlayerActivity extends Activity {
 
         js.append("  window.onNativeStationsJsonLoaded = function(jsonStr) {\n");
         js.append("    try {\n");
-        js.append("      var arr = JSON.parse(jsonStr);\n");
-        js.append("      if (Array.isArray(arr) && arr.length > 0) {\n");
-        js.append("        window.__radioStations = arr;\n");
-        js.append("        window.__radioIdx = 0;\n");
-        js.append("        localStorage.setItem('proscan_radio_stations_v3', JSON.stringify(arr));\n");
-        js.append("        window.renderPlaylist();\n");
-        js.append("        window.selectRadioStationOnly(0);\n");
-        js.append("      }\n");
+        js.append("      var arr = window.__normalizeStationList(JSON.parse(jsonStr));\n");
+        js.append("      window.__radioStations = arr;\n");
+        js.append("      window.__radioIdx = arr.length > 0 ? 0 : -1;\n");
+        js.append("      localStorage.setItem('proscan_radio_stations_v3', JSON.stringify(arr));\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("      if (arr.length > 0) window.selectRadioStationOnly(0);\n");
         js.append("    } catch(e) {}\n");
         js.append("  };\n");
 
-        js.append("  window.onNativeStationSaved = function(editIdx, name, freq, url) {\n");
+        /* Handle Adding or Editing a Radio Station (Only Name and URL—No Band/Mode) */
+        js.append("  window.onNativeStationSaved = function(editIdx, name, url) {\n");
         js.append("    try {\n");
-        js.append("      var stItem = { name: name, freq: (freq && freq.trim() ? freq.trim() : 'DAB+'), band: 'LIVE', url: url };\n");
+        js.append("      var stItem = { name: String(name || '').trim(), url: String(url || '').trim() };\n");
+        js.append("      if (!stItem.name || !stItem.url) return;\n");
         js.append("      if (typeof editIdx === 'number' && editIdx >= 0 && editIdx < window.__radioStations.length) {\n");
         js.append("        window.__radioStations[editIdx] = stItem;\n");
         js.append("        window.__radioIdx = editIdx;\n");
@@ -1398,7 +1425,7 @@ public class PlayerActivity extends Activity {
         js.append("  };\n");
 
         js.append("  window.__isBroadcastRadioMode = false;\n");
-        js.append("  window.__radioIdx = 0;\n");
+        js.append("  window.__radioIdx = window.__radioStations.length > 0 ? 0 : -1;\n");
         js.append("  window.__activeRadioUrl = '';\n");
 
         js.append("  window.__startHybridLiveStream = function(url) {\n");
@@ -1576,17 +1603,18 @@ public class PlayerActivity extends Activity {
         js.append("    drawProSigintScope();\n");
         js.append("  }\n");
 
+        /* Select / Play Radio Station (Clean Station Name Only — No Band or Mode) */
         js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= window.__radioStations.length) return;\n");
         js.append("    window.__radioIdx = idx;\n");
         js.append("    var stObj = window.__radioStations[idx];\n");
-        js.append("    document.getElementById('track-main-readout').innerText = 'TUNED: ' + stObj.name + ' • ' + stObj.freq;\n");
+        js.append("    document.getElementById('track-main-readout').innerText = stObj.name;\n");
         js.append("    document.getElementById('cassette-lbl-left').innerText = stObj.name;\n");
-        js.append("    document.getElementById('cassette-lbl-right').innerText = stObj.freq + ' (LIVE)';\n");
+        js.append("    document.getElementById('cassette-lbl-right').innerText = 'RADIO';\n");
         js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
-        js.append("    if (bCh) bCh.innerText = 'TUNER // ' + stObj.name;\n");
-        js.append("    if (bFr) bFr.innerText = stObj.freq;\n");
-        js.append("    document.querySelectorAll('.radio-row').forEach(function(el, i){ el.classList.toggle('selected', i === idx); });\n");
+        js.append("    if (bCh) bCh.innerText = stObj.name;\n");
+        js.append("    if (bFr) bFr.innerText = '';\n");
+        js.append("    document.querySelectorAll('.radio-tile').forEach(function(el, i){ el.classList.toggle('selected', i === idx); });\n");
         js.append("  };\n");
 
         js.append("  window.playRadioStationIndex = function(idx) {\n");
@@ -1595,12 +1623,12 @@ public class PlayerActivity extends Activity {
         js.append("    window.__radioIdx = idx;\n");
         js.append("    var stObj = window.__radioStations[idx];\n");
         js.append("    window.__activeRadioUrl = stObj.url;\n");
-        js.append("    document.getElementById('track-main-readout').innerText = 'LIVE: ' + stObj.name + ' • ' + stObj.freq;\n");
+        js.append("    document.getElementById('track-main-readout').innerText = stObj.name;\n");
         js.append("    document.getElementById('cassette-lbl-left').innerText = stObj.name;\n");
-        js.append("    document.getElementById('cassette-lbl-right').innerText = stObj.freq + ' (ON AIR)';\n");
+        js.append("    document.getElementById('cassette-lbl-right').innerText = 'ON AIR';\n");
         js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
-        js.append("    if (bCh) bCh.innerText = 'ON AIR: ' + stObj.name;\n");
-        js.append("    if (bFr) bFr.innerText = stObj.freq;\n");
+        js.append("    if (bCh) bCh.innerText = stObj.name;\n");
+        js.append("    if (bFr) bFr.innerText = 'ON AIR';\n");
         js.append("    window.renderPlaylist();\n");
         js.append("    window.__startHybridLiveStream(stObj.url);\n");
         js.append("  };\n");
@@ -1623,21 +1651,28 @@ public class PlayerActivity extends Activity {
         js.append("        if (navRowEl) navRowEl.classList.add('radio-mode-nav');\n");
         js.append("        if (swBtn) swBtn.innerText = 'ARCHIVE';\n");
         js.append("        document.getElementById('deck-mode-hud').innerText = 'BROADCAST // TUNER';\n");
-        js.append("        if (hdr) {\n");
-        js.append("          hdr.style.gridTemplateColumns = '36px 68px 48px 1fr';\n");
-        js.append("          hdr.innerHTML = '<span>CH</span><span>BAND</span><span>MODE</span><span>STATION NAME</span>';\n");
-        js.append("        }\n");
+        /* Hide the table column header bar completely in Radio Mode */
+        js.append("        if (hdr) hdr.style.setProperty('display', 'none', 'important');\n");
         js.append("        if (fRowEl) fRowEl.style.setProperty('display', 'none', 'important');\n");
         js.append("        if (cRowEl) cRowEl.style.setProperty('display', 'grid', 'important');\n");
         js.append("        if (cModeBtn) cModeBtn.style.display = 'none';\n");
         js.append("        if (dspBtnEl) dspBtnEl.style.display = 'none';\n");
         js.append("        window.renderPlaylist();\n");
-        js.append("        window.selectRadioStationOnly(window.__radioIdx || 0);\n");
+        js.append("        if (window.__radioStations.length > 0) {\n");
+        js.append("          if (window.__radioIdx < 0 || window.__radioIdx >= window.__radioStations.length) window.__radioIdx = 0;\n");
+        js.append("          window.selectRadioStationOnly(window.__radioIdx);\n");
+        js.append("        } else {\n");
+        js.append("          document.getElementById('track-main-readout').innerText = 'NO STATIONS // TAP MANAGE';\n");
+        js.append("          var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
+        js.append("          if (bCh) bCh.innerText = 'NO STATIONS LOADED';\n");
+        js.append("          if (bFr) bFr.innerText = '';\n");
+        js.append("        }\n");
         js.append("      } else {\n");
         js.append("        if (navRowEl) navRowEl.classList.remove('radio-mode-nav');\n");
         js.append("        if (swBtn) swBtn.innerText = 'RADIO';\n");
         js.append("        if (typeof applyDeck === 'function') applyDeck(deckIdx);\n");
         js.append("        if (hdr) {\n");
+        js.append("          hdr.style.setProperty('display', 'grid', 'important');\n");
         js.append("          hdr.style.gridTemplateColumns = '62px 52px 58px 34px 1fr';\n");
         js.append("          hdr.innerHTML = '<span>DATE</span><span>TIME</span><span>FREQ</span><span>DUR</span><span>NAME</span>';\n");
         js.append("        }\n");
@@ -1693,18 +1728,20 @@ public class PlayerActivity extends Activity {
         js.append("    var prevScroll = box.scrollTop;\n");
         js.append("    if (window.__isBroadcastRadioMode) {\n");
         js.append("      document.getElementById('rec-count-hud').innerText = window.__radioStations.length + ' ST';\n");
-        js.append("      var rHtml = '';\n");
+        js.append("      if (window.__radioStations.length === 0) {\n");
+        js.append("        box.innerHTML = '<div style=\"padding:24px 14px;text-align:center;opacity:0.65;font-size:11px;font-family:monospace;\">No stations loaded.<br><br>Tap <b>MANAGE</b> below to Add a Station or Load Stations JSON.</div>';\n");
+        js.append("        return;\n");
+        js.append("      }\n");
+        js.append("      var rHtml = '<div class=\"radio-grid\">';\n");
         js.append("      for (var j = 0; j < window.__radioStations.length; j++) {\n");
         js.append("        var st = window.__radioStations[j];\n");
         js.append("        var isPl = (st.url === window.__activeRadioUrl && isPlayingNow);\n");
         js.append("        var rCls = (isPl ? 'playing ' : '') + (j === window.__radioIdx ? 'selected' : '');\n");
-        js.append("        var chNum = 'P' + String(j + 1).padStart(2, '0');\n");
-        js.append("        rHtml += '<div class=\"radio-row ' + rCls + '\" data-ridx=\"' + j + '\">' +\n");
-        js.append("          '<span>' + chNum + '</span><span>' + (st.freq || 'DAB+') + '</span><span>LIVE</span>' +\n");
-        js.append("          '<span title=\"' + st.name + '\">' + st.name + '</span></div>';\n");
+        js.append("        rHtml += '<div class=\"radio-tile ' + rCls + '\" data-ridx=\"' + j + '\" title=\"' + st.name + '\">' + st.name + '</div>';\n");
         js.append("      }\n");
+        js.append("      rHtml += '</div>';\n");
         js.append("      box.innerHTML = rHtml; box.scrollTop = prevScroll;\n");
-        js.append("      box.querySelectorAll('.radio-row').forEach(function(el) {\n");
+        js.append("      box.querySelectorAll('.radio-tile').forEach(function(el) {\n");
         js.append("        el.addEventListener('click', function() {\n");
         js.append("          if (navigator.vibrate) navigator.vibrate(15);\n");
         js.append("          var idx = parseInt(el.getAttribute('data-ridx'), 10);\n");
@@ -1831,7 +1868,9 @@ public class PlayerActivity extends Activity {
         js.append("    newStopBtn.addEventListener('click', function() {\n");
         js.append("      window.__stopAllRadioAndNativeAudio();\n");
         js.append("      if (window.__isBroadcastRadioMode) {\n");
-        js.append("        window.selectRadioStationOnly(window.__radioIdx || 0);\n");
+        js.append("        if (window.__radioStations.length > 0 && window.__radioIdx >= 0) {\n");
+        js.append("          window.selectRadioStationOnly(window.__radioIdx);\n");
+        js.append("        }\n");
         js.append("      } else {\n");
         js.append("        if (window.__activePlayingRecordKey) {\n");
         js.append("          window.__commitPlayedRecordKey(window.__activePlayingRecordKey);\n");
@@ -2239,7 +2278,8 @@ public class PlayerActivity extends Activity {
         });
     }
 
-    private void openAddOrEditStationDialog(final int editIdx, String curName, String curFreq, String curUrl) {
+    /* Simplified Add / Edit Radio Station Dialog (Only Station Name and Direct Stream URL — No Band / Mode) */
+    private void openAddOrEditStationDialog(final int editIdx, String curName, String curUrl) {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         int pad = (int) (18 * getResources().getDisplayMetrics().density);
@@ -2253,15 +2293,8 @@ public class PlayerActivity extends Activity {
         layout.addView(nameInput);
 
         TextView l2 = new TextView(this);
-        l2.setText("\nFreq / Band Label (e.g. 909 AM or DAB+):");
+        l2.setText("\nDirect Stream URL (.mp3 / .aac / .m3u8):");
         layout.addView(l2);
-        final EditText freqInput = new EditText(this);
-        freqInput.setText(curFreq != null && !curFreq.isEmpty() ? curFreq : "DAB+");
-        layout.addView(freqInput);
-
-        TextView l3 = new TextView(this);
-        l3.setText("\nDirect Stream URL (.mp3 / .aac / .m3u8):");
-        layout.addView(l3);
         final EditText urlInput = new EditText(this);
         urlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         urlInput.setText(curUrl != null ? curUrl : "");
@@ -2272,14 +2305,13 @@ public class PlayerActivity extends Activity {
                 .setView(layout)
                 .setPositiveButton("Save Station", (d, w) -> {
                     String n = nameInput.getText().toString().trim();
-                    String f = freqInput.getText().toString().trim();
                     String u = urlInput.getText().toString().trim();
                     if (n.isEmpty() || u.isEmpty()) {
-                        Toast.makeText(PlayerActivity.this, "Name and Stream URL required", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(PlayerActivity.this, "Station Name and Stream URL required", Toast.LENGTH_SHORT).show();
                         return;
                     }
                     String jsCall = "if(window.onNativeStationSaved)window.onNativeStationSaved("
-                            + editIdx + "," + JSONObject.quote(n) + "," + JSONObject.quote(f) + "," + JSONObject.quote(u) + ");";
+                            + editIdx + "," + JSONObject.quote(n) + "," + JSONObject.quote(u) + ");";
                     if (playerWeb != null) playerWeb.evaluateJavascript(jsCall, null);
                 })
                 .setNegativeButton("Cancel", null)
@@ -2349,8 +2381,8 @@ public class PlayerActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void openStationJsonMenu(final int curIdx, final String name, final String freq, final String url) {
-            mainHandler.post(() -> showStationMenuDialog(curIdx, name, freq, url));
+        public void openStationJsonMenu(final int curIdx, final String name, final String url) {
+            mainHandler.post(() -> showStationMenuDialog(curIdx, name, url));
         }
 
         @JavascriptInterface
@@ -2369,8 +2401,8 @@ public class PlayerActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void showStationDialog(final int editIdx, final String name, final String freq, final String url) {
-            mainHandler.post(() -> openAddOrEditStationDialog(editIdx, name, freq, url));
+        public void showStationDialog(final int editIdx, final String name, final String url) {
+            mainHandler.post(() -> openAddOrEditStationDialog(editIdx, name, url));
         }
 
         @JavascriptInterface
