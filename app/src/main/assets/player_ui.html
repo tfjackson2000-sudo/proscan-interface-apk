@@ -136,10 +136,10 @@
     }
     .rec-row span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    /* Middle Status & Brand Bar (Identical to Radio) */
+    /* Middle Status & Signal Meter Bar */
     .top-controls-container {
         display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
-        width: 100%; height: 24px; flex-shrink: 0;
+        width: 100%; height: 32px; flex-shrink: 0;
     }
     .brand-henus {
         display: inline-flex; align-items: center; gap: 6px;
@@ -150,6 +150,50 @@
         border-left: 2px solid var(--brand-accent, #38bdf8); border-right: 2px solid var(--brand-accent, #38bdf8);
     }
     .brand-henus .henus-sub { font-size: 7.5px; font-weight: 700; letter-spacing: 2.5px; }
+
+    /* 5-Style Live Signal Meter in #brand-logo-slot (With crisp black VU tick marks for PC & Mobile) */
+    #sig-meter-host {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 124px; height: 23px; background: rgba(6,8,12,0.82);
+        border: 1px solid rgba(255,255,255,0.16); border-radius: 5px; padding: 2px 5px;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.9), 0 1px 0 rgba(255,255,255,0.1);
+        position: relative; overflow: hidden; pointer-events: auto; cursor: pointer;
+    }
+    .sm-mode { display: none; width: 100%; height: 100%; align-items: center; justify-content: space-between; }
+    .sm-mode.active { display: flex; }
+    .sm-lbl { font-family: 'JetBrains Mono', monospace; font-size: 7.5px; font-weight: 900; color: #38bdf8; letter-spacing: 0.3px; margin-right: 3px; flex-shrink: 0; }
+    .sm-bar-wrap { display: flex; align-items: center; gap: 2px; flex: 1; height: 11px; justify-content: space-between; }
+    .sm-seg { flex: 1; height: 100%; border-radius: 1px; background: #1e293b; transition: background 0.04s linear; }
+    .sm-vu-wrap {
+        width: 100%; height: 100%;
+        background: linear-gradient(90deg, #fef9c3 0%, #fde047 68%, #f59e0b 100%);
+        border-radius: 3px; position: relative; overflow: hidden;
+        border: 1px solid #000; box-shadow: inset 0 1px 3px rgba(0,0,0,0.45);
+    }
+    .sm-vu-wrap::after {
+        content: ""; position: absolute; left: 4px; right: 4px; bottom: 1px; height: 5px;
+        border-bottom: 1.5px solid #0f172a;
+        background: repeating-linear-gradient(90deg, #0f172a 0px, #0f172a 2px, transparent 2px, transparent 8px);
+        opacity: 0.9; z-index: 1; pointer-events: none;
+    }
+    .sm-vu-scale {
+        position: absolute; top: 1px; left: 4px; right: 4px;
+        font-family: monospace; font-size: 6.5px; font-weight: 900; color: #0f172a;
+        display: flex; justify-content: space-between; line-height: 1; z-index: 2; pointer-events: none;
+    }
+    #sm-vu-needle {
+        position: absolute; top: 0; bottom: 0; left: 3px; width: 2.5px;
+        background: #dc2626; border-radius: 1px;
+        box-shadow: 0 0 4px rgba(220,38,38,0.9), 1px 0 2px rgba(0,0,0,0.6);
+        transition: left 0.14s ease-out; z-index: 3;
+    }
+    .sm-spec-wrap { display: flex; align-items: flex-end; justify-content: space-between; gap: 2px; width: 100%; height: 15px; padding-top: 1px; }
+    .sm-spec-bar { flex: 1; height: 2px; background: linear-gradient(180deg, #ef4444 0%, #facc15 35%, #22c55e 100%); border-radius: 1px 1px 0 0; transition: height 0.04s linear; }
+    #sm-scope-canvas { width: 100%; height: 16px; display: block; }
+    .sm-dig-wrap { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 4px; font-family: 'JetBrains Mono', monospace; }
+    #sm-dig-txt { font-size: 8.5px; font-weight: 900; color: #39ff14; min-width: 46px; text-align: left; letter-spacing: -0.3px; }
+    .sm-peak-track { flex: 1; height: 8px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; overflow: hidden; position: relative; }
+    #sm-peak-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #22c55e 0%, #facc15 65%, #ef4444 100%); transition: width 0.14s ease-out; }
 
     /* Lower Recessed Bay (Replaces Keypad with Controls + Large 3D Mechanical Recorder) */
     .buttons-box {
@@ -176,7 +220,7 @@
         font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 700;
         box-shadow: inset 0 2px 4px rgba(0,0,0,0.85);
     }
-/* ========================================================
+   /* ========================================================
        LARGE 3D HYPER-REALISTIC MECHANICAL DECK BAY
        ======================================================== */
     #mech-bay {
@@ -395,7 +439,7 @@
                 </div>
             </div>
 
-            <!-- MIDDLE STATUS & BRAND BAR -->
+            <!-- MIDDLE STATUS & SIGNAL METER BAR -->
             <div class="top-controls-container">
                 <div style="font-size:8px;font-weight:900;color:var(--toggle-color);padding-left:4px;" id="rec-count-hud">0 FILES</div>
                 <div id="brand-logo-slot"></div>
@@ -491,7 +535,6 @@
         </div>
     </div>
 </div>
-
 <script>
     /* Sync Skin, Display, Background & Brand from Main Radio's localStorage */
     var skinIds = ['neumorphic','plastic','neublackyellow','whiteline','tron','neongreen','amber','ham','nokia','retro','yellow','blue','green','red','armycamo','desertcamo','metal','silver','carbon','titanium','bakelite','wood','milspec','copper'];
@@ -505,9 +548,117 @@
     document.documentElement.setAttribute('data-display', dispIds[dIdx % dispIds.length] || 'disp-soft');
     document.documentElement.setAttribute('data-bg', bgIds[bIdx % bgIds.length] || 'bg-dark');
 
-    var brand = (localStorage.getItem('proscan_custom_brand_v1') || 'PROSCAN').trim();
-    document.getElementById('brand-logo-slot').innerHTML =
-        '<div class="brand-henus"><span class="henus-mark">' + brand + '</span><span class="henus-sub">ARCHIVE</span></div>';
+    /* Initialize 5-Style Signal Meter in #brand-logo-slot (Steady RF Carrier for S-BAR, VU DIAL & PEAK dB; Voice-Modulated for EQ & SCOPE) */
+    var allRecs = [], filteredRecs = [], curIdx = -1;
+    var isCont = false, isTtsCaption = false, isPlayingNow = false;
+    window.__audioLevel = 0;
+    window.__audioProgress = 0;
+
+    (function initBuiltInSignalMeter() {
+        var bSlot = document.getElementById('brand-logo-slot');
+        if (!bSlot || document.getElementById('sig-meter-host')) return;
+        window.__sigMeterStyle = parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0;
+        var segHtml = ''; for (var s = 0; s < 12; s++) segHtml += '<div class="sm-seg"></div>';
+        var specHtml = ''; for (var sp = 0; sp < 10; sp++) specHtml += '<div class="sm-spec-bar"></div>';
+        bSlot.innerHTML = '<div id="sig-meter-host" title="Tap to cycle Signal Meter style">' +
+            '<div class="sm-mode" id="sm-mode-0"><span class="sm-lbl">S</span><div class="sm-bar-wrap" id="sm-led-bars">' + segHtml + '</div></div>' +
+            '<div class="sm-mode" id="sm-mode-1"><div class="sm-vu-wrap"><div class="sm-vu-scale"><span>S1</span><span>3</span><span>5</span><span>7</span><span>9</span><span style="color:#dc2626;">+30</span></div><div id="sm-vu-needle"></div></div></div>' +
+            '<div class="sm-mode" id="sm-mode-2"><span class="sm-lbl">EQ</span><div class="sm-spec-wrap" id="sm-spec-bars">' + specHtml + '</div></div>' +
+            '<div class="sm-mode" id="sm-mode-3"><canvas id="sm-scope-canvas" width="114" height="16"></canvas></div>' +
+            '<div class="sm-mode" id="sm-mode-4"><div class="sm-dig-wrap"><span id="sm-dig-txt">S0 -98dB</span><div class="sm-peak-track"><div id="sm-peak-fill"></div></div></div></div>' +
+        '</div>';
+
+        window.__applyPlayerSigMeterStyle = function (idx) {
+            window.__sigMeterStyle = ((idx % 5) + 5) % 5;
+            localStorage.setItem('proscan_sig_meter_style_v1', String(window.__sigMeterStyle));
+            for (var m = 0; m < 5; m++) {
+                var el = document.getElementById('sm-mode-' + m);
+                if (el) el.classList.toggle('active', m === window.__sigMeterStyle);
+            }
+        };
+        document.getElementById('sig-meter-host').addEventListener('click', function () {
+            if (navigator.vibrate) navigator.vibrate(20);
+            window.__applyPlayerSigMeterStyle((window.__sigMeterStyle || 0) + 1);
+        });
+        window.__applyPlayerSigMeterStyle(window.__sigMeterStyle);
+
+        var pSmCarrier = 0, pSmAudio = 0, pSmPhase = 0;
+        function updateBuiltInTopSignalMeter() {
+            requestAnimationFrame(updateBuiltInTopSignalMeter);
+            var rawAud = isPlayingNow ? (window.__audioLevel || 0.35) : 0;
+            var targetCarrier = isPlayingNow ? Math.min(0.94, 0.82 + rawAud * 0.12 + Math.sin(pSmPhase * 0.4) * 0.015) : 0;
+            pSmCarrier += (targetCarrier - pSmCarrier) * (targetCarrier > pSmCarrier ? 0.16 : 0.10);
+            if (pSmCarrier < 0.01) pSmCarrier = 0;
+            pSmAudio += (rawAud - pSmAudio) * (rawAud > pSmAudio ? 0.42 : 0.22);
+            if (pSmAudio < 0.015) pSmAudio = 0;
+
+            var stIdx = window.__sigMeterStyle || 0;
+            if (stIdx === 0) {
+                var activeSegs = pSmCarrier < 0.03 ? 0 : Math.min(12, Math.ceil(pSmCarrier * 12));
+                var segs = document.querySelectorAll('#sm-led-bars .sm-seg');
+                for (var k = 0; k < segs.length; k++) {
+                    if (k < activeSegs) {
+                        var col = k >= 9 ? '#ef4444' : (k >= 6 ? '#facc15' : '#22c55e');
+                        segs[k].style.background = col;
+                        segs[k].style.boxShadow = '0 0 4px ' + col;
+                    } else {
+                        segs[k].style.background = '#1e293b';
+                        segs[k].style.boxShadow = 'none';
+                    }
+                }
+            } else if (stIdx === 1) {
+                var ndl = document.getElementById('sm-vu-needle');
+                if (ndl) {
+                    var pct = Math.min(100, Math.max(0, pSmCarrier * 100));
+                    ndl.style.left = 'calc(3px + ' + (pct * 0.92).toFixed(1) + '%)';
+                }
+            } else if (stIdx === 2) {
+                var bars = document.querySelectorAll('#sm-spec-bars .sm-spec-bar');
+                for (var b = 0; b < bars.length; b++) {
+                    var h = 2;
+                    if (pSmAudio >= 0.03) {
+                        var bell = Math.sin(((b + 1) / 11) * Math.PI);
+                        var wv = 0.55 + 0.45 * Math.sin(b * 0.8 + pSmPhase) * Math.cos(b * 0.4 - pSmPhase * 0.7);
+                        h = Math.max(2, Math.min(15, Math.round(bell * wv * pSmAudio * 17)));
+                    }
+                    bars[b].style.height = h + 'px';
+                }
+            } else if (stIdx === 3) {
+                var cv = document.getElementById('sm-scope-canvas');
+                if (cv) {
+                    var c = cv.getContext('2d'), W = cv.width, H = cv.height;
+                    c.clearRect(0, 0, W, H);
+                    c.strokeStyle = pSmAudio >= 0.03 ? '#39ff14' : '#334155';
+                    c.lineWidth = 1.4;
+                    c.beginPath();
+                    for (var x = 0; x < W; x += 2) {
+                        var env = Math.sin((x / W) * Math.PI);
+                        var y = (H / 2) + Math.sin(x * 0.14 + pSmPhase) * Math.cos(x * 0.06 - pSmPhase * 0.5) * env * (pSmAudio * (H * 0.48));
+                        if (x === 0) c.moveTo(x, y); else c.lineTo(x, y);
+                    }
+                    c.stroke();
+                }
+            } else if (stIdx === 4) {
+                var dTxt = document.getElementById('sm-dig-txt');
+                var pFill = document.getElementById('sm-peak-fill');
+                if (dTxt) {
+                    if (pSmCarrier < 0.03) {
+                        dTxt.innerText = 'S0 -98dB';
+                        dTxt.style.color = '#64748b';
+                    } else {
+                        var sUnit = Math.min(9, Math.max(1, Math.round(pSmCarrier * 10)));
+                        var dbVal = -92 + Math.round(pSmCarrier * 58);
+                        var plusStr = pSmCarrier > 0.80 ? ('S9+' + Math.round((pSmCarrier - 0.78) * 140)) : ('S' + sUnit + ' ' + dbVal + 'dB');
+                        dTxt.innerText = plusStr;
+                        dTxt.style.color = pSmCarrier > 0.76 ? '#facc15' : '#39ff14';
+                    }
+                }
+                if (pFill) pFill.style.width = Math.min(100, Math.round(pSmCarrier * 100)) + '%';
+            }
+            pSmPhase += isPlayingNow ? (0.14 + pSmAudio * 0.25) : 0.02;
+        }
+        updateBuiltInTopSignalMeter();
+    })();
 
     /* Live 24-Hour Clock in Top-Right of Screen */
     function updateClock() {
@@ -551,12 +702,10 @@
         return dStr;
     }
 
-    var allRecs = [], filteredRecs = [], curIdx = -1;
-    var isCont = false, isTtsCaption = false, isPlayingNow = false;
     window.__deletedDriveIds = JSON.parse(localStorage.getItem('proscan_deleted_recs_v1') || '{}');
     window.__activePlayingFileId = '';
 
-    /* Live Canvas Oscilloscope for SIGINT Hacker Deck */
+    /* Live Canvas Oscilloscope for SIGINT Hacker Deck (Modulates with Voice) */
     var canvas = document.getElementById('hack-canvas');
     var ctx = canvas ? canvas.getContext('2d') : null;
     var phase = 0;
@@ -567,15 +716,16 @@
         ctx.strokeStyle = '#39ff14';
         ctx.lineWidth = 2;
         ctx.beginPath();
+        var voiceLvl = isPlayingNow ? Math.max(0.08, window.__audioLevel || 0.35) : 0.02;
         for (var x = 0; x < canvas.width; x += 4) {
-            var amp = isPlayingNow ? (18 + Math.sin(x * 0.09 + phase) * 26 * Math.random()) : 2;
+            var amp = isPlayingNow ? (8 + Math.sin(x * 0.09 + phase) * 32 * voiceLvl) : 2;
             var y = 52 + Math.sin(x * 0.05 + phase) * amp;
             if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
         ctx.stroke();
         ctx.fillStyle = 'rgba(57,255,20,0.75)';
         for (var b = 0; b < 24; b++) {
-            var bh = isPlayingNow ? Math.max(4, Math.floor(Math.random() * 42)) : 3;
+            var bh = isPlayingNow ? Math.max(4, Math.floor((0.4 + 0.6 * Math.abs(Math.sin(b * 0.5 + phase))) * 44 * voiceLvl)) : 3;
             ctx.fillRect(10 + b * 15, 134 - bh, 11, bh);
         }
         phase += 0.22;
@@ -621,7 +771,8 @@
         var prevScroll = box.scrollTop;
 
         filteredRecs = allRecs.filter(function (r) {
-            if (window.__deletedDriveIds[r.fileId || r.fileName]) return false;
+            if (!r || r.trashed === true) return false;
+            if (window.__deletedDriveIds[r.fileId] || window.__deletedDriveIds[r.fileName]) return false;
             if (selDate && r.ukDate !== selDate) return false;
             if (q && !r.name.toLowerCase().includes(q) && !r.freq.toLowerCase().includes(q) && !r.timeStr.toLowerCase().includes(q)) return false;
             return true;
@@ -664,7 +815,8 @@
                     if (navigator.vibrate) navigator.vibrate([35, 50, 35]);
                     var target = filteredRecs[idx];
                     if (target) {
-                        window.__deletedDriveIds[target.fileId || target.fileName] = true;
+                        if (target.fileId) window.__deletedDriveIds[target.fileId] = true;
+                        if (target.fileName) window.__deletedDriveIds[target.fileName] = true;
                         localStorage.setItem('proscan_deleted_recs_v1', JSON.stringify(window.__deletedDriveIds));
                         document.getElementById('track-main-readout').innerText = 'DELETED: ' + target.name;
                         renderPlaylist();
@@ -708,13 +860,18 @@
 
     window.onDriveRecordingsLoaded = function (itemsJson) {
         try {
-            var arr = JSON.parse(itemsJson);
+            window.__deletedDriveIds = JSON.parse(localStorage.getItem('proscan_deleted_recs_v1') || '{}');
+            var rawArr = JSON.parse(itemsJson);
             var datesSet = {};
-            arr.forEach(function (r) {
+            var activeArr = [];
+            rawArr.forEach(function (r) {
+                if (!r || r.trashed === true) return;
+                if (window.__deletedDriveIds[r.fileId] || window.__deletedDriveIds[r.fileName]) return;
                 r.ukDate = toUkDate(r.dateStr);
                 if (r.ukDate) datesSet[r.ukDate] = true;
+                activeArr.push(r);
             });
-            allRecs = arr;
+            allRecs = activeArr;
             var dSel = document.getElementById('date-select');
             var curVal = dSel.value;
             var dHtml = '<option value="">ALL DATES</option>';
@@ -727,7 +884,6 @@
     window.onNativePlayStarted = function () { setPlayingUI(true); renderPlaylist(); };
     window.onNativePlayEnded = function () {
         setPlayingUI(false); renderPlaylist();
-        /* Since list is sorted Newest First, NEXT in time is UP the list (curIdx - 1)! */
         if (isCont && curIdx > 0) playIndex(curIdx - 1);
     };
     window.onNativePlayError = function (msg) {
@@ -747,11 +903,17 @@
     });
     document.getElementById('btn-stop').addEventListener('click', function () {
         setPlayingUI(false);
+        /* Automatically switch off VOICE when audio is stopped (can still be turned back on independently) */
+        isTtsCaption = false;
+        var ttsBtn = document.getElementById('btn-mode-tts');
+        if (ttsBtn) {
+            ttsBtn.classList.remove('active');
+            ttsBtn.innerText = 'VOICE: OFF';
+        }
         if (window.PlayerBridge && window.PlayerBridge.stopAudio) window.PlayerBridge.stopAudio();
         renderPlaylist();
     });
 
-    /* Chronological NEXT = UP the list (curIdx - 1, newer), PREV = DOWN the list (curIdx + 1, older) */
     document.getElementById('btn-next').addEventListener('click', function () {
         if (curIdx > 0) playIndex(curIdx - 1);
     });
