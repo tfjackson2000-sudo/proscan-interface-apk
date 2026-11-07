@@ -16,8 +16,6 @@ import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
-import android.media.audiofx.DynamicsProcessing;
-import android.media.audiofx.LoudnessEnhancer;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -76,14 +74,21 @@ public class MainActivity extends Activity {
 
     private static final int REQ_LOAD_JSON = 901;
 
+    /**
+     * Unified Priority Auto-Ducking Commercial Radio Engine.
+     * - Default Baseline Volume: 40% (0.40f) everywhere (Scanner screen, Radio screen, Background).
+     * - Default Ducked Volume: 0% (0.00f — Full Mute on any Scanner transmission or TTS readout).
+     * - Default Hold Time: 3500ms (3.5s) so back-to-back transmissions never let the radio pop up in between.
+     */
     public static final class PriorityRadioEngine {
         private static MediaPlayer radioPlayer = null;
         private static String activeStationUrl = "";
         private static String activeStationName = "";
         private static int activeSessionId = 0;
         private static boolean isPlaying = false;
-        private static boolean isScannerSquelchOpen = false;
-        private static boolean isTtsSpeaking = false;
+        private static volatile boolean isScannerSquelchOpen = false;
+        private static volatile boolean isTtsSpeaking = false;
+        private static volatile long lastScannerHitTimestampMs = 0L;
         private static float currentVolume = 0.40f;
         private static ValueAnimator fadeAnimator = null;
         private static final Handler handler = new Handler(Looper.getMainLooper());
@@ -100,12 +105,14 @@ public class MainActivity extends Activity {
         }
 
         public static float getDuckedVolume(SharedPreferences prefs) {
-            int pct = prefs != null ? prefs.getInt("mixer_radio_duck_pct", 5) : 5;
+            // Default is 0% (Full Mute) for any scanner transmission
+            int pct = prefs != null ? prefs.getInt("mixer_radio_duck_pct_v2", 0) : 0;
             return Math.max(0.0f, Math.min(0.25f, pct / 100f));
         }
 
         public static int getHoldTimeMs(SharedPreferences prefs) {
-            return prefs != null ? prefs.getInt("mixer_duck_hold_ms", 2500) : 2500;
+            // Default is 3500ms (3.5s) to bridge back-to-back transmissions
+            return prefs != null ? prefs.getInt("mixer_duck_hold_ms_v2", 3500) : 3500;
         }
 
         public static int getScannerAgcDb(SharedPreferences prefs) {
@@ -132,29 +139,43 @@ public class MainActivity extends Activity {
             return activeSessionId;
         }
 
-        public static synchronized void updateSettingsLive(SharedPreferences prefs) {
-            if (radioPlayer == null || !isPlaying) return;
-            boolean shouldBeDucked = isAutoDuckEnabled(prefs) && (isScannerSquelchOpen || isTtsSpeaking);
-            float target = shouldBeDucked ? getDuckedVolume(prefs) : getBaselineVolume(prefs);
-            cancelFade();
-            setPlayerVolumeInternal(target);
+        public static void updateSettingsLive(final SharedPreferences prefs) {
+            handler.post(() -> {
+                synchronized (PriorityRadioEngine.class) {
+                    if (radioPlayer == null || !isPlaying) return;
+                    boolean shouldBeDucked = isAutoDuckEnabled(prefs) && (isScannerSquelchOpen || isTtsSpeaking);
+                    float target = shouldBeDucked ? getDuckedVolume(prefs) : getBaselineVolume(prefs);
+                    cancelFade();
+                    setPlayerVolumeInternal(target);
+                }
+            });
         }
 
-        public static synchronized void notifyScannerHit(SharedPreferences prefs, boolean squelchOpen) {
-            if (isScannerSquelchOpen == squelchOpen) return;
-            isScannerSquelchOpen = squelchOpen;
-            if (radioPlayer == null || !isPlaying) return;
-            evaluateDuckState(prefs);
+        public static void notifyScannerHit(final SharedPreferences prefs, final boolean squelchOpen) {
+            handler.post(() -> {
+                synchronized (PriorityRadioEngine.class) {
+                    if (squelchOpen) {
+                        lastScannerHitTimestampMs = System.currentTimeMillis();
+                    }
+                    isScannerSquelchOpen = squelchOpen;
+                    evaluateDuckStateOnMainThread(prefs);
+                }
+            });
         }
 
-        public static synchronized void notifyTtsSpeaking(SharedPreferences prefs, boolean speaking) {
-            if (isTtsSpeaking == speaking) return;
-            isTtsSpeaking = speaking;
-            if (radioPlayer == null || !isPlaying) return;
-            evaluateDuckState(prefs);
+        public static void notifyTtsSpeaking(final SharedPreferences prefs, final boolean speaking) {
+            handler.post(() -> {
+                synchronized (PriorityRadioEngine.class) {
+                    if (speaking) {
+                        lastScannerHitTimestampMs = System.currentTimeMillis();
+                    }
+                    isTtsSpeaking = speaking;
+                    evaluateDuckStateOnMainThread(prefs);
+                }
+            });
         }
 
-        private static synchronized void evaluateDuckState(final SharedPreferences prefs) {
+        private static synchronized void evaluateDuckStateOnMainThread(final SharedPreferences prefs) {
             if (radioPlayer == null || !isPlaying) return;
             if (!isAutoDuckEnabled(prefs)) {
                 cancelHoldAndFade();
@@ -162,27 +183,45 @@ public class MainActivity extends Activity {
                 return;
             }
             if (isScannerSquelchOpen || isTtsSpeaking) {
+                // Immediately cancel any ongoing fade-up and mute/duck the radio
                 cancelHoldAndFade();
                 setPlayerVolumeInternal(getDuckedVolume(prefs));
             } else {
+                // Schedule hold timer before fading back up
                 if (holdRestoreRunnable != null) {
                     handler.removeCallbacks(holdRestoreRunnable);
                 }
                 final int holdMs = getHoldTimeMs(prefs);
-                holdRestoreRunnable = () -> {
-                    synchronized (PriorityRadioEngine.class) {
-                        if (isScannerSquelchOpen || isTtsSpeaking || radioPlayer == null || !isPlaying) return;
-                        float startVol = currentVolume;
-                        float endVol = getBaselineVolume(prefs);
-                        cancelFade();
-                        fadeAnimator = ValueAnimator.ofFloat(startVol, endVol);
-                        fadeAnimator.setDuration(600);
-                        fadeAnimator.setInterpolator(new DecelerateInterpolator());
-                        fadeAnimator.addUpdateListener(anim -> {
-                            float v = (Float) anim.getAnimatedValue();
-                            setPlayerVolumeInternal(v);
-                        });
-                        fadeAnimator.start();
+                holdRestoreRunnable = new Runnable() {
+                    @Override
+                    public void run() {
+                        synchronized (PriorityRadioEngine.class) {
+                            if (isScannerSquelchOpen || isTtsSpeaking || radioPlayer == null || !isPlaying) return;
+                            long elapsedSinceLastHit = System.currentTimeMillis() - lastScannerHitTimestampMs;
+                            if (elapsedSinceLastHit < holdMs - 50) {
+                                handler.postDelayed(this, holdMs - elapsedSinceLastHit);
+                                return;
+                            }
+                            float startVol = currentVolume;
+                            float endVol = getBaselineVolume(prefs);
+                            cancelFade();
+                            fadeAnimator = ValueAnimator.ofFloat(startVol, endVol);
+                            fadeAnimator.setDuration(600);
+                            fadeAnimator.setInterpolator(new DecelerateInterpolator());
+                            fadeAnimator.addUpdateListener(anim -> {
+                                synchronized (PriorityRadioEngine.class) {
+                                    // Abort fade-up immediately if a new transmission started mid-fade!
+                                    if (isScannerSquelchOpen || isTtsSpeaking) {
+                                        anim.cancel();
+                                        setPlayerVolumeInternal(getDuckedVolume(prefs));
+                                        return;
+                                    }
+                                    float v = (Float) anim.getAnimatedValue();
+                                    setPlayerVolumeInternal(v);
+                                }
+                            });
+                            fadeAnimator.start();
+                        }
                     }
                 };
                 handler.postDelayed(holdRestoreRunnable, holdMs);
@@ -334,78 +373,6 @@ public class MainActivity extends Activity {
 
     private String lastSpokenText = "";
     private long lastSpokenTimestamp = 0;
-
-    private LoudnessEnhancer scannerLoudnessEnhancer = null;
-    private DynamicsProcessing scannerDynamicsLimiter = null;
-    private int lastAppliedGainMb = -1;
-
-    private void attachOrUpdateNativeScannerAgc(boolean isAm, float chGainOffsetDb) {
-        try {
-            if (!scannerAudioConnected) {
-                if (scannerLoudnessEnhancer != null) {
-                    scannerLoudnessEnhancer.setEnabled(false);
-                }
-                lastAppliedGainMb = -1;
-                return;
-            }
-            int baseAgcDb = PriorityRadioEngine.getScannerAgcDb(prefs);
-            int amBonusMb = isAm ? 300 : 0;
-            int chOffsetMb = Math.round(chGainOffsetDb * 100f);
-            int totalGainMb = Math.max(0, Math.min(2400, (baseAgcDb * 100) + amBonusMb + chOffsetMb));
-
-            if (totalGainMb == lastAppliedGainMb && scannerLoudnessEnhancer != null) {
-                return;
-            }
-            lastAppliedGainMb = totalGainMb;
-
-            if (scannerLoudnessEnhancer == null) {
-                try {
-                    scannerLoudnessEnhancer = new LoudnessEnhancer(0);
-                } catch (Exception ignored) {}
-            }
-            if (scannerLoudnessEnhancer != null) {
-                scannerLoudnessEnhancer.setTargetGain(totalGainMb);
-                scannerLoudnessEnhancer.setEnabled(totalGainMb > 0);
-            }
-
-            if (Build.VERSION.SDK_INT >= 28 && scannerDynamicsLimiter == null) {
-                try {
-                    DynamicsProcessing.Config.Builder b = new DynamicsProcessing.Config.Builder(
-                            DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
-                            1, true, 1, false, 0, false, 0, true
-                    );
-                    DynamicsProcessing.Config cfg = b.build();
-                    DynamicsProcessing.Limiter lim = cfg.getLimiterByChannelIndex(0);
-                    lim.setEnabled(true);
-                    lim.setAttackTime(1.5f);
-                    lim.setReleaseTime(60.0f);
-                    lim.setRatio(10.0f);
-                    lim.setThreshold(-2.5f);
-                    lim.setPostGain(0.0f);
-                    scannerDynamicsLimiter = new DynamicsProcessing(0, 0, cfg);
-                    scannerDynamicsLimiter.setEnabled(true);
-                } catch (Exception ignored) {}
-            }
-        } catch (Exception ignored) {}
-    }
-
-    private void releaseNativeScannerAgc() {
-        lastAppliedGainMb = -1;
-        try {
-            if (scannerLoudnessEnhancer != null) {
-                scannerLoudnessEnhancer.setEnabled(false);
-                scannerLoudnessEnhancer.release();
-                scannerLoudnessEnhancer = null;
-            }
-        } catch (Exception ignored) {}
-        try {
-            if (Build.VERSION.SDK_INT >= 28 && scannerDynamicsLimiter != null) {
-                scannerDynamicsLimiter.setEnabled(false);
-                scannerDynamicsLimiter.release();
-                scannerDynamicsLimiter = null;
-            }
-        } catch (Exception ignored) {}
-    }
 
     private synchronized void acquireScannerWakeAndWifiLocks() {
         try {
@@ -641,13 +608,23 @@ public class MainActivity extends Activity {
         }
     };
 
+    /**
+     * Native Background Tick: Ensures WebView's audio squelch detector & live log poller
+     * continue running even when the app is in the background, minimized, or on the Radio screen!
+     */
     private final Runnable periodicInjector = new Runnable() {
         @Override
         public void run() {
             if (webView != null) {
                 injectEnhancements();
+                if (scannerAudioConnected || PriorityRadioEngine.isRadioPlaying()) {
+                    webView.evaluateJavascript(
+                            "try{if(window.__bgTickSquelchAndLog)window.__bgTickSquelchAndLog();}catch(e){}",
+                            null
+                    );
+                }
             }
-            mainHandler.postDelayed(this, 1800);
+            mainHandler.postDelayed(this, 600);
         }
     };
 
@@ -688,6 +665,7 @@ public class MainActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
+        // Custom WebView that never suspends JS timers or audio when in background or when PlayerActivity is open
         webView = new WebView(this) {
             @Override
             public void setKeepScreenOn(boolean keepScreenOn) {
@@ -696,27 +674,22 @@ public class MainActivity extends Activity {
 
             @Override
             protected void onWindowVisibilityChanged(int visibility) {
-                if (scannerAudioConnected || bgAudioModeEnabled || PriorityRadioEngine.isRadioPlaying()) {
-                    super.onWindowVisibilityChanged(View.VISIBLE);
-                } else {
-                    super.onWindowVisibilityChanged(visibility);
-                }
+                super.onWindowVisibilityChanged(View.VISIBLE);
+            }
+
+            @Override
+            public void onWindowFocusChanged(boolean hasWindowFocus) {
+                super.onWindowFocusChanged(true);
             }
 
             @Override
             public void onPause() {
-                if (scannerAudioConnected || bgAudioModeEnabled || PriorityRadioEngine.isRadioPlaying()) {
-                    return;
-                }
-                super.onPause();
+                // Never pause WebView media or JS timers so background squelch detection & live logs stay active
             }
 
             @Override
             public void pauseTimers() {
-                if (scannerAudioConnected || bgAudioModeEnabled || PriorityRadioEngine.isRadioPlaying()) {
-                    return;
-                }
-                super.pauseTimers();
+                // Never pause JS timers
             }
         };
         webView.setKeepScreenOn(false);
@@ -941,8 +914,10 @@ public class MainActivity extends Activity {
         public void setScannerAudioConnected(final boolean connected) {
             mainHandler.post(() -> {
                 scannerAudioConnected = connected;
+                if (!connected) {
+                    PriorityRadioEngine.notifyScannerHit(prefs, false);
+                }
                 setBgServiceRunning(connected || bgAudioModeEnabled);
-                attachOrUpdateNativeScannerAgc(false, 0f);
             });
         }
 
@@ -956,12 +931,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void notifyScannerSquelchState(final boolean squelchOpen, final String modulation, final float channelGainOffsetDb) {
-            // Fast path: only notify PriorityRadioEngine on squelch change
             PriorityRadioEngine.notifyScannerHit(prefs, squelchOpen);
-            if (squelchOpen && scannerAudioConnected) {
-                final boolean isAm = modulation != null && modulation.toUpperCase(Locale.ROOT).contains("AM");
-                mainHandler.post(() -> attachOrUpdateNativeScannerAgc(isAm, channelGainOffsetDb));
-            }
         }
 
         @JavascriptInterface
@@ -970,7 +940,7 @@ public class MainActivity extends Activity {
                 JSONObject o = new JSONObject();
                 o.put("autoDuck", PriorityRadioEngine.isAutoDuckEnabled(prefs));
                 o.put("ceilingPct", prefs.getInt("mixer_radio_ceiling_pct", 40));
-                o.put("duckPct", prefs.getInt("mixer_radio_duck_pct", 5));
+                o.put("duckPct", prefs.getInt("mixer_radio_duck_pct_v2", 0));
                 o.put("agcDb", PriorityRadioEngine.getScannerAgcDb(prefs));
                 o.put("holdMs", PriorityRadioEngine.getHoldTimeMs(prefs));
                 o.put("radioPlaying", PriorityRadioEngine.isRadioPlaying());
@@ -987,12 +957,10 @@ public class MainActivity extends Activity {
                 prefs.edit()
                         .putBoolean("mixer_auto_duck_on", autoDuck)
                         .putInt("mixer_radio_ceiling_pct", Math.max(10, Math.min(100, ceilingPct)))
-                        .putInt("mixer_radio_duck_pct", Math.max(0, Math.min(25, duckPct)))
+                        .putInt("mixer_radio_duck_pct_v2", Math.max(0, Math.min(25, duckPct)))
                         .putInt("mixer_scanner_agc_db", Math.max(0, Math.min(15, agcDb)))
-                        .putInt("mixer_duck_hold_ms", Math.max(1000, Math.min(5000, holdMs)))
+                        .putInt("mixer_duck_hold_ms_v2", Math.max(1000, Math.min(5000, holdMs)))
                         .apply();
-                lastAppliedGainMb = -1;
-                attachOrUpdateNativeScannerAgc(false, 0f);
                 PriorityRadioEngine.updateSettingsLive(prefs);
             });
         }
@@ -1120,7 +1088,6 @@ public class MainActivity extends Activity {
     private void closeAndExitApp() {
         scannerAudioConnected = false;
         PriorityRadioEngine.stopStation();
-        releaseNativeScannerAgc();
         setBgServiceRunning(false);
         releaseScannerWakeAndWifiLocks();
         try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
@@ -1172,9 +1139,9 @@ public class MainActivity extends Activity {
         });
 
         mainHandler.removeCallbacks(periodicInjector);
-        mainHandler.postDelayed(periodicInjector, 900);
+        mainHandler.postDelayed(periodicInjector, 600);
     }
-    private void injectEnhancements() {
+private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -1182,6 +1149,11 @@ public class MainActivity extends Activity {
         StringBuilder js = new StringBuilder();
         js.append("(function() {\n");
         js.append("  try {\n");
+        js.append("    try {\n");
+        js.append("      Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });\n");
+        js.append("      Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });\n");
+        js.append("    } catch(e) {}\n");
+
         js.append("    var existingSt = document.getElementById('proscan-v7-upgrade-css');\n");
         js.append("    if (document.head && !existingSt) {\n");
         js.append("      var st = document.createElement('style');\n");
@@ -1307,7 +1279,7 @@ public class MainActivity extends Activity {
         js.append("        '.sm-peak-track{flex:1;height:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;overflow:hidden;position:relative;}' +\n");
         js.append("        '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.14s ease-out;}' +\n");
 
-        /* Per-Channel DSP & Priority Audio Mixer Modal Styles */
+        /* Unified DSP & Priority Audio Mixer Modal Styles */
         js.append("        '#proscan-dsp-mixer-modal{position:absolute;z-index:130;inset:10px;border:1px solid #6b777d;border-radius:16px;background:linear-gradient(180deg,#161b20 0%,#0d1014 100%);box-shadow:0 16px 40px rgba(0,0,0,0.92),inset 0 1px 0 rgba(255,255,255,0.12);color:#e2e8f0;display:flex;flex-direction:column;overflow:hidden;font-family:\"JetBrains Mono\",monospace;}' +\n");
         js.append("        '#proscan-dsp-mixer-modal[hidden]{display:none!important;}' +\n");
         js.append("        '.dm-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:rgba(0,0,0,0.55);border-bottom:1px solid rgba(255,255,255,0.12);}' +\n");
@@ -1339,20 +1311,126 @@ public class MainActivity extends Activity {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Fix History Log.txt Fetch Lockup: Add 3-second Watchdog so updateMiniLog NEVER stalls! */
-        js.append("    if (!window.__logWatchdogHooked && typeof window.updateMiniLog === 'function') {\n");
-        js.append("      window.__logWatchdogHooked = true;\n");
-        js.append("      var origUpdateMiniLog = window.updateMiniLog;\n");
-        js.append("      var logStuckTimer = null;\n");
+        /* Replace History Log.txt Polling & Squelch Detection with Background-Safe, Non-Stalling Engine */
+        js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
+        js.append("      window.__reliableLogAndSquelchHooked = true;\n");
         js.append("      window.updateMiniLog = function() {\n");
-        js.append("        clearTimeout(logStuckTimer);\n");
-        js.append("        logStuckTimer = setTimeout(function() {\n");
-        js.append("          if (typeof isLogFetchInFlight !== 'undefined' && isLogFetchInFlight) {\n");
+        js.append("        if (typeof isDisplayOn !== 'undefined' && !isDisplayOn && (typeof isConnected === 'undefined' || !isConnected)) return;\n");
+        js.append("        fetch('History Log.txt?_t=' + Date.now(), { cache: 'no-store', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } })\n");
+        js.append("          .then(function(r) { if (!r.ok) throw 0; return r.text(); })\n");
+        js.append("          .then(function(text) {\n");
         js.append("            isLogFetchInFlight = false;\n");
-        js.append("          }\n");
-        js.append("        }, 3000);\n");
-        js.append("        try { origUpdateMiniLog(); } catch(e) { isLogFetchInFlight = false; }\n");
+        js.append("            if (!text || text.toLowerCase().indexOf('<html') !== -1) return;\n");
+        js.append("            var dataLines = text.trim().split('\\n').filter(function(l) { return l.indexOf(',') !== -1 && l.toLowerCase().indexOf('frequency') === -1; });\n");
+        js.append("            if (!dataLines.length) return;\n");
+        js.append("            var counts = {}, hits = new Array(dataLines.length);\n");
+        js.append("            for (var k = 0; k < dataLines.length; k++) {\n");
+        js.append("              var fc = dataLines[k].indexOf(','), fk = fc > 0 ? dataLines[k].slice(0, fc).trim() : '';\n");
+        js.append("              if (fk && fk !== '---') { counts[fk] = (counts[fk] || 0) + 1; hits[k] = counts[fk]; } else hits[k] = 1;\n");
+        js.append("            }\n");
+        js.append("            var html = '', added = 0, newRow = false;\n");
+        js.append("            for (var i = dataLines.length - 1; i >= 0 && added < 25; i--) {\n");
+        js.append("              var p = dataLines[i].split(',');\n");
+        js.append("              if (p.length >= 5) {\n");
+        js.append("                var fq = (p[0] || '---').trim(), tn = (p[1] || '').trim(), nm = (p[p.length - 1] || '---').trim(), du = '---', tr = '---';\n");
+        js.append("                for (var j = 0; j < p.length; j++) {\n");
+        js.append("                  var v = p[j].trim();\n");
+        js.append("                  if (/^\\d{2}:\\d{2}:\\d{2}$/.test(v)) du = v;\n");
+        js.append("                  else if (/^\\d{1,4}[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,4}\\s+\\d{1,2}:\\d{2}(:\\d{2})?$/.test(v)) tr = v;\n");
+        js.append("                }\n");
+        js.append("                var tp = tr.split(' '), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
+        js.append("                if (du.indexOf('00:') === 0) du = du.slice(3);\n");
+        js.append("                var id = tm + '|' + fq + '|' + nm;\n");
+        js.append("                var isN = !knownLogLines.has(id);\n");
+        js.append("                if (isN) { knownLogLines.add(id); newRow = true; }\n");
+        js.append("                if (knownLogLines.size > 150) knownLogLines.delete(knownLogLines.values().next().value);\n");
+        js.append("                var h = hits[i] || 1;\n");
+        js.append("                if (fq !== '---' && fq !== '') {\n");
+        js.append("                  html += '<tr class=\"' + ((isN && !isFirstLoad) ? 'new-log-row' : '') + '\"><td title=\"' + tm + '\">' + tm + '</td><td title=\"' + fq + '\">' + fq + '</td><td title=\"' + tn + '\">' + tn + '</td><td title=\"' + du + '\">' + du + '</td><td title=\"(Hit #' + h + ') ' + nm + '\" data-hit-count=\"' + h + '\"><span class=\"freq-hit-badge\" style=\"display:none\">×' + h + '</span>' + nm + '</td></tr>';\n");
+        js.append("                  added++;\n");
+        js.append("                }\n");
+        js.append("              }\n");
+        js.append("            }\n");
+        js.append("            if (html && isDisplayOn) {\n");
+        js.append("              var tb = document.getElementById('mini-log-data');\n");
+        js.append("              if (tb && tb.innerHTML !== html) tb.innerHTML = html;\n");
+        js.append("            }\n");
+        js.append("            if (newRow && !isFirstLoad) {\n");
+        js.append("              if (typeof triggerLogLight === 'function') triggerLogLight();\n");
+        js.append("            }\n");
+        js.append("            isFirstLoad = false;\n");
+        js.append("          })\n");
+        js.append("          .catch(function() { isLogFetchInFlight = false; });\n");
         js.append("      };\n");
+
+        /* Background-Safe Audio Squelch Detector (Uses 60ms setInterval + Native Heartbeat instead of requestAnimationFrame!) */
+        js.append("      window.detectAudio = function() {};\n");
+        js.append("      window.__lastLogPollMs = 0;\n");
+        js.append("      window.__bgTickSquelchAndLog = function() {\n");
+        js.append("        var nowWall = Date.now();\n");
+        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1600)) {\n");
+        js.append("          window.__lastLogPollMs = nowWall;\n");
+        js.append("          window.updateMiniLog();\n");
+        js.append("        }\n");
+        js.append("        var led = document.getElementById('rx-led');\n");
+        js.append("        if (typeof isConnected === 'undefined' || !isConnected || !window.analyser || typeof dataArray === 'undefined' || !dataArray) {\n");
+        js.append("          if (led && led.classList.contains('active')) led.classList.remove('active');\n");
+        js.append("          if (window.__lastNotifiedSquelch) {\n");
+        js.append("            window.__lastNotifiedSquelch = false;\n");
+        js.append("            if (window.AndroidApp && window.AndroidApp.notifyScannerSquelchState) {\n");
+        js.append("              window.AndroidApp.notifyScannerSquelchState(false, 'NFM', 0);\n");
+        js.append("            }\n");
+        js.append("          }\n");
+        js.append("          return;\n");
+        js.append("        }\n");
+        js.append("        if (window.audioContext && window.audioContext.state === 'suspended') {\n");
+        js.append("          try { window.audioContext.resume(); } catch(e) {}\n");
+        js.append("        }\n");
+        js.append("        window.analyser.getByteTimeDomainData(dataArray);\n");
+        js.append("        var maxDev = 0;\n");
+        js.append("        for (var i = 0; i < dataArray.length; i++) {\n");
+        js.append("          var d = Math.abs(dataArray[i] - 128);\n");
+        js.append("          if (d > maxDev) maxDev = d;\n");
+        js.append("        }\n");
+        js.append("        var now = performance.now();\n");
+        js.append("        if (maxDev > 3) {\n");
+        js.append("          var isBeep = false;\n");
+        js.append("          if (typeof freqArray !== 'undefined' && freqArray) {\n");
+        js.append("            window.analyser.getByteFrequencyData(freqArray);\n");
+        js.append("            var bins = 0, tot = 0, pk = 0;\n");
+        js.append("            for (var f = 2; f < freqArray.length; f++) {\n");
+        js.append("              var v = freqArray[f]; tot += v; if (v > pk) pk = v; if (v > 40) bins++;\n");
+        js.append("            }\n");
+        js.append("            isBeep = (bins <= 4) && (pk > (tot / (freqArray.length - 2)) * 5.5);\n");
+        js.append("          }\n");
+        js.append("          var isKey = (now - lastScannerKeyTime) < 2200;\n");
+        js.append("          if (rxSignalStartTime === 0) rxSignalStartTime = now;\n");
+        js.append("          rxLastActiveTime = now;\n");
+        js.append("          var reqMs = isKey ? (isBeep ? 450 : 260) : (isBeep ? 300 : 90);\n");
+        js.append("          if ((now - rxSignalStartTime) >= reqMs) {\n");
+        js.append("            if (led && !led.classList.contains('active')) led.classList.add('active');\n");
+        js.append("            if (!window.__lastNotifiedSquelch) {\n");
+        js.append("              window.__lastNotifiedSquelch = true;\n");
+        js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerSquelchState) {\n");
+        js.append("                window.AndroidApp.notifyScannerSquelchState(true, window.__currentChannelMod || 'NFM', window.__currentChannelGainDb || 0);\n");
+        js.append("              }\n");
+        js.append("              window.updateMiniLog();\n");
+        js.append("            }\n");
+        js.append("            clearTimeout(rxHoldTimeout);\n");
+        js.append("            rxHoldTimeout = setTimeout(function() {\n");
+        js.append("              if (led) led.classList.remove('active');\n");
+        js.append("              window.__lastNotifiedSquelch = false;\n");
+        js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerSquelchState) {\n");
+        js.append("                window.AndroidApp.notifyScannerSquelchState(false, window.__currentChannelMod || 'NFM', window.__currentChannelGainDb || 0);\n");
+        js.append("              }\n");
+        js.append("              setTimeout(window.updateMiniLog, 450);\n");
+        js.append("            }, 450);\n");
+        js.append("          }\n");
+        js.append("        } else if (rxSignalStartTime !== 0 && (now - rxLastActiveTime) > 150) {\n");
+        js.append("          rxSignalStartTime = 0;\n");
+        js.append("        }\n");
+        js.append("      };\n");
+        js.append("      setInterval(window.__bgTickSquelchAndLog, 65);\n");
         js.append("    }\n");
 
         /* Signal Meter in #brand-logo-slot */
@@ -1397,20 +1475,13 @@ public class MainActivity extends Activity {
         js.append("      if (mHost) mHost.addEventListener('click', window.handleBrandCornerTap);\n");
         js.append("      window.__applySigMeterStyle(window.__sigMeterStyle, false);\n");
 
-        /* Real-Time Signal Meter + Lightweight Priority Auto-Ducking Squelch Bridge */
+        /* Visual Signal Meter Loop */
         js.append("      var smCarrierLvl = 0, smAudioLvl = 0, smAdaptiveMax = 14.0, smPhase = 0;\n");
-        js.append("      var lastReportedRxState = false;\n");
         js.append("      function renderLiveScannerSignalMeter() {\n");
         js.append("        requestAnimationFrame(renderLiveScannerSignalMeter);\n");
         js.append("        var rawAud = 0;\n");
         js.append("        var rxLedEl = document.getElementById('rx-led');\n");
         js.append("        var isRxVoiceActive = Boolean(rxLedEl && rxLedEl.classList.contains('active'));\n");
-        js.append("        if (isRxVoiceActive !== lastReportedRxState) {\n");
-        js.append("          lastReportedRxState = isRxVoiceActive;\n");
-        js.append("          if (window.AndroidApp && window.AndroidApp.notifyScannerSquelchState) {\n");
-        js.append("            window.AndroidApp.notifyScannerSquelchState(isRxVoiceActive, window.__currentChannelMod || 'NFM', window.__currentChannelGainDb || 0);\n");
-        js.append("          }\n");
-        js.append("        }\n");
         js.append("        var activeAn = window.analyser || (typeof analyser !== 'undefined' ? analyser : null);\n");
         js.append("        if (isRxVoiceActive && typeof isConnected !== 'undefined' && isConnected && activeAn && typeof dataArray !== 'undefined' && dataArray) {\n");
         js.append("          try {\n");
@@ -1514,7 +1585,7 @@ public class MainActivity extends Activity {
         js.append("      }\n");
         js.append("      renderLiveScannerSignalMeter();\n");
         js.append("    }\n");
-        /* Isolated LITE button replacement: completely detached from #btn-manual-open so ProScan never hears a scanner button press! */
+/* Isolated LITE button replacement */
         js.append("    var oldGuideBtn = document.getElementById('btn-manual-open');\n");
         js.append("    if (oldGuideBtn) {\n");
         js.append("      var freshLiteBtn = document.createElement('button');\n");
@@ -1666,7 +1737,7 @@ public class MainActivity extends Activity {
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
 
-        /* Second Row: Clean 6-Button Grid + Per-Channel DSP Profiles + Priority Mixer Modal */
+        /* Second Row: Clean 6-Button Grid + Unified Per-Channel DSP & Priority Mixer Modal */
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
@@ -1706,7 +1777,7 @@ public class MainActivity extends Activity {
         js.append("        setTimeout(function() { if (window.AndroidApp) window.AndroidApp.openBroadcastRadio(); }, 160);\n");
         js.append("      });\n");
 
-        /* Per-Channel DSP Profiles, AGC Makeup Boost & Priority Mixer Engine (Zero Graph Disconnects!) */
+        /* Per-Channel DSP Profiles, AGC Makeup Boost & Priority Mixer Engine */
         js.append("      window.__channelDspProfiles = JSON.parse(localStorage.getItem('proscan_ch_dsp_profiles_v1') || '{}');\n");
         js.append("      window.__currentActiveChannelKey = 'GLOBAL';\n");
         js.append("      window.__currentActiveChannelName = 'GLOBAL DEFAULT';\n");
@@ -1768,7 +1839,7 @@ public class MainActivity extends Activity {
         js.append("        }\n");
         js.append("      };\n");
 
-        /* Build Per-Channel DSP & Priority Mixer Modal */
+        /* Unified Per-Channel DSP & Priority Mixer Modal */
         js.append("      var scannerUiBox = document.getElementById('custom-scanner-ui');\n");
         js.append("      if (scannerUiBox && !document.getElementById('proscan-dsp-mixer-modal')) {\n");
         js.append("        var dmModal = document.createElement('div');\n");
@@ -1776,7 +1847,7 @@ public class MainActivity extends Activity {
         js.append("        dmModal.hidden = true;\n");
         js.append("        dmModal.innerHTML = '' +\n");
         js.append("          '<div class=\"dm-hdr\">' +\n");
-        js.append("            '<span class=\"dm-title\">DSP PROFILES &amp; PRIORITY MIXER</span>' +\n");
+        js.append("            '<span class=\"dm-title\">AUDIO MIXER &amp; DSP PROFILES</span>' +\n");
         js.append("            '<button class=\"manual-close-btn\" type=\"button\" id=\"dm-close-btn\">CLOSE ✕</button>' +\n");
         js.append("          '</div>' +\n");
         js.append("          '<div class=\"dm-body\">' +\n");
@@ -1816,15 +1887,15 @@ public class MainActivity extends Activity {
         js.append("              '<div class=\"dm-row\">' +\n");
         js.append("                '<label>Radio Ducked Level</label>' +\n");
         js.append("                '<div class=\"dm-slider-wrap\">' +\n");
-        js.append("                  '<input type=\"range\" id=\"dm-rad-duck\" min=\"0\" max=\"25\" step=\"1\" value=\"5\">' +\n");
-        js.append("                  '<span class=\"dm-val\" id=\"dm-rad-duck-val\">5%</span>' +\n");
+        js.append("                  '<input type=\"range\" id=\"dm-rad-duck\" min=\"0\" max=\"25\" step=\"1\" value=\"0\">' +\n");
+        js.append("                  '<span class=\"dm-val\" id=\"dm-rad-duck-val\">0% (MUTE)</span>' +\n");
         js.append("                '</div>' +\n");
         js.append("              '</div>' +\n");
         js.append("              '<div class=\"dm-row\">' +\n");
         js.append("                '<label>Duck Hold Time</label>' +\n");
         js.append("                '<div class=\"dm-slider-wrap\">' +\n");
-        js.append("                  '<input type=\"range\" id=\"dm-duck-hold\" min=\"1000\" max=\"5000\" step=\"250\" value=\"2500\">' +\n");
-        js.append("                  '<span class=\"dm-val\" id=\"dm-duck-hold-val\">2.5s</span>' +\n");
+        js.append("                  '<input type=\"range\" id=\"dm-duck-hold\" min=\"1000\" max=\"5000\" step=\"250\" value=\"3500\">' +\n");
+        js.append("                  '<span class=\"dm-val\" id=\"dm-duck-hold-val\">3.5s</span>' +\n");
         js.append("                '</div>' +\n");
         js.append("              '</div>' +\n");
         js.append("            '</div>' +\n");
@@ -1854,9 +1925,10 @@ public class MainActivity extends Activity {
         js.append("              document.getElementById('dm-agc-db-val').innerText = '+' + window.__cachedAgcDb + ' dB';\n");
         js.append("              document.getElementById('dm-rad-ceil').value = m.ceilingPct !== undefined ? m.ceilingPct : 40;\n");
         js.append("              document.getElementById('dm-rad-ceil-val').innerText = document.getElementById('dm-rad-ceil').value + '%';\n");
-        js.append("              document.getElementById('dm-rad-duck').value = m.duckPct !== undefined ? m.duckPct : 5;\n");
-        js.append("              document.getElementById('dm-rad-duck-val').innerText = document.getElementById('dm-rad-duck').value + '%';\n");
-        js.append("              document.getElementById('dm-duck-hold').value = m.holdMs !== undefined ? m.holdMs : 2500;\n");
+        js.append("              var dVal = m.duckPct !== undefined ? m.duckPct : 0;\n");
+        js.append("              document.getElementById('dm-rad-duck').value = dVal;\n");
+        js.append("              document.getElementById('dm-rad-duck-val').innerText = dVal === 0 ? '0% (MUTE)' : (dVal + '%');\n");
+        js.append("              document.getElementById('dm-duck-hold').value = m.holdMs !== undefined ? m.holdMs : 3500;\n");
         js.append("              document.getElementById('dm-duck-hold-val').innerText = (document.getElementById('dm-duck-hold').value / 1000).toFixed(1) + 's';\n");
         js.append("            }\n");
         js.append("          } catch(e) {}\n");
@@ -1891,8 +1963,8 @@ public class MainActivity extends Activity {
         js.append("          var agc = parseInt(document.getElementById('dm-agc-db').value, 10) || 8;\n");
         js.append("          window.__cachedAgcDb = agc;\n");
         js.append("          var ceil = parseInt(document.getElementById('dm-rad-ceil').value, 10) || 40;\n");
-        js.append("          var duck = parseInt(document.getElementById('dm-rad-duck').value, 10) || 5;\n");
-        js.append("          var hold = parseInt(document.getElementById('dm-duck-hold').value, 10) || 2500;\n");
+        js.append("          var duck = parseInt(document.getElementById('dm-rad-duck').value, 10) || 0;\n");
+        js.append("          var hold = parseInt(document.getElementById('dm-duck-hold').value, 10) || 3500;\n");
         js.append("          if (window.AndroidApp && window.AndroidApp.saveMixerSettings) {\n");
         js.append("            window.AndroidApp.saveMixerSettings(ad, ceil, duck, agc, hold);\n");
         js.append("          }\n");
@@ -1914,7 +1986,8 @@ public class MainActivity extends Activity {
         js.append("          pushMixerToNative();\n");
         js.append("        });\n");
         js.append("        document.getElementById('dm-rad-duck').addEventListener('input', function() {\n");
-        js.append("          document.getElementById('dm-rad-duck-val').innerText = this.value + '%';\n");
+        js.append("          var dv = parseInt(this.value, 10) || 0;\n");
+        js.append("          document.getElementById('dm-rad-duck-val').innerText = dv === 0 ? '0% (MUTE)' : (dv + '%');\n");
         js.append("          pushMixerToNative();\n");
         js.append("        });\n");
         js.append("        document.getElementById('dm-duck-hold').addEventListener('input', function() {\n");
@@ -1959,10 +2032,10 @@ public class MainActivity extends Activity {
         js.append("      rowParent.appendChild(dspBtn);\n");
         js.append("    }\n");
 
-        /* Top LEDs Left: WAKE and VOICE + Non-Disruptive Per-Channel Profile Detection */
+        /* Top LEDs Left: WAKE and VOICE + Instant Radio Mute on New Log Row */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
-        js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = '';\n");
+        js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = ''; window.__lastDuckedLogKey = '';\n");
         js.append("      var rxWaitTimer = null;\n");
         js.append("      function speakTextNow(txt, immediate) {\n");
         js.append("        if (!window.AndroidApp) return;\n");
@@ -2004,6 +2077,7 @@ public class MainActivity extends Activity {
         js.append("      var logBody = document.getElementById('mini-log-data');\n");
         js.append("      if (logBody) {\n");
         js.append("        var speechThrottleTimer = null;\n");
+        js.append("        var logDuckReleaseTimer = null;\n");
         js.append("        function checkTopLogRowForSpeechAndDsp() {\n");
         js.append("          var topRow = logBody.querySelector('tr.new-log-row') || logBody.querySelector('tr');\n");
         js.append("          if (!topRow || topRow.children.length < 5) return;\n");
@@ -2021,10 +2095,23 @@ public class MainActivity extends Activity {
         js.append("            window.__currentChannelMod = ((fVal >= 108.0 && fVal <= 137.0) || (fVal >= 225.0 && fVal <= 400.0) || /airport|tower|approach|radar|ctrl|guard|atis/i.test(chName)) ? 'AM' : 'NFM';\n");
         js.append("            if (window.__applyScannerDspRouting) window.__applyScannerDspRouting();\n");
         js.append("          }\n");
+        js.append("          var rowKey = timeStr + '|' + freqStr + '|' + chName;\n");
+        js.append("          if (topRow.classList.contains('new-log-row') && rowKey !== window.__lastDuckedLogKey) {\n");
+        js.append("            window.__lastDuckedLogKey = rowKey;\n");
+        js.append("            if (typeof isConnected !== 'undefined' && isConnected && window.AndroidApp && window.AndroidApp.notifyScannerSquelchState) {\n");
+        js.append("              window.AndroidApp.notifyScannerSquelchState(true, window.__currentChannelMod || 'NFM', window.__currentChannelGainDb || 0);\n");
+        js.append("              clearTimeout(logDuckReleaseTimer);\n");
+        js.append("              logDuckReleaseTimer = setTimeout(function() {\n");
+        js.append("                var rx = document.getElementById('rx-led');\n");
+        js.append("                if (!rx || !rx.classList.contains('active')) {\n");
+        js.append("                  window.AndroidApp.notifyScannerSquelchState(false, window.__currentChannelMod || 'NFM', window.__currentChannelGainDb || 0);\n");
+        js.append("                }\n");
+        js.append("              }, 1200);\n");
+        js.append("            }\n");
+        js.append("          }\n");
         js.append("          if (!window.__voiceReadoutEnabled || !chName) return;\n");
         js.append("          if (speechThrottleTimer) return;\n");
         js.append("          speechThrottleTimer = setTimeout(function() { speechThrottleTimer = null; }, 400);\n");
-        js.append("          var rowKey = timeStr + '|' + freqStr + '|' + chName;\n");
         js.append("          if (rowKey !== window.__lastSpokenRowKey) {\n");
         js.append("            window.__lastSpokenRowKey = rowKey;\n");
         js.append("            speakTextNow(chName, false);\n");
@@ -2121,7 +2208,7 @@ public class MainActivity extends Activity {
         js.append("      aBtn.addEventListener('pointercancel', function() { clearTimeout(aTimer); aTimer = null; });\n");
         js.append("    }\n");
 
-        /* Top LEDs Right: RX, LOG, LAMP, and EXIT (1 Short Tap = System Bars, Long Press 550ms = Full CRT Switch-Off Animation + Exit App) */
+        /* Top LEDs Right: RX, LOG, LAMP, and EXIT */
         js.append("    var ledsRight = document.querySelector('.top-leds-right');\n");
         js.append("    if (ledsRight && !document.getElementById('btn-hardware-exit')) {\n");
         js.append("      var lampBtn = document.createElement('button');\n");
@@ -2401,7 +2488,6 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        releaseNativeScannerAgc();
         try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
         try {
             if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
