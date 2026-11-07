@@ -53,7 +53,6 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -67,29 +66,16 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
 
     private static final int REQ_LOAD_JSON = 901;
-    private static final String GDRIVE_ROOT_FOLDER_ID = "1gToQyY6YPOk_3muiQSY5WLy7jTSvXbTv";
 
-    /**
-     * Shared Priority Auto-Ducking Commercial Radio Engine
-     * Allows commercial radio and scanner streams to run simultaneously
-     * with instant ducking (default 5% whisper), hold timer (default 2500ms),
-     * and smooth 600ms ValueAnimator ramp-back to baseline ceiling (default 40%).
-     */
     public static final class PriorityRadioEngine {
         private static MediaPlayer radioPlayer = null;
         private static String activeStationUrl = "";
@@ -155,12 +141,16 @@ public class MainActivity extends Activity {
         }
 
         public static synchronized void notifyScannerHit(SharedPreferences prefs, boolean squelchOpen) {
+            if (isScannerSquelchOpen == squelchOpen) return;
             isScannerSquelchOpen = squelchOpen;
+            if (radioPlayer == null || !isPlaying) return;
             evaluateDuckState(prefs);
         }
 
         public static synchronized void notifyTtsSpeaking(SharedPreferences prefs, boolean speaking) {
+            if (isTtsSpeaking == speaking) return;
             isTtsSpeaking = speaking;
+            if (radioPlayer == null || !isPlaying) return;
             evaluateDuckState(prefs);
         }
 
@@ -345,18 +335,28 @@ public class MainActivity extends Activity {
     private String lastSpokenText = "";
     private long lastSpokenTimestamp = 0;
 
-    // Native Scanner AGC / LoudnessEnhancer & Limiter
     private LoudnessEnhancer scannerLoudnessEnhancer = null;
     private DynamicsProcessing scannerDynamicsLimiter = null;
-    private volatile boolean currentModulationIsAm = false;
-    private volatile float currentChannelGainOffsetDb = 0f;
+    private int lastAppliedGainMb = -1;
 
-    private void attachOrUpdateNativeScannerAgc() {
+    private void attachOrUpdateNativeScannerAgc(boolean isAm, float chGainOffsetDb) {
         try {
+            if (!scannerAudioConnected) {
+                if (scannerLoudnessEnhancer != null) {
+                    scannerLoudnessEnhancer.setEnabled(false);
+                }
+                lastAppliedGainMb = -1;
+                return;
+            }
             int baseAgcDb = PriorityRadioEngine.getScannerAgcDb(prefs);
-            int amBonusMb = currentModulationIsAm ? 300 : 0; // +300 mB (+3 dB) automatic AM airband offset
-            int chOffsetMb = Math.round(currentChannelGainOffsetDb * 100f);
+            int amBonusMb = isAm ? 300 : 0;
+            int chOffsetMb = Math.round(chGainOffsetDb * 100f);
             int totalGainMb = Math.max(0, Math.min(2400, (baseAgcDb * 100) + amBonusMb + chOffsetMb));
+
+            if (totalGainMb == lastAppliedGainMb && scannerLoudnessEnhancer != null) {
+                return;
+            }
+            lastAppliedGainMb = totalGainMb;
 
             if (scannerLoudnessEnhancer == null) {
                 try {
@@ -365,7 +365,7 @@ public class MainActivity extends Activity {
             }
             if (scannerLoudnessEnhancer != null) {
                 scannerLoudnessEnhancer.setTargetGain(totalGainMb);
-                scannerLoudnessEnhancer.setEnabled(scannerAudioConnected && totalGainMb > 0);
+                scannerLoudnessEnhancer.setEnabled(totalGainMb > 0);
             }
 
             if (Build.VERSION.SDK_INT >= 28 && scannerDynamicsLimiter == null) {
@@ -390,6 +390,7 @@ public class MainActivity extends Activity {
     }
 
     private void releaseNativeScannerAgc() {
+        lastAppliedGainMb = -1;
         try {
             if (scannerLoudnessEnhancer != null) {
                 scannerLoudnessEnhancer.setEnabled(false);
@@ -687,7 +688,6 @@ public class MainActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
-        // Custom WebView that keeps HTML5 Scanner Audio alive when the screen turns off
         webView = new WebView(this) {
             @Override
             public void setKeepScreenOn(boolean keepScreenOn) {
@@ -899,52 +899,6 @@ public class MainActivity extends Activity {
         });
     }
 
-    private String fetchUrlText(String urlStr) {
-        try {
-            String sep = urlStr.contains("?") ? "&" : "?";
-            URL url = new URL(urlStr + sep + "_t=" + System.currentTimeMillis());
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(9000);
-            conn.setReadTimeout(9000);
-            conn.setUseCaches(false);
-            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) sb.append(line).append("\n");
-            reader.close();
-            conn.disconnect();
-            return sb.toString();
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    private Map<String, String> parseDriveFolderAllItems(String folderId) {
-        Map<String, String> map = new LinkedHashMap<>();
-        if (folderId == null || folderId.isEmpty()) return map;
-        String html1 = fetchUrlText("https://drive.google.com/embeddedfolderview?id=" + folderId);
-        if (!html1.isEmpty()) {
-            Pattern p1 = Pattern.compile("id=\"entry-([A-Za-z0-9_-]{15,})\"[\\s\\S]*?<div class=\"flip-entry-title\">([^<]+)</div>");
-            Matcher m1 = p1.matcher(html1);
-            while (m1.find()) {
-                map.put(m1.group(2).trim().replace("&amp;", "&").replace("&#39;", "'").replace("&quot;", "\""), m1.group(1).trim());
-            }
-        }
-        String html2 = fetchUrlText("https://drive.google.com/drive/folders/" + folderId);
-        if (!html2.isEmpty()) {
-            String unescaped = html2.replace("\\u0022", "\"").replace("\\\"", "\"");
-            Pattern p2 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"([^\"]+\\.mp3)\"");
-            Matcher m2 = p2.matcher(unescaped);
-            while (m2.find()) map.put(m2.group(2).trim().replace("&amp;", "&").replace("&#39;", "'"), m2.group(1).trim());
-            Pattern p3 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"(\\d{2}-\\d{2}-\\d{2}|Scan)\"");
-            Matcher m3 = p3.matcher(unescaped);
-            while (m3.find()) map.put(m3.group(2).trim(), m3.group(1).trim());
-        }
-        return map;
-    }
-
     public class WebAppBridge {
         @JavascriptInterface
         public String getBatteryStatus() {
@@ -988,7 +942,7 @@ public class MainActivity extends Activity {
             mainHandler.post(() -> {
                 scannerAudioConnected = connected;
                 setBgServiceRunning(connected || bgAudioModeEnabled);
-                attachOrUpdateNativeScannerAgc();
+                attachOrUpdateNativeScannerAgc(false, 0f);
             });
         }
 
@@ -1002,15 +956,12 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void notifyScannerSquelchState(final boolean squelchOpen, final String modulation, final float channelGainOffsetDb) {
-            mainHandler.post(() -> {
-                boolean isAm = modulation != null && modulation.toUpperCase(Locale.ROOT).contains("AM");
-                if (isAm != currentModulationIsAm || Math.abs(channelGainOffsetDb - currentChannelGainOffsetDb) > 0.1f) {
-                    currentModulationIsAm = isAm;
-                    currentChannelGainOffsetDb = channelGainOffsetDb;
-                    attachOrUpdateNativeScannerAgc();
-                }
-                PriorityRadioEngine.notifyScannerHit(prefs, squelchOpen);
-            });
+            // Fast path: only notify PriorityRadioEngine on squelch change
+            PriorityRadioEngine.notifyScannerHit(prefs, squelchOpen);
+            if (squelchOpen && scannerAudioConnected) {
+                final boolean isAm = modulation != null && modulation.toUpperCase(Locale.ROOT).contains("AM");
+                mainHandler.post(() -> attachOrUpdateNativeScannerAgc(isAm, channelGainOffsetDb));
+            }
         }
 
         @JavascriptInterface
@@ -1040,61 +991,9 @@ public class MainActivity extends Activity {
                         .putInt("mixer_scanner_agc_db", Math.max(0, Math.min(15, agcDb)))
                         .putInt("mixer_duck_hold_ms", Math.max(1000, Math.min(5000, holdMs)))
                         .apply();
-                attachOrUpdateNativeScannerAgc();
+                lastAppliedGainMb = -1;
+                attachOrUpdateNativeScannerAgc(false, 0f);
                 PriorityRadioEngine.updateSettingsLive(prefs);
-            });
-        }
-
-        @JavascriptInterface
-        public void fetchDriveRecordingsForWeb() {
-            executor.execute(() -> {
-                try {
-                    Map<String, String> rootItems = parseDriveFolderAllItems(GDRIVE_ROOT_FOLDER_ID);
-                    List<String> dateFolders = new ArrayList<>();
-                    for (String title : rootItems.keySet()) {
-                        if (title.matches("\\d{2}-\\d{2}-\\d{2}")) dateFolders.add(title);
-                    }
-                    Collections.sort(dateFolders, (a, b) -> {
-                        String[] pa = a.split("-"), pb = b.split("-");
-                        String ka = pa.length == 3 ? (pa[2] + pa[0] + pa[1]) : a;
-                        String kb = pb.length == 3 ? (pb[2] + pb[0] + pb[1]) : b;
-                        return kb.compareTo(ka);
-                    });
-                    JSONArray filesArr = new JSONArray();
-                    int maxDates = Math.min(dateFolders.size(), 3);
-                    for (int i = 0; i < maxDates; i++) {
-                        String dFolder = dateFolders.get(i);
-                        String dId = rootItems.get(dFolder);
-                        if (dId == null) continue;
-                        Map<String, String> dateChildren = parseDriveFolderAllItems(dId);
-                        for (Map.Entry<String, String> e : dateChildren.entrySet()) {
-                            if (e.getKey().toLowerCase().endsWith(".mp3")) {
-                                JSONObject f = new JSONObject();
-                                f.put("id", e.getValue());
-                                f.put("name", e.getKey());
-                                f.put("dateStr", dFolder);
-                                filesArr.put(f);
-                            } else {
-                                Map<String, String> subChildren = parseDriveFolderAllItems(e.getValue());
-                                for (Map.Entry<String, String> se : subChildren.entrySet()) {
-                                    if (se.getKey().toLowerCase().endsWith(".mp3")) {
-                                        JSONObject f = new JSONObject();
-                                        f.put("id", se.getValue());
-                                        f.put("name", se.getKey());
-                                        f.put("dateStr", dFolder);
-                                        filesArr.put(f);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    final String safeJson = JSONObject.quote(filesArr.toString());
-                    mainHandler.post(() -> {
-                        if (webView != null) {
-                            webView.evaluateJavascript("if(window.__onNativeDriveFilesForTapeDeck)window.__onNativeDriveFilesForTapeDeck(" + safeJson + ");", null);
-                        }
-                    });
-                } catch (Exception ignored) {}
             });
         }
 
@@ -1113,7 +1012,6 @@ public class MainActivity extends Activity {
                 lastSpokenText = cleanText;
                 lastSpokenTimestamp = now;
 
-                // Duck Commercial Radio IMMEDIATELY BEFORE TTS begins speaking
                 PriorityRadioEngine.notifyTtsSpeaking(prefs, true);
 
                 if (tts == null || !ttsReady) {
@@ -1304,7 +1202,7 @@ public class MainActivity extends Activity {
         js.append("        '.numpad{grid-auto-rows:34px!important;gap:6px!important;}' +\n");
         js.append("        '.numpad .btn{font-size:15.5px!important;font-weight:900!important;}' +\n");
 
-        /* Realistic Gloss Glass Display Surface Texture (Replaces smudged corner look) */
+        /* Realistic Gloss Glass Display Surface Texture */
         js.append("        'html[data-disp-tex=\"glass\"] .scanner-display::after{opacity:1!important;background:linear-gradient(180deg,rgba(255,255,255,0.24) 0%,rgba(255,255,255,0.07) 4.5%,transparent 13%,transparent 89%,rgba(255,255,255,0.06) 100%),linear-gradient(115deg,transparent 0%,transparent 35%,rgba(255,255,255,0.10) 35.5%,rgba(255,255,255,0.025) 43%,transparent 43.5%,transparent 47.5%,rgba(255,255,255,0.055) 48%,transparent 51.5%,transparent 100%),radial-gradient(ellipse at 50% 50%,transparent 68%,rgba(0,0,0,0.42) 100%)!important;box-shadow:inset 0 1px 1px rgba(255,255,255,0.38),inset 0 -1px 2px rgba(0,0,0,0.65)!important;}' +\n");
 
         /* 3D Bevelled Buttons on WIRE, TRON, NEON & TERM Skins */
@@ -1441,6 +1339,22 @@ public class MainActivity extends Activity {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
+        /* Fix History Log.txt Fetch Lockup: Add 3-second Watchdog so updateMiniLog NEVER stalls! */
+        js.append("    if (!window.__logWatchdogHooked && typeof window.updateMiniLog === 'function') {\n");
+        js.append("      window.__logWatchdogHooked = true;\n");
+        js.append("      var origUpdateMiniLog = window.updateMiniLog;\n");
+        js.append("      var logStuckTimer = null;\n");
+        js.append("      window.updateMiniLog = function() {\n");
+        js.append("        clearTimeout(logStuckTimer);\n");
+        js.append("        logStuckTimer = setTimeout(function() {\n");
+        js.append("          if (typeof isLogFetchInFlight !== 'undefined' && isLogFetchInFlight) {\n");
+        js.append("            isLogFetchInFlight = false;\n");
+        js.append("          }\n");
+        js.append("        }, 3000);\n");
+        js.append("        try { origUpdateMiniLog(); } catch(e) { isLogFetchInFlight = false; }\n");
+        js.append("      };\n");
+        js.append("    }\n");
+
         /* Signal Meter in #brand-logo-slot */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
@@ -1483,7 +1397,7 @@ public class MainActivity extends Activity {
         js.append("      if (mHost) mHost.addEventListener('click', window.handleBrandCornerTap);\n");
         js.append("      window.__applySigMeterStyle(window.__sigMeterStyle, false);\n");
 
-        /* Real-Time Signal Meter + Priority Auto-Ducking Squelch Bridge */
+        /* Real-Time Signal Meter + Lightweight Priority Auto-Ducking Squelch Bridge */
         js.append("      var smCarrierLvl = 0, smAudioLvl = 0, smAdaptiveMax = 14.0, smPhase = 0;\n");
         js.append("      var lastReportedRxState = false;\n");
         js.append("      function renderLiveScannerSignalMeter() {\n");
@@ -1600,7 +1514,6 @@ public class MainActivity extends Activity {
         js.append("      }\n");
         js.append("      renderLiveScannerSignalMeter();\n");
         js.append("    }\n");
-
         /* Isolated LITE button replacement: completely detached from #btn-manual-open so ProScan never hears a scanner button press! */
         js.append("    var oldGuideBtn = document.getElementById('btn-manual-open');\n");
         js.append("    if (oldGuideBtn) {\n");
@@ -1648,6 +1561,7 @@ public class MainActivity extends Activity {
         js.append("      freshLiteBtn.addEventListener('pointerleave', function() { clearTimeout(lHoldTimer); lHoldTimer = null; });\n");
         js.append("      freshLiteBtn.addEventListener('pointercancel', function() { clearTimeout(lHoldTimer); lHoldTimer = null; });\n");
         js.append("    }\n");
+
         js.append("    var dispBox = document.querySelector('.scanner-display');\n");
         js.append("    if (dispBox) {\n");
         js.append("      var clkEl = document.getElementById('display-clock-hud');\n");
@@ -1792,7 +1706,7 @@ public class MainActivity extends Activity {
         js.append("        setTimeout(function() { if (window.AndroidApp) window.AndroidApp.openBroadcastRadio(); }, 160);\n");
         js.append("      });\n");
 
-        /* Per-Channel DSP Profiles, AGC Makeup Boost & Priority Mixer Engine */
+        /* Per-Channel DSP Profiles, AGC Makeup Boost & Priority Mixer Engine (Zero Graph Disconnects!) */
         js.append("      window.__channelDspProfiles = JSON.parse(localStorage.getItem('proscan_ch_dsp_profiles_v1') || '{}');\n");
         js.append("      window.__currentActiveChannelKey = 'GLOBAL';\n");
         js.append("      window.__currentActiveChannelName = 'GLOBAL DEFAULT';\n");
@@ -1807,30 +1721,6 @@ public class MainActivity extends Activity {
         js.append("        'FLAT':     { hp: 60,  peakFreq: 2000, peakQ: 0.7, peakGain: 0.0, lp: 12000 }\n");
         js.append("      };\n");
 
-        js.append("      window.setupAudioDetection = function() {\n");
-        js.append("        var player = document.getElementById('audio_player');\n");
-        js.append("        if (typeof isAudioSetup !== 'undefined' && isAudioSetup) {\n");
-        js.append("          if (typeof detectAudio === 'function') detectAudio();\n");
-        js.append("          return;\n");
-        js.append("        }\n");
-        js.append("        if (!player) return;\n");
-        js.append("        try {\n");
-        js.append("          var AudioCtx = window.AudioContext || window.webkitAudioContext;\n");
-        js.append("          audioContext = window.audioContext = new AudioCtx();\n");
-        js.append("          analyser = window.analyser = audioContext.createAnalyser();\n");
-        js.append("          analyser.smoothingTimeConstant = 0.5;\n");
-        js.append("          window.source = audioContext.createMediaElementSource(player);\n");
-        js.append("          window.source.connect(analyser);\n");
-        js.append("          analyser.connect(audioContext.destination);\n");
-        js.append("          analyser.fftSize = 512;\n");
-        js.append("          dataArray = new Uint8Array(analyser.frequencyBinCount);\n");
-        js.append("          freqArray = new Uint8Array(analyser.frequencyBinCount);\n");
-        js.append("          isAudioSetup = true;\n");
-        js.append("          if (window.__applyScannerDspRouting) window.__applyScannerDspRouting();\n");
-        js.append("          if (typeof detectAudio === 'function') detectAudio();\n");
-        js.append("        } catch(e) {}\n");
-        js.append("      };\n");
-
         js.append("      window.__scannerDspOn = localStorage.getItem('proscan_scanner_dsp_v1') !== 'false';\n");
         js.append("      window.__applyScannerDspRouting = function() {\n");
         js.append("        var prof = window.__channelDspProfiles[window.__currentActiveChannelKey] || { preset: 'AUTO', gainDb: 0 };\n");
@@ -1841,9 +1731,7 @@ public class MainActivity extends Activity {
         js.append("        var curve = window.__dspPresetCurves[presetKey] || window.__dspPresetCurves['AUTO'];\n");
         js.append("        var chGainDb = parseFloat(prof.gainDb || 0);\n");
         js.append("        window.__currentChannelGainDb = chGainDb;\n");
-        js.append("        var mixerCfg = {};\n");
-        js.append("        try { if (window.AndroidApp && window.AndroidApp.getMixerSettingsJson) mixerCfg = JSON.parse(window.AndroidApp.getMixerSettingsJson()); } catch(e) {}\n");
-        js.append("        var baseAgcDb = typeof mixerCfg.agcDb === 'number' ? mixerCfg.agcDb : 8;\n");
+        js.append("        var baseAgcDb = window.__cachedAgcDb !== undefined ? window.__cachedAgcDb : 8;\n");
         js.append("        var amBonusDb = (window.__currentChannelMod === 'AM' || presetKey === 'AIRBAND') ? 3.0 : 0.0;\n");
         js.append("        var totalBoostDb = Math.max(-6, Math.min(24, baseAgcDb + amBonusDb + chGainDb));\n");
 
@@ -1862,21 +1750,20 @@ public class MainActivity extends Activity {
         js.append("            comp.attack.value = 0.0015;\n");
         js.append("            comp.release.value = 0.18;\n");
         js.append("            hp.connect(peak); peak.connect(lp); lp.connect(preGain); preGain.connect(comp);\n");
+        js.append("            window.source.disconnect();\n");
+        js.append("            window.source.connect(hp);\n");
+        js.append("            comp.connect(window.analyser);\n");
         js.append("            window.__dspNodes = { hp: hp, peak: peak, lp: lp, preGain: preGain, comp: comp };\n");
         js.append("          } catch(e) {}\n");
         js.append("        }\n");
         js.append("        if (window.__dspNodes) {\n");
         js.append("          try {\n");
-        js.append("            window.__dspNodes.hp.frequency.value = curve.hp;\n");
+        js.append("            window.__dspNodes.hp.frequency.value = window.__scannerDspOn ? curve.hp : 40;\n");
         js.append("            window.__dspNodes.peak.frequency.value = curve.peakFreq;\n");
         js.append("            window.__dspNodes.peak.Q.value = curve.peakQ;\n");
         js.append("            window.__dspNodes.peak.gain.value = window.__scannerDspOn ? curve.peakGain : 0;\n");
         js.append("            window.__dspNodes.lp.frequency.value = window.__scannerDspOn ? curve.lp : 16000;\n");
         js.append("            window.__dspNodes.preGain.gain.value = Math.pow(10, totalBoostDb / 20);\n");
-        js.append("            window.source.disconnect();\n");
-        js.append("            window.__dspNodes.comp.disconnect();\n");
-        js.append("            window.source.connect(window.__dspNodes.hp);\n");
-        js.append("            window.__dspNodes.comp.connect(window.analyser);\n");
         js.append("          } catch(e) {}\n");
         js.append("        }\n");
         js.append("      };\n");
@@ -1909,7 +1796,6 @@ public class MainActivity extends Activity {
         js.append("                  '<span class=\"dm-val\" id=\"dm-ch-gain-val\">0 dB</span>' +\n");
         js.append("                '</div>' +\n");
         js.append("              '</div>' +\n");
-        js.append("              '<div style=\"font-size:8.5px;color:#94a3b8;\">Auto-switches filter &amp; gain whenever the scanner lands on this frequency (+3 dB auto boost on AM Airband).</div>' +\n");
         js.append("            '</div>' +\n");
         js.append("            '<div class=\"dm-card\">' +\n");
         js.append("              '<div class=\"dm-card-title\"><span>PRIORITY AUTO-DUCK MIXER</span><button type=\"button\" class=\"dm-pbtn\" id=\"dm-autoduck-toggle\" style=\"padding:3px 8px;\">ON</button></div>' +\n");
@@ -1963,8 +1849,9 @@ public class MainActivity extends Activity {
         js.append("              var isAd = m.autoDuck !== false;\n");
         js.append("              adBtn.classList.toggle('active', isAd);\n");
         js.append("              adBtn.innerText = isAd ? 'AUTO-DUCK: ON' : 'AUTO-DUCK: OFF';\n");
-        js.append("              document.getElementById('dm-agc-db').value = m.agcDb !== undefined ? m.agcDb : 8;\n");
-        js.append("              document.getElementById('dm-agc-db-val').innerText = '+' + document.getElementById('dm-agc-db').value + ' dB';\n");
+        js.append("              window.__cachedAgcDb = m.agcDb !== undefined ? m.agcDb : 8;\n");
+        js.append("              document.getElementById('dm-agc-db').value = window.__cachedAgcDb;\n");
+        js.append("              document.getElementById('dm-agc-db-val').innerText = '+' + window.__cachedAgcDb + ' dB';\n");
         js.append("              document.getElementById('dm-rad-ceil').value = m.ceilingPct !== undefined ? m.ceilingPct : 40;\n");
         js.append("              document.getElementById('dm-rad-ceil-val').innerText = document.getElementById('dm-rad-ceil').value + '%';\n");
         js.append("              document.getElementById('dm-rad-duck').value = m.duckPct !== undefined ? m.duckPct : 5;\n");
@@ -2002,6 +1889,7 @@ public class MainActivity extends Activity {
         js.append("        function pushMixerToNative() {\n");
         js.append("          var ad = document.getElementById('dm-autoduck-toggle').classList.contains('active');\n");
         js.append("          var agc = parseInt(document.getElementById('dm-agc-db').value, 10) || 8;\n");
+        js.append("          window.__cachedAgcDb = agc;\n");
         js.append("          var ceil = parseInt(document.getElementById('dm-rad-ceil').value, 10) || 40;\n");
         js.append("          var duck = parseInt(document.getElementById('dm-rad-duck').value, 10) || 5;\n");
         js.append("          var hold = parseInt(document.getElementById('dm-duck-hold').value, 10) || 2500;\n");
@@ -2036,7 +1924,7 @@ public class MainActivity extends Activity {
         js.append("        document.getElementById('dm-close-btn').addEventListener('click', function() { dmModal.hidden = true; });\n");
         js.append("      }\n");
 
-        /* Add DSP as the 6th button in the second row (Tap = Toggle DSP, Hold = Open Per-Channel DSP & Mixer Modal) */
+        /* Add DSP as the 6th button in the second row */
         js.append("      var dspBtn = document.createElement('button');\n");
         js.append("      dspBtn.id = 'btn-scanner-dsp'; dspBtn.className = 'btn'; dspBtn.type = 'button';\n");
         js.append("      function syncDspBtnUi(active) {\n");
@@ -2071,7 +1959,7 @@ public class MainActivity extends Activity {
         js.append("      rowParent.appendChild(dspBtn);\n");
         js.append("    }\n");
 
-        /* Top LEDs Left: WAKE and VOICE + Automatic Per-Channel Profile Detection on Log Hit */
+        /* Top LEDs Left: WAKE and VOICE + Non-Disruptive Per-Channel Profile Detection */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
         js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = '';\n");
@@ -2126,7 +2014,7 @@ public class MainActivity extends Activity {
         js.append("          var closeParen = rawTitle.indexOf(')');\n");
         js.append("          var chName = (closeParen !== -1 ? rawTitle.slice(closeParen + 1) : rawTitle).replace(/^[×xX]\\s*\\d+\\s*/, '').trim();\n");
         js.append("          if (!chName || chName === '---') chName = freqStr;\n");
-        js.append("          if (freqStr && freqStr !== '---') {\n");
+        js.append("          if (freqStr && freqStr !== '---' && freqStr !== window.__currentActiveChannelKey) {\n");
         js.append("            window.__currentActiveChannelKey = freqStr;\n");
         js.append("            window.__currentActiveChannelName = chName;\n");
         js.append("            var fVal = parseFloat(freqStr) || 0;\n");
@@ -2175,7 +2063,7 @@ public class MainActivity extends Activity {
         js.append("      });\n");
         js.append("    }\n");
 
-        /* AUDIO Toggle: Always enables Native Screen-Off Keep-Alive Service & AGC whenever AUDIO is ON */
+        /* AUDIO Toggle */
         js.append("    var oldAudioBtn = document.getElementById('btn-audio-toggle');\n");
         js.append("    if (oldAudioBtn && !oldAudioBtn.__vlcUnifiedHooked) {\n");
         js.append("      var aBtn = oldAudioBtn.cloneNode(true); aBtn.__vlcUnifiedHooked = true;\n");
