@@ -119,7 +119,6 @@ public class PlayerActivity extends Activity {
     private boolean bedroomLampOn = false;
 
     private final AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
-        // Keep playing uninterrupted when screen is off unless user explicitly stops or disconnects headphones
     };
 
     private void triggerAlexaWebhook(final boolean turnOn) {
@@ -916,7 +915,6 @@ public class PlayerActivity extends Activity {
         js.append("    'html[data-deck=\"lite\"] #mech-bay{display:none!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] .scanner-display{height:565px!important;}' +\n");
 
-        /* MOBILE LANDSCAPE SPLIT-SCREEN COCKPIT LAYOUT */
         js.append("    '@media (orientation: landscape) and (max-height: 540px){' +\n");
         js.append("      '#device-wrapper{width:96vw!important;max-width:96vw!important;height:94dvh!important;max-height:94dvh!important;}' +\n");
         js.append("      '#custom-scanner-ui{display:grid!important;grid-template-columns:1.08fr 1fr!important;grid-template-rows:auto 1fr!important;gap:5px 12px!important;padding:10px 14px!important;height:100%!important;overflow:hidden!important;}' +\n");
@@ -936,14 +934,12 @@ public class PlayerActivity extends Activity {
         js.append("    '.rec-row.playing, .rec-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
         js.append("    '.rec-row.selected:not(.playing){outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(0,0,0,0.16)!important;color:var(--log-text)!important;font-weight:800!important;}' +\n");
 
-        /* Large Station Tiles for Radio Mode */
         js.append("    '.radio-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;padding:8px 6px!important;width:100%!important;}' +\n");
         js.append("    '.radio-tile{min-height:66px!important;padding:8px 10px!important;border:1.5px solid var(--log-cell-border)!important;border-radius:8px!important;background:rgba(0,0,0,0.14)!important;font-family:\"JetBrains Mono\",monospace!important;font-size:12px!important;font-weight:800!important;color:var(--log-text)!important;display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important;cursor:pointer!important;touch-action:pan-y!important;word-break:break-word!important;line-height:1.25!important;box-shadow:inset 0 1px 3px rgba(0,0,0,0.35)!important;transition:transform 0.1s ease,background 0.15s ease!important;}' +\n");
         js.append("    '.radio-tile:active{transform:scale(0.97)!important;}' +\n");
         js.append("    '.radio-tile.playing, .radio-tile.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:900!important;border-color:var(--log-text)!important;box-shadow:0 0 10px rgba(0,0,0,0.5)!important;outline:none!important;}' +\n");
         js.append("    '.radio-tile.selected:not(.playing){outline:2px dashed var(--log-text,#38bdf8)!important;outline-offset:-2px!important;background:rgba(0,0,0,0.28)!important;color:var(--log-text)!important;font-weight:900!important;}' +\n");
 
-        /* Top Screen Header */
         js.append("    '.disp-top-row{display:grid!important;grid-template-columns:auto 1fr auto!important;align-items:center!important;gap:6px!important;width:100%!important;}' +\n");
         js.append("    '#top-header-center{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;min-width:0!important;overflow:hidden!important;}' +\n");
         js.append("    '#deck-mode-hud{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;font-size:9.5px!important;}' +\n");
@@ -966,7 +962,6 @@ public class PlayerActivity extends Activity {
 
         js.append("    '#date-select, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
 
-        /* Signal Meter */
         js.append("    '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:124px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
         js.append("    '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
         js.append("    '.sm-mode.active{display:flex;}' +\n");
@@ -1013,7 +1008,6 @@ public class PlayerActivity extends Activity {
         js.append("    '#player-wake-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
         js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}' +\n");
 
-        /* LAMP & EXIT Cap Buttons */
         js.append("    '#btn-player-lamp{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-right:8px;cursor:pointer;touch-action:manipulation;}' +\n");
         js.append("    '#btn-player-lamp .lamp-cap{width:22px;height:16px;border-radius:5px;background:linear-gradient(180deg,#eab308,#a16207);border:1px solid #422006;box-shadow:0 2px 3px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;}' +\n");
         js.append("    '#btn-player-lamp .lamp-cap::after{content:\"\";width:8px;height:3px;border-radius:1.5px;background:rgba(254,249,195,0.92);box-shadow:0 0 4px rgba(254,249,195,0.5);}' +\n");
@@ -1028,14 +1022,12 @@ public class PlayerActivity extends Activity {
         js.append("    '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("  document.head.appendChild(st);\n");
 
-        /* Add 6th Deck Option: DECK: LITE */
         js.append("  if (typeof decks !== 'undefined' && !decks.some(function(d){ return d.id === 'lite'; })) {\n");
         js.append("    decks.push({ id: 'lite', btn: 'DECK: LITE', hud: 'ARCHIVE // LITE LOG VIEW' });\n");
         js.append("  }\n");
         js.append("  var savedDeckIdx = parseInt(localStorage.getItem('proscan_deck_idx') || '0', 10) || 0;\n");
         js.append("  if (typeof applyDeck === 'function') applyDeck(savedDeckIdx);\n");
 
-        /* Long-press on DECK button toggles straight to/from DECK: LITE */
         js.append("  var cycDeckBtn = document.getElementById('btn-cycle-deck');\n");
         js.append("  if (cycDeckBtn) {\n");
         js.append("    var newCycBtn = cycDeckBtn.cloneNode(true);\n");
@@ -1068,7 +1060,6 @@ public class PlayerActivity extends Activity {
         js.append("    newCycBtn.addEventListener('pointercancel', function() { clearTimeout(dHoldTimer); dHoldTimer = null; });\n");
         js.append("  }\n");
 
-        /* Top Screen Header: Clock on Left, Mode Title + Counter in Center, Battery on Right */
         js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  var modeHudEl = document.getElementById('deck-mode-hud');\n");
@@ -1099,7 +1090,6 @@ public class PlayerActivity extends Activity {
         js.append("    setInterval(updatePlayerBattery, 10000);\n");
         js.append("  }\n");
 
-        /* Middle Status Bar Left: WAKE pill */
         js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
         js.append("    var wWrap = document.createElement('div');\n");
         js.append("    wWrap.style.cssText = 'display:flex;align-items:center;padding-left:2px;';\n");
@@ -1123,7 +1113,6 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
-        /* Middle Status Bar Right: LAMP + EXIT Cap Buttons (EXIT: 1 Short Tap = System Bars, Long Press 550ms = Full CRT Switch-Off Animation + Exit App) */
         js.append("  var contHud = document.getElementById('cont-status-hud');\n");
         js.append("  if (contHud && !document.getElementById('btn-player-exit')) {\n");
         js.append("    var rWrap = document.createElement('div');\n");
@@ -1184,7 +1173,7 @@ public class PlayerActivity extends Activity {
         js.append("    exBtn.addEventListener('pointerleave', function() { clearTimeout(exHoldTimer); exHoldTimer = null; });\n");
         js.append("    exBtn.addEventListener('pointercancel', function() { clearTimeout(exHoldTimer); exHoldTimer = null; });\n");
         js.append("  }\n");
-        /* Stop all native audio AND immediately stop deck animations & reset VU meters */
+
         js.append("  window.__stopAllRadioAndNativeAudio = function() {\n");
         js.append("    window.__streamLaunchToken = (window.__streamLaunchToken || 0) + 1;\n");
         js.append("    window.__audioLevel = 0;\n");
@@ -1203,7 +1192,6 @@ public class PlayerActivity extends Activity {
         js.append("    }\n");
         js.append("  };\n");
 
-        /* Build Clean 5-Button Top Row: [ SCANNER ] [ RADIO ] [ DECK ] [ CONT ] [ DSP ] */
         js.append("  var origBackBtn = document.getElementById('btn-back-radio');\n");
         js.append("  var origTopRow = origBackBtn ? origBackBtn.parentNode : null;\n");
         js.append("  if (origTopRow && !document.getElementById('btn-switch-radio-archive')) {\n");
@@ -1213,7 +1201,6 @@ public class PlayerActivity extends Activity {
         js.append("    origTopRow.replaceChild(newScannerBtn, origBackBtn);\n");
         js.append("    newScannerBtn.addEventListener('click', function() {\n");
         js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
-        js.append("      // If in Archive mode, stop archive playback; if in Broadcast Radio mode, keep Radio playing for Priority Auto-Ducking!\n");
         js.append("      if (!window.__isBroadcastRadioMode) {\n");
         js.append("        window.__stopAllRadioAndNativeAudio();\n");
         js.append("      }\n");
@@ -1234,7 +1221,6 @@ public class PlayerActivity extends Activity {
         js.append("      window.setAppMode(!window.__isBroadcastRadioMode);\n");
         js.append("    });\n");
 
-        /* Continuous / Loop Mode Button */
         js.append("    var oldContBtn = document.getElementById('btn-mode-cont');\n");
         js.append("    if (oldContBtn) {\n");
         js.append("      var cBtn = oldContBtn.cloneNode(true);\n");
@@ -1252,7 +1238,6 @@ public class PlayerActivity extends Activity {
         js.append("      });\n");
         js.append("    }\n");
 
-        /* DSP Audio Clarity Button (Tap = Toggle DSP, Hold = Open Priority Audio Mixer Dialog) */
         js.append("    var dspBtn = document.createElement('button');\n");
         js.append("    dspBtn.id = 'btn-dsp-filter';\n");
         js.append("    dspBtn.className = 'btn';\n");
@@ -1289,7 +1274,6 @@ public class PlayerActivity extends Activity {
         js.append("    if (oldTtsBtn) oldTtsBtn.remove();\n");
         js.append("  }\n");
 
-        /* Archive Filter Row & Radio Management Bar */
         js.append("  window.__archiveFilterMode = 0;\n");
         js.append("  var fRow = document.getElementById('date-select').parentNode;\n");
         js.append("  if (fRow && !document.getElementById('radio-crud-row')) {\n");
@@ -1488,7 +1472,6 @@ public class PlayerActivity extends Activity {
         js.append("  window.__audioLevel = 0;\n");
         js.append("  window.__audioProgress = 0;\n");
 
-        /* 3D Decks Modulate with Voice */
         js.append("  window.onNativeTelemetry = function(sec, totSec, prog, level) {\n");
         js.append("    window.__audioProgress = prog || 0;\n");
         js.append("    window.__audioLevel = level || 0;\n");
@@ -1599,7 +1582,6 @@ public class PlayerActivity extends Activity {
         js.append("    drawProSigintScope();\n");
         js.append("  }\n");
 
-        /* Select / Play Radio Station */
         js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= window.__radioStations.length) return;\n");
         js.append("    window.__radioIdx = idx;\n");
@@ -1923,73 +1905,765 @@ public class PlayerActivity extends Activity {
         MainActivity.PriorityRadioEngine.stopStation();
         releasePlaybackLocks();
     }
-    var FOLDER_ID = '1gToQyY6YPOk_3muiQSY5WLy7jTSvXbTv';
 
-    function driveListChildren(parentIds) {
-      var clauses = parentIds.map(function(id) { return "'" + id + "' in parents"; }).join(' or ');
-      var q = encodeURIComponent("(" + clauses + ") and trashed = false");
-      var url = 'https://www.googleapis.com/drive/v3/files?q=' + q +
-                '&fields=files(id,name,createdTime,mimeType,trashed,size)&orderBy=name+desc&pageSize=250' +
-                '&key=' + encodeURIComponent(apiKey) + '&_t=' + Date.now();
-      return fetch(url, { cache: 'no-store' }).then(function(r) { return r.json(); });
-    }
+    private void startLiveStreamEnergyTap(final String resolvedUrl, final int reqId) {
+        liveStreamTapExecutor.execute(() -> {
+            HttpURLConnection conn = null;
+            InputStream is = null;
+            try {
+                String streamTarget = resolvedUrl;
+                if (streamTarget.toLowerCase().contains(".m3u8")) {
+                    String m3uText = fetchUrlText(streamTarget);
+                    String[] lines = m3uText.split("\n");
+                    for (String l : lines) {
+                        l = l.trim();
+                        if (!l.isEmpty() && !l.startsWith("#")) {
+                            streamTarget = new URL(new URL(resolvedUrl), l).toString();
+                            break;
+                        }
+                    }
+                }
+                conn = (HttpURLConnection) new URL(streamTarget).openConnection();
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+                conn.setInstanceFollowRedirects(true);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+                is = conn.getInputStream();
+                byte[] buf = new byte[1024];
+                float runningMin = 120f;
+                float runningMax = 195f;
+                while (reqId == currentStreamReqId && isLiveRadioStream) {
+                    int n = is.read(buf);
+                    if (n <= 0) break;
+                    int zeroRuns = 0;
+                    long diffSum = 0;
+                    int prev = buf[0] & 0xFF;
+                    for (int i = 1; i < n; i++) {
+                        int cur = buf[i] & 0xFF;
+                        int d = Math.abs(cur - prev);
+                        diffSum += d;
+                        if (cur == 0 || cur == 0xFF || d < 3) zeroRuns++;
+                        prev = cur;
+                    }
+                    float avgDiff = (float) diffSum / Math.max(1, n - 1);
+                    float activity = avgDiff * (1f - ((float) zeroRuns / n) * 0.65f);
+                    if (activity < runningMin) runningMin = activity;
+                    else runningMin += (activity - runningMin) * 0.015f;
+                    if (activity > runningMax) runningMax = activity;
+                    else runningMax -= (runningMax - activity) * 0.012f;
 
-    function fetchRecordings() {
-      if (window.AndroidApp && typeof window.AndroidApp.fetchDriveRecordingsForWeb === 'function') {
-        listEl.textContent = 'Syncing active recordings from Google Drive...';
-        window.__renderPcTapeDeckFromNative = function(items) {
-          tracks = (items || []).filter(function(f) {
-            return f && !window.__deletedDriveIds[f.id] && !window.__deletedDriveIds[f.name];
-          });
-          renderTracks();
-        };
-        window.AndroidApp.fetchDriveRecordingsForWeb();
-        return;
-      }
-      if (!apiKey) {
-        listEl.textContent = 'Missing Google Drive API Key. Tap [API KEY] above.';
-        return;
-      }
-      window.__deletedDriveIds = JSON.parse(localStorage.getItem('proscan_deleted_recs_v1') || '{}');
-      listEl.textContent = 'Syncing date folders from Google Drive...';
-
-      driveListChildren([FOLDER_ID]).then(function(rootData) {
-        if (rootData.error) {
-          listEl.textContent = 'Drive Error: ' + (rootData.error.message || 'Check API Key');
-          return;
-        }
-        var rootFiles = rootData.files || [];
-        var dateFolders = rootFiles.filter(function(f) {
-          return f.mimeType === 'application/vnd.google-apps.folder' && /^\d{2}-\d{2}-\d{2}$/.test(f.name);
-        }).slice(0, 3);
-
-        var directMp3s = rootFiles.filter(function(f) { return /\.(mp3|wav|m4a)$/i.test(f.name); });
-        if (!dateFolders.length) {
-          tracks = directMp3s;
-          renderTracks();
-          return;
-        }
-        return driveListChildren(dateFolders.map(function(d) { return d.id; })).then(function(level1) {
-          var l1Files = (level1 && level1.files) || [];
-          var subFolders = l1Files.filter(function(f) { return f.mimeType === 'application/vnd.google-apps.folder'; });
-          var l1Mp3s = l1Files.filter(function(f) { return /\.(mp3|wav|m4a)$/i.test(f.name); });
-          if (!subFolders.length) {
-            tracks = directMp3s.concat(l1Mp3s);
-            renderTracks();
-            return;
-          }
-          return driveListChildren(subFolders.map(function(s) { return s.id; })).then(function(level2) {
-            var l2Mp3s = ((level2 && level2.files) || []).filter(function(f) { return /\.(mp3|wav|m4a)$/i.test(f.name); });
-            tracks = directMp3s.concat(l1Mp3s).concat(l2Mp3s).filter(function(f) {
-              if (!f || f.trashed === true) return false;
-              if (f.size !== undefined && parseInt(f.size, 10) <= 0) return false;
-              if (window.__deletedDriveIds[f.id] || window.__deletedDriveIds[f.name]) return false;
-              return true;
-            });
-            renderTracks();
-          });
+                    float span = Math.max(4f, runningMax - runningMin);
+                    float norm = (activity - runningMin) / span;
+                    norm = Math.max(0f, Math.min(1f, norm));
+                    float shaped = (float) Math.pow(norm, 0.78);
+                    liveStreamTapLevel = Math.min(0.96f, Math.max(0.03f, shaped));
+                    lastStreamTapUpdateMs = System.currentTimeMillis();
+                    try { Thread.sleep(38); } catch (InterruptedException ie) { break; }
+                }
+            } catch (Exception ignored) {
+            } finally {
+                try { if (is != null) is.close(); } catch (Exception ignored) {}
+                try { if (conn != null) conn.disconnect(); } catch (Exception ignored) {}
+            }
         });
-      }).catch(function() {
-        listEl.textContent = 'Network error connecting to Google Drive.';
-      });
     }
+
+    private float[] extractMp3AmplitudeEnvelope(File mp3File) {
+        int buckets = 240;
+        float[] env = new float[buckets];
+        MediaExtractor extractor = null;
+        MediaCodec codec = null;
+        try {
+            extractor = new MediaExtractor();
+            extractor.setDataSource(mp3File.getAbsolutePath());
+            int numTracks = extractor.getTrackCount();
+            int audioTrack = -1;
+            MediaFormat format = null;
+            String mime = null;
+            for (int i = 0; i < numTracks; i++) {
+                MediaFormat fmt = extractor.getTrackFormat(i);
+                String m = fmt.getString(MediaFormat.KEY_MIME);
+                if (m != null && m.startsWith("audio/")) {
+                    audioTrack = i;
+                    format = fmt;
+                    mime = m;
+                    break;
+                }
+            }
+            if (audioTrack >= 0 && format != null && mime != null) {
+                extractor.selectTrack(audioTrack);
+                codec = MediaCodec.createDecoderByType(mime);
+                codec.configure(format, null, null, 0);
+                codec.start();
+
+                List<Float> windowRmsList = new ArrayList<>(512);
+                MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+                boolean inputDone = false;
+                boolean outputDone = false;
+                int maxDecodeLoops = 2500;
+
+                while (!outputDone && maxDecodeLoops-- > 0) {
+                    if (!inputDone) {
+                        int inIdx = codec.dequeueInputBuffer(4000);
+                        if (inIdx >= 0) {
+                            ByteBuffer inBuf = codec.getInputBuffer(inIdx);
+                            if (inBuf != null) {
+                                int sampleSize = extractor.readSampleData(inBuf, 0);
+                                if (sampleSize < 0) {
+                                    codec.queueInputBuffer(inIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                                    inputDone = true;
+                                } else {
+                                    long pts = extractor.getSampleTime();
+                                    codec.queueInputBuffer(inIdx, 0, sampleSize, pts, 0);
+                                    extractor.advance();
+                                }
+                            }
+                        }
+                    }
+                    int outIdx = codec.dequeueOutputBuffer(info, 4000);
+                    if (outIdx >= 0) {
+                        ByteBuffer outBuf = codec.getOutputBuffer(outIdx);
+                        if (outBuf != null && info.size > 0) {
+                            outBuf.position(info.offset);
+                            outBuf.limit(info.offset + info.size);
+                            ShortBuffer sb = outBuf.order(ByteOrder.nativeOrder()).asShortBuffer();
+                            int nShorts = sb.remaining();
+                            int step = 256;
+                            for (int s = 0; s < nShorts; s += step) {
+                                int end = Math.min(nShorts, s + step);
+                                double sumSq = 0;
+                                int peak = 0;
+                                for (int k = s; k < end; k++) {
+                                    int val = Math.abs((int) sb.get(k));
+                                    if (val > peak) peak = val;
+                                    sumSq += (double) val * (double) val;
+                                }
+                                int count = Math.max(1, end - s);
+                                float rms = (float) Math.sqrt(sumSq / count);
+                                float combined = (rms * 0.65f) + (peak * 0.35f);
+                                windowRmsList.add(combined);
+                            }
+                        }
+                        codec.releaseOutputBuffer(outIdx, false);
+                        if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                            outputDone = true;
+                        }
+                    }
+                }
+
+                if (windowRmsList.size() > 8) {
+                    float maxRms = 1f;
+                    for (float v : windowRmsList) {
+                        if (v > maxRms) maxRms = v;
+                    }
+                    float noiseFloor = maxRms * 0.08f;
+                    int totalWins = windowRmsList.size();
+                    for (int b = 0; b < buckets; b++) {
+                        int wStart = (b * totalWins) / buckets;
+                        int wEnd = Math.max(wStart + 1, ((b + 1) * totalWins) / buckets);
+                        float localMax = 0f;
+                        for (int w = wStart; w < wEnd && w < totalWins; w++) {
+                            float val = windowRmsList.get(w);
+                            if (val > localMax) localMax = val;
+                        }
+                        if (localMax <= noiseFloor) {
+                            env[b] = 0.02f;
+                        } else {
+                            float norm = (localMax - noiseFloor) / Math.max(1f, (maxRms - noiseFloor));
+                            norm = (float) Math.pow(norm, 0.78);
+                            env[b] = Math.min(0.98f, Math.max(0.03f, norm));
+                        }
+                    }
+                    return env;
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (codec != null) {
+                try { codec.stop(); } catch (Exception ignored) {}
+                try { codec.release(); } catch (Exception ignored) {}
+            }
+            if (extractor != null) {
+                try { extractor.release(); } catch (Exception ignored) {}
+            }
+        }
+        return env;
+    }
+
+    private void playLiveRadioUrlNatively(final String streamUrl, final String stationName) {
+        stopArchiveOnlyPlayer();
+        acquirePlaybackLocks();
+        activeLiveRadioUrl = streamUrl;
+        isLiveRadioStream = true;
+        final int reqId = ++currentStreamReqId;
+
+        MainActivity.PriorityRadioEngine.startStation(
+                PlayerActivity.this,
+                prefs,
+                streamUrl,
+                stationName,
+                () -> {
+                    if (reqId != currentStreamReqId) return;
+                    int sessionId = MainActivity.PriorityRadioEngine.getAudioSessionId();
+                    if (sessionId != 0) setupEqualizer(sessionId);
+                    startLiveStreamEnergyTap(streamUrl, reqId);
+                    if (playerWeb != null) {
+                        playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
+                    }
+                    mainHandler.post(progressTicker);
+                },
+                () -> {
+                    if (reqId == currentStreamReqId && playerWeb != null) {
+                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM OFFLINE');", null);
+                    }
+                }
+        );
+    }
+
+    private void playDriveFileIdNatively(final String fileId) {
+        stopNativePlayer();
+        acquirePlaybackLocks();
+        final int reqId = ++currentStreamReqId;
+        final String urlStr = "https://drive.usercontent.google.com/download?id=" + fileId + "&export=download";
+        audioFetchExecutor.execute(() -> {
+            try {
+                File tempMp3 = new File(getCacheDir(), "active_track.mp3");
+                URL url = new URL(urlStr);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(9000);
+                conn.setReadTimeout(9000);
+                conn.setInstanceFollowRedirects(true);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+                InputStream is = conn.getInputStream();
+                FileOutputStream fos = new FileOutputStream(tempMp3);
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = is.read(buf)) != -1) {
+                    if (reqId != currentStreamReqId) {
+                        fos.close(); is.close(); conn.disconnect();
+                        return;
+                    }
+                    fos.write(buf, 0, n);
+                }
+                fos.close();
+                is.close();
+                conn.disconnect();
+                if (reqId != currentStreamReqId) return;
+
+                final float[] env = extractMp3AmplitudeEnvelope(tempMp3);
+
+                mainHandler.post(() -> {
+                    if (reqId != currentStreamReqId) return;
+                    try {
+                        if (nativePlayer != null) {
+                            try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
+                            nativePlayer = null;
+                        }
+                        isLiveRadioStream = false;
+                        currentEnvelope = env;
+                        nativePlayer = new MediaPlayer();
+                        nativePlayer.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
+                        if (Build.VERSION.SDK_INT >= 21) {
+                            nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
+                                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                    .build());
+                        }
+                        FileInputStream fis = new FileInputStream(tempMp3);
+                        nativePlayer.setDataSource(fis.getFD());
+                        fis.close();
+                        nativePlayer.setOnPreparedListener(mp -> {
+                            if (reqId != currentStreamReqId) {
+                                try { mp.stop(); mp.release(); } catch (Exception ignored) {}
+                                return;
+                            }
+                            setupEqualizer(mp.getAudioSessionId());
+                            mp.start();
+                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
+                            mainHandler.post(progressTicker);
+                        });
+                        nativePlayer.setOnCompletionListener(mp -> {
+                            stopArchiveOnlyPlayer();
+                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayEnded)window.onNativePlayEnded();", null);
+                        });
+                        nativePlayer.prepareAsync();
+                    } catch (Exception e) {
+                        if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('PLAY ERROR');", null);
+                    }
+                });
+            } catch (Exception e) {
+                mainHandler.post(() -> {
+                    if (reqId == currentStreamReqId && playerWeb != null) {
+                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
+                    }
+                });
+            }
+        });
+    }
+
+    private void openAddOrEditStationDialog(final int editIdx, String curName, String curUrl) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        layout.setPadding(pad, pad, pad, pad);
+
+        TextView l1 = new TextView(this);
+        l1.setText("Station Name (e.g. BBC Radio 5 Live):");
+        layout.addView(l1);
+        final EditText nameInput = new EditText(this);
+        nameInput.setText(curName != null ? curName : "");
+        layout.addView(nameInput);
+
+        TextView l2 = new TextView(this);
+        l2.setText("\nDirect Stream URL (.mp3 / .aac / .m3u8):");
+        layout.addView(l2);
+        final EditText urlInput = new EditText(this);
+        urlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        urlInput.setText(curUrl != null ? curUrl : "");
+        layout.addView(urlInput);
+
+        new AlertDialog.Builder(this)
+                .setTitle(editIdx >= 0 ? "Edit Radio Station" : "Add Radio Station")
+                .setView(layout)
+                .setPositiveButton("Save Station", (d, w) -> {
+                    String n = nameInput.getText().toString().trim();
+                    String u = urlInput.getText().toString().trim();
+                    if (n.isEmpty() || u.isEmpty()) {
+                        Toast.makeText(PlayerActivity.this, "Station Name and Stream URL required", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    String jsCall = "if(window.onNativeStationSaved)window.onNativeStationSaved("
+                            + editIdx + "," + JSONObject.quote(n) + "," + JSONObject.quote(u) + ");";
+                    if (playerWeb != null) playerWeb.evaluateJavascript(jsCall, null);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    public class PlayerBridge {
+        @JavascriptInterface
+        public String getServerUrl() { return serverBaseUrl; }
+
+        @JavascriptInterface
+        public String getBatteryStatus() { return getNativeBatteryStatus(); }
+
+        @JavascriptInterface
+        public void triggerBedroomLamp(final boolean turnOn) {
+            mainHandler.post(() -> triggerAlexaWebhook(turnOn));
+        }
+
+        @JavascriptInterface
+        public void openLampSetup() {
+            mainHandler.post(() -> showAlexaLampSetupDialog());
+        }
+
+        @JavascriptInterface
+        public void openMixerDialog() {
+            mainHandler.post(() -> showNativeAudioMixerDialog());
+        }
+
+        @JavascriptInterface
+        public void attachActiveRadioSession() {
+            mainHandler.post(() -> {
+                if (MainActivity.PriorityRadioEngine.isRadioPlaying()) {
+                    isLiveRadioStream = true;
+                    activeLiveRadioUrl = MainActivity.PriorityRadioEngine.getActiveStationUrl();
+                    int sid = MainActivity.PriorityRadioEngine.getAudioSessionId();
+                    if (sid != 0) setupEqualizer(sid);
+                    final int reqId = ++currentStreamReqId;
+                    startLiveStreamEnergyTap(activeLiveRadioUrl, reqId);
+                    mainHandler.post(progressTicker);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public boolean toggleClarityFilter() {
+            clarityFilterEnabled = !clarityFilterEnabled;
+            prefs.edit().putBoolean("clarity_filter_on", clarityFilterEnabled).apply();
+            mainHandler.post(() -> {
+                if (speechEqualizer != null) {
+                    try {
+                        speechEqualizer.setEnabled(clarityFilterEnabled);
+                        if (clarityFilterEnabled) {
+                            configureSpeechBands(speechEqualizer);
+                        }
+                    } catch (Exception ignored) {}
+                }
+                Toast.makeText(PlayerActivity.this, clarityFilterEnabled ? "Audio Clarity: ON (Voice Boost & De-Hiss)" : "Audio Clarity: OFF", Toast.LENGTH_SHORT).show();
+            });
+            return clarityFilterEnabled;
+        }
+
+        @JavascriptInterface
+        public boolean getClarityFilterState() {
+            return clarityFilterEnabled;
+        }
+
+        @JavascriptInterface
+        public void setWakeLock(final boolean keepOn) {
+            mainHandler.post(() -> {
+                applyPlayerWakeLock(keepOn);
+                Toast.makeText(PlayerActivity.this, keepOn ? "Screen Wake: ON (All Modes)" : "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
+            });
+        }
+
+        @JavascriptInterface
+        public void setWebStreamActive(final boolean active) {
+            mainHandler.post(() -> {
+                isLiveRadioStream = active;
+                mainHandler.removeCallbacks(progressTicker);
+                if (active) mainHandler.post(progressTicker);
+            });
+        }
+
+        @JavascriptInterface
+        public void saveStationsJson(final String jsonStr, final boolean showToast) {
+            mainHandler.post(() -> saveRadioStationsJsonToDownloads(jsonStr, showToast));
+        }
+
+        @JavascriptInterface
+        public void openStationJsonMenu(final int curIdx, final String name, final String url) {
+            mainHandler.post(() -> showStationMenuDialog(curIdx, name, url));
+        }
+
+        @JavascriptInterface
+        public void refreshRecordings() {
+            loadLiveGoogleDriveRecordings();
+        }
+
+        @JavascriptInterface
+        public void playDriveIdDirect(final String fileId) {
+            mainHandler.post(() -> playDriveFileIdNatively(fileId));
+        }
+
+        @JavascriptInterface
+        public void playLiveStreamUrl(final String url) {
+            mainHandler.post(() -> playLiveRadioUrlNatively(url, "RADIO"));
+        }
+
+        @JavascriptInterface
+        public void playLiveStreamUrlWithName(final String url, final String name) {
+            mainHandler.post(() -> playLiveRadioUrlNatively(url, name));
+        }
+
+        @JavascriptInterface
+        public void showStationDialog(final int editIdx, final String name, final String url) {
+            mainHandler.post(() -> openAddOrEditStationDialog(editIdx, name, url));
+        }
+
+        @JavascriptInterface
+        public void seekToSeconds(final int sec) {
+            mainHandler.post(() -> {
+                try { if (nativePlayer != null && !isLiveRadioStream) nativePlayer.seekTo(sec * 1000); } catch (Exception ignored) {}
+            });
+        }
+
+        @JavascriptInterface
+        public void stopAudio() { mainHandler.post(() -> stopNativePlayer()); }
+
+        @JavascriptInterface
+        public void togglePause() {
+            mainHandler.post(() -> {
+                try {
+                    if (isLiveRadioStream) {
+                        MainActivity.PriorityRadioEngine.togglePause(prefs);
+                        boolean pl = MainActivity.PriorityRadioEngine.isRadioPlaying();
+                        if (playerWeb != null) playerWeb.evaluateJavascript("if(typeof setPlayingUI==='function')setPlayingUI(" + pl + ");renderPlaylist();", null);
+                        if (pl) mainHandler.post(progressTicker);
+                    } else if (nativePlayer != null) {
+                        if (nativePlayer.isPlaying()) {
+                            nativePlayer.pause();
+                            if (playerWeb != null) playerWeb.evaluateJavascript("if(typeof setPlayingUI==='function')setPlayingUI(false);renderPlaylist();", null);
+                        } else {
+                            nativePlayer.start();
+                            if (playerWeb != null) playerWeb.evaluateJavascript("if(typeof setPlayingUI==='function')setPlayingUI(true);renderPlaylist();", null);
+                            mainHandler.post(progressTicker);
+                        }
+                    }
+                } catch (Exception ignored) {}
+            });
+        }
+
+        @JavascriptInterface
+        public void openGoogleDriveFolder() {
+            mainHandler.post(() -> {
+                try {
+                    Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://drive.google.com/drive/folders/" + GDRIVE_ROOT_FOLDER_ID));
+                    startActivity(i);
+                } catch (Exception ignored) {}
+            });
+        }
+
+        @JavascriptInterface
+        public void speakCaption(final String text) {
+            mainHandler.post(() -> {
+                if (tts != null && ttsReady && text != null && !text.trim().isEmpty()) {
+                    String clean = text.trim();
+                    int commaIdx = clean.indexOf(',');
+                    String chKey = (commaIdx != -1 ? clean.substring(commaIdx + 1) : clean).trim().toLowerCase(Locale.ROOT);
+                    long now = System.currentTimeMillis();
+                    if (chKey.equals(lastSpokenCaption) && (now - lastSpokenCaptionMs < 30000L)) {
+                        return;
+                    }
+                    lastSpokenCaption = chKey;
+                    lastSpokenCaptionMs = now;
+                    MainActivity.PriorityRadioEngine.notifyTtsSpeaking(prefs, true);
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        Bundle params = new Bundle();
+                        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.45f);
+                        tts.speak(clean, TextToSpeech.QUEUE_FLUSH, params, "player_tts_" + now);
+                    } else {
+                        tts.speak(clean, TextToSpeech.QUEUE_FLUSH, null);
+                    }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void showSystemBars() {
+            mainHandler.post(() -> {
+                showBothSystemBarsNow();
+                mainHandler.postDelayed(() -> hideSystemUI(), 4500);
+            });
+        }
+
+        @JavascriptInterface
+        public void minimizeApp() {
+            mainHandler.post(() -> moveTaskToBack(true));
+        }
+
+        @JavascriptInterface
+        public void exitEntireApp() {
+            mainHandler.post(() -> {
+                stopNativePlayer();
+                try { stopService(new Intent(PlayerActivity.this, AudioKeepAliveService.class)); } catch (Exception ignored) {}
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    finishAffinity();
+                    finishAndRemoveTask();
+                } else {
+                    finishAffinity();
+                }
+                System.exit(0);
+            });
+        }
+
+        @JavascriptInterface
+        public void closePlayerKeepRadio() {
+            mainHandler.post(() -> {
+                stopArchiveOnlyPlayer();
+                finish();
+                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+            });
+        }
+
+        @JavascriptInterface
+        public void closePlayer() {
+            mainHandler.post(() -> {
+                stopArchiveOnlyPlayer();
+                finish();
+                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+            });
+        }
+    }
+
+    private String fetchUrlText(String urlStr) {
+        try {
+            String sep = urlStr.contains("?") ? "&" : "?";
+            URL url = new URL(urlStr + sep + "_t=" + System.currentTimeMillis());
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(9000);
+            conn.setReadTimeout(9000);
+            conn.setUseCaches(false);
+            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
+            conn.setRequestProperty("Pragma", "no-cache");
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) sb.append(line).append("\n");
+            reader.close();
+            conn.disconnect();
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private Map<String, String> parseDriveFolderAllItems(String folderId) {
+        Map<String, String> map = new LinkedHashMap<>();
+        if (folderId == null || folderId.isEmpty()) return map;
+        String html1 = fetchUrlText("https://drive.google.com/embeddedfolderview?id=" + folderId);
+        if (!html1.isEmpty()) {
+            Pattern p1 = Pattern.compile("id=\"entry-([A-Za-z0-9_-]{15,})\"[\\s\\S]*?<div class=\"flip-entry-title\">([^<]+)</div>");
+            Matcher m1 = p1.matcher(html1);
+            while (m1.find()) {
+                map.put(m1.group(2).trim().replace("&amp;", "&").replace("&#39;", "'").replace("&quot;", "\""), m1.group(1).trim());
+            }
+        }
+        String html2 = fetchUrlText("https://drive.google.com/drive/folders/" + folderId);
+        if (!html2.isEmpty()) {
+            String unescaped = html2.replace("\\u0022", "\"").replace("\\\"", "\"");
+            Pattern p2 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"([^\"]+\\.mp3)\"");
+            Matcher m2 = p2.matcher(unescaped);
+            while (m2.find()) map.put(m2.group(2).trim().replace("&amp;", "&").replace("&#39;", "'"), m2.group(1).trim());
+            Pattern p3 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"(\\d{2}-\\d{2}-\\d{2}|Scan)\"");
+            Matcher m3 = p3.matcher(unescaped);
+            while (m3.find()) map.put(m3.group(2).trim(), m3.group(1).trim());
+        }
+        return map;
+    }
+
+    private static class RecItem implements Comparable<RecItem> {
+        String fileId, fileName, dateStr, timeStr, freq, dur, name, sortKey;
+        @Override
+        public int compareTo(RecItem o) { return o.sortKey.compareTo(this.sortKey); }
+    }
+
+    private RecItem parseMp3Filename(String dateFolder, String fileName, String fileId) {
+        String base = fileName.endsWith(".mp3") ? fileName.substring(0, fileName.length() - 4) : fileName;
+        Pattern pat = Pattern.compile("^(.*?)\\s+-\\s+(\\d+\\.\\d+)\\s+-\\s+(\\d{2})-(\\d{2})-(\\d{2})(?:.*?TO\\s+(\\d{2})-(\\d{2})-(\\d{2}))?");
+        Matcher m = pat.matcher(base);
+        RecItem item = new RecItem();
+        item.fileId = fileId;
+        item.fileName = fileName;
+        item.dateStr = dateFolder;
+        if (m.find()) {
+            item.name = m.group(1).trim();
+            item.freq = m.group(2).trim();
+            String h1 = m.group(3), m1 = m.group(4), s1 = m.group(5);
+            item.timeStr = h1 + ":" + m1 + ":" + s1;
+            item.dur = "00:03";
+            if (m.group(6) != null) {
+                try {
+                    int t1 = Integer.parseInt(h1) * 3600 + Integer.parseInt(m1) * 60 + Integer.parseInt(s1);
+                    int t2 = Integer.parseInt(m.group(6)) * 3600 + Integer.parseInt(m.group(7)) * 60 + Integer.parseInt(m.group(8));
+                    int diff = t2 - t1;
+                    if (diff < 0) diff += 86400;
+                    item.dur = String.format(Locale.US, "%02d:%02d", diff / 60, diff % 60);
+                } catch (Exception ignored) {}
+            }
+        } else {
+            String[] parts = base.split(" - ");
+            item.name = parts.length > 0 ? parts[0].trim() : base;
+            item.freq = parts.length > 1 ? parts[1].trim() : "---.----";
+            item.timeStr = parts.length > 2 ? parts[2].replace('-', ':').trim() : "00:00:00";
+            item.dur = "--:--";
+        }
+        String[] dp = dateFolder.split("-");
+        String isoDate = dp.length == 3 ? (dp[2] + "-" + dp[0] + "-" + dp[1]) : dateFolder;
+        item.sortKey = isoDate + " " + item.timeStr + " " + fileName;
+        return item;
+    }
+
+    private void loadLiveGoogleDriveRecordings() {
+        if (isFetchingDrive) return;
+        isFetchingDrive = true;
+        executor.execute(() -> {
+            try {
+                Map<String, String> rootItems = parseDriveFolderAllItems(GDRIVE_ROOT_FOLDER_ID);
+                List<String> dateFolders = new ArrayList<>();
+                for (String title : rootItems.keySet()) {
+                    if (title.matches("\\d{2}-\\d{2}-\\d{2}")) dateFolders.add(title);
+                }
+                Collections.sort(dateFolders, (a, b) -> {
+                    String[] pa = a.split("-"), pb = b.split("-");
+                    String ka = pa.length == 3 ? (pa[2] + pa[0] + pa[1]) : a;
+                    String kb = pb.length == 3 ? (pb[2] + pb[0] + pb[1]) : b;
+                    return kb.compareTo(ka);
+                });
+                List<RecItem> allItems = new ArrayList<>();
+                int maxDates = Math.min(dateFolders.size(), 3);
+                for (int i = 0; i < maxDates; i++) {
+                    String dFolder = dateFolders.get(i);
+                    String dId = rootItems.get(dFolder);
+                    if (dId == null) continue;
+                    Map<String, String> dateChildren = parseDriveFolderAllItems(dId);
+                    for (Map.Entry<String, String> e : dateChildren.entrySet()) {
+                        if (e.getKey().toLowerCase().endsWith(".mp3")) {
+                            allItems.add(parseMp3Filename(dFolder, e.getKey(), e.getValue()));
+                        } else {
+                            Map<String, String> subChildren = parseDriveFolderAllItems(e.getValue());
+                            for (Map.Entry<String, String> se : subChildren.entrySet()) {
+                                if (se.getKey().toLowerCase().endsWith(".mp3")) {
+                                    allItems.add(parseMp3Filename(dFolder, se.getKey(), se.getValue()));
+                                }
+                            }
+                        }
+                    }
+                }
+                Collections.sort(allItems);
+                JSONArray arr = new JSONArray();
+                for (RecItem it : allItems) {
+                    JSONObject o = new JSONObject();
+                    o.put("fileId", it.fileId);
+                    o.put("fileName", it.fileName);
+                    o.put("dateStr", it.dateStr);
+                    o.put("timeStr", it.timeStr);
+                    o.put("freq", it.freq);
+                    o.put("dur", it.dur);
+                    o.put("name", it.name);
+                    arr.put(o);
+                }
+                final String escapedJson = JSONObject.quote(arr.toString());
+                mainHandler.post(() -> {
+                    isFetchingDrive = false;
+                    if (playerWeb != null) {
+                        playerWeb.evaluateJavascript("if(window.onDriveRecordingsLoaded)window.onDriveRecordingsLoaded(" + escapedJson + ");", null);
+                    }
+                });
+            } catch (Exception ignored) {
+                isFetchingDrive = false;
+            }
+        });
+    }
+
+    private void hideSystemUI() {
+        try {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN
+            );
+            if (Build.VERSION.SDK_INT >= 30) {
+                WindowInsetsController ic = getWindow().getInsetsController();
+                if (ic != null) {
+                    ic.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    ic.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (playerWeb != null) {
+            playerWeb.evaluateJavascript("if(window.markCurrentListAsVisited)window.markCurrentListAsVisited();", null);
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
+        try {
+            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
+                audioManager.unregisterAudioDeviceCallback(btDeviceCallback);
+            }
+        } catch (Exception ignored) {}
+        mainHandler.removeCallbacks(autoSyncRunnable);
+        stopArchiveOnlyPlayer();
+        if (!MainActivity.PriorityRadioEngine.isRadioPlaying()) {
+            releasePlaybackLocks();
+        }
+        try {
+            if (tts != null) { tts.stop(); tts.shutdown(); }
+            if (playerWeb != null) { playerWeb.loadUrl("about:blank"); playerWeb.destroy(); }
+        } catch (Exception ignored) {}
+        super.onDestroy();
+    }
+}
