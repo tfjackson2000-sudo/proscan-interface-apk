@@ -27,9 +27,10 @@ public class AudioKeepAliveService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         createChannelIfNeeded();
         Intent openIntent = new Intent(this, MainActivity.class);
+        openIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 this, 0, openIntent,
-                Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0
+                Build.VERSION.SDK_INT >= 23 ? (PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT) : PendingIntent.FLAG_UPDATE_CURRENT
         );
 
         Notification.Builder builder = Build.VERSION.SDK_INT >= 26
@@ -38,7 +39,7 @@ public class AudioKeepAliveService extends Service {
 
         Notification notification = builder
                 .setContentTitle("ProScan Interface")
-                .setContentText("Background Radio Stream Active")
+                .setContentText("Scanner & Priority Radio Audio Engine Active")
                 .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
@@ -58,16 +59,23 @@ public class AudioKeepAliveService extends Service {
                     cpuWakeLock.setReferenceCounted(false);
                 }
             }
-            if (cpuWakeLock != null && !cpuWakeLock.isHeld()) cpuWakeLock.acquire();
+            if (cpuWakeLock != null && !cpuWakeLock.isHeld()) {
+                cpuWakeLock.acquire();
+            }
 
             if (wifiLock == null) {
                 WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
                 if (wm != null) {
-                    wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "ProScan:WifiAudioLock");
+                    int lockMode = Build.VERSION.SDK_INT >= 29
+                            ? WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                            : WifiManager.WIFI_MODE_FULL_HIGH_PERF;
+                    wifiLock = wm.createWifiLock(lockMode, "ProScan:WifiAudioLock");
                     wifiLock.setReferenceCounted(false);
                 }
             }
-            if (wifiLock != null && !wifiLock.isHeld()) wifiLock.acquire();
+            if (wifiLock != null && !wifiLock.isHeld()) {
+                wifiLock.acquire();
+            }
         } catch (Exception ignored) {}
     }
 
@@ -76,6 +84,7 @@ public class AudioKeepAliveService extends Service {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID, "ProScan Background Audio", NotificationManager.IMPORTANCE_LOW
             );
+            channel.setDescription("Keeps scanner and radio streams active when the screen is off");
             NotificationManager nm = getSystemService(NotificationManager.class);
             if (nm != null) nm.createNotificationChannel(channel);
         }
