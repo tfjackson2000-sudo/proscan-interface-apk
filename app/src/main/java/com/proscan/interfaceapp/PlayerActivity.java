@@ -34,6 +34,7 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.MediaStore;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.text.InputType;
 import android.view.View;
 import android.view.Window;
@@ -46,8 +47,10 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -69,7 +72,6 @@ import java.nio.ShortBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -197,6 +199,93 @@ public class PlayerActivity extends Activity {
                             .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
                             .apply();
                     triggerAlexaWebhook(false);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showNativeAudioMixerDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        layout.setPadding(pad, pad, pad, pad);
+
+        final CheckBox autoDuckCheck = new CheckBox(this);
+        autoDuckCheck.setText("Auto-Duck Radio on Scanner Hit / TTS");
+        autoDuckCheck.setChecked(MainActivity.PriorityRadioEngine.isAutoDuckEnabled(prefs));
+        layout.addView(autoDuckCheck);
+
+        int curCeil = prefs.getInt("mixer_radio_ceiling_pct", 40);
+        final TextView ceilLbl = new TextView(this);
+        ceilLbl.setText("\nRadio Baseline Ceiling: " + curCeil + "% (Default 40%)");
+        layout.addView(ceilLbl);
+        final SeekBar ceilBar = new SeekBar(this);
+        ceilBar.setMax(90);
+        ceilBar.setProgress(Math.max(0, Math.min(90, curCeil - 10)));
+        ceilBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int p, boolean u) { ceilLbl.setText("\nRadio Baseline Ceiling: " + (p + 10) + "% (Default 40%)"); }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) {}
+        });
+        layout.addView(ceilBar);
+
+        int curDuck = prefs.getInt("mixer_radio_duck_pct", 5);
+        final TextView duckLbl = new TextView(this);
+        duckLbl.setText("\nRadio Ducked Level: " + curDuck + "% (Default 5%)");
+        layout.addView(duckLbl);
+        final SeekBar duckBar = new SeekBar(this);
+        duckBar.setMax(25);
+        duckBar.setProgress(Math.max(0, Math.min(25, curDuck)));
+        duckBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int p, boolean u) { duckLbl.setText("\nRadio Ducked Level: " + p + "% (Default 5%)"); }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) {}
+        });
+        layout.addView(duckBar);
+
+        int curAgc = prefs.getInt("mixer_scanner_agc_db", 8);
+        final TextView agcLbl = new TextView(this);
+        agcLbl.setText("\nScanner AGC Boost: +" + curAgc + " dB (Default +8 dB)");
+        layout.addView(agcLbl);
+        final SeekBar agcBar = new SeekBar(this);
+        agcBar.setMax(15);
+        agcBar.setProgress(Math.max(0, Math.min(15, curAgc)));
+        agcBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int p, boolean u) { agcLbl.setText("\nScanner AGC Boost: +" + p + " dB (Default +8 dB)"); }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) {}
+        });
+        layout.addView(agcBar);
+
+        int curHold = prefs.getInt("mixer_duck_hold_ms", 2500);
+        final TextView holdLbl = new TextView(this);
+        holdLbl.setText(String.format(Locale.US, "\nDuck Hold Time: %.1fs (Default 2.5s)", curHold / 1000f));
+        layout.addView(holdLbl);
+        final SeekBar holdBar = new SeekBar(this);
+        holdBar.setMax(40);
+        holdBar.setProgress(Math.max(0, Math.min(40, (curHold - 1000) / 100)));
+        holdBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int p, boolean u) {
+                holdLbl.setText(String.format(Locale.US, "\nDuck Hold Time: %.1fs (Default 2.5s)", (1000 + p * 100) / 1000f));
+            }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) {}
+        });
+        layout.addView(holdBar);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Priority Audio Mixer & Auto-Duck")
+                .setView(layout)
+                .setPositiveButton("Save", (d, w) -> {
+                    prefs.edit()
+                            .putBoolean("mixer_auto_duck_on", autoDuckCheck.isChecked())
+                            .putInt("mixer_radio_ceiling_pct", ceilBar.getProgress() + 10)
+                            .putInt("mixer_radio_duck_pct", duckBar.getProgress())
+                            .putInt("mixer_scanner_agc_db", agcBar.getProgress())
+                            .putInt("mixer_duck_hold_ms", 1000 + holdBar.getProgress() * 100)
+                            .apply();
+                    MainActivity.PriorityRadioEngine.updateSettingsLive(prefs);
+                    Toast.makeText(PlayerActivity.this, "Audio Mixer Settings Saved!", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -356,6 +445,7 @@ public class PlayerActivity extends Activity {
     }
 
     private synchronized void releasePlaybackLocks() {
+        if (MainActivity.PriorityRadioEngine.isRadioPlaying()) return;
         try {
             if (audioManager != null) {
                 if (Build.VERSION.SDK_INT >= 26 && audioFocusRequest != null) {
@@ -366,12 +456,12 @@ public class PlayerActivity extends Activity {
             }
             if (cpuWakeLock != null && cpuWakeLock.isHeld()) cpuWakeLock.release();
             if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
-            stopService(new Intent(this, AudioKeepAliveService.class));
         } catch (Exception ignored) {}
     }
 
     private void forceStopAllPlayerAudioOnDisconnect() {
-        boolean wasPlaying = isLiveRadioStream || (nativePlayer != null && nativePlayer.isPlaying());
+        boolean wasPlaying = isLiveRadioStream || MainActivity.PriorityRadioEngine.isRadioPlaying() || (nativePlayer != null && nativePlayer.isPlaying());
+        MainActivity.PriorityRadioEngine.stopStation();
         stopNativePlayer();
         Runnable killWebAudio = () -> {
             stopNativePlayer();
@@ -429,14 +519,16 @@ public class PlayerActivity extends Activity {
         @Override
         public void run() {
             try {
-                if (playerWeb != null && nativePlayer != null && nativePlayer.isPlaying()) {
+                boolean radioRunning = isLiveRadioStream && MainActivity.PriorityRadioEngine.isRadioPlaying();
+                boolean archiveRunning = !isLiveRadioStream && nativePlayer != null && nativePlayer.isPlaying();
+                if (playerWeb != null && (radioRunning || archiveRunning)) {
                     int sec = 0, tot = 0;
                     float prog = 0.5f, level = 0.04f;
                     long now = System.currentTimeMillis();
                     boolean hasLiveVis = (liveVisualizerLevel >= 0f && (now - lastVisualizerUpdateMs) < 450);
                     boolean hasStreamTap = (liveStreamTapLevel >= 0f && (now - lastStreamTapUpdateMs) < 550);
 
-                    if (isLiveRadioStream) {
+                    if (radioRunning) {
                         sec = (int) ((now / 1000) % 3600);
                         tot = 3600;
                         prog = (sec % 60) / 60f;
@@ -465,11 +557,6 @@ public class PlayerActivity extends Activity {
                     }
                     playerWeb.evaluateJavascript("if(window.onNativeTelemetry)window.onNativeTelemetry(" + sec + "," + tot + "," + prog + "," + level + ");", null);
                     mainHandler.postDelayed(this, 50);
-                } else if (isLiveRadioStream && !activeLiveRadioUrl.isEmpty() && nativePlayer != null) {
-                    try {
-                        nativePlayer.start();
-                        mainHandler.postDelayed(this, 250);
-                    } catch (Exception ignored) {}
                 }
             } catch (Exception ignored) {}
         }
@@ -526,6 +613,11 @@ public class PlayerActivity extends Activity {
                 if (status == TextToSpeech.SUCCESS && tts != null) {
                     tts.setLanguage(Locale.UK);
                     tts.setSpeechRate(1.05f);
+                    tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                        @Override public void onStart(String utteranceId) { MainActivity.PriorityRadioEngine.notifyTtsSpeaking(prefs, true); }
+                        @Override public void onDone(String utteranceId) { MainActivity.PriorityRadioEngine.notifyTtsSpeaking(prefs, false); }
+                        @Override public void onError(String utteranceId) { MainActivity.PriorityRadioEngine.notifyTtsSpeaking(prefs, false); }
+                    });
                     ttsReady = true;
                 }
             });
@@ -712,7 +804,6 @@ public class PlayerActivity extends Activity {
                     }
                     JSONArray rawArr = new JSONArray(stationsArrayStr);
                     JSONArray cleanArr = new JSONArray();
-                    /* Support both new JSONs and legacy JSONs (automatically strips legacy freq/band/mode fields) */
                     for (int i = 0; i < rawArr.length(); i++) {
                         JSONObject item = rawArr.optJSONObject(i);
                         if (item != null) {
@@ -747,11 +838,12 @@ public class PlayerActivity extends Activity {
         String[] items = new String[]{
                 "+ Add New Station",
                 "Edit Selected (" + (curName != null && !curName.isEmpty() ? curName : "None") + ")",
+                "Priority Audio Mixer & Auto-Duck Settings",
                 "Save Stations JSON to Downloads (proscan_radio_stations.json)",
                 "Load Stations JSON from Downloads"
         };
         new AlertDialog.Builder(this)
-                .setTitle("Radio Station Manager")
+                .setTitle("Radio Station & Mixer Manager")
                 .setItems(items, (d, which) -> {
                     if (which == 0) {
                         openAddOrEditStationDialog(-1, "", "");
@@ -762,10 +854,12 @@ public class PlayerActivity extends Activity {
                             openAddOrEditStationDialog(-1, "", "");
                         }
                     } else if (which == 2) {
+                        showNativeAudioMixerDialog();
+                    } else if (which == 3) {
                         if (playerWeb != null) {
                             playerWeb.evaluateJavascript("if(window.PlayerBridge)window.PlayerBridge.saveStationsJson(JSON.stringify(window.__radioStations), true);", null);
                         }
-                    } else if (which == 3) {
+                    } else if (which == 4) {
                         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                         intent.addCategory(Intent.CATEGORY_OPENABLE);
                         intent.setType("*/*");
@@ -782,6 +876,8 @@ public class PlayerActivity extends Activity {
         String safeStations = JSONObject.quote(savedStationsJson);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
         boolean openInRadio = "radio".equalsIgnoreCase(initialStartMode);
+        String activeBgRadioUrl = JSONObject.quote(MainActivity.PriorityRadioEngine.getActiveStationUrl());
+        boolean isBgRadioPlaying = MainActivity.PriorityRadioEngine.isRadioPlaying();
 
         StringBuilder js = new StringBuilder();
         js.append("(function(){\n");
@@ -809,15 +905,18 @@ public class PlayerActivity extends Activity {
         js.append("  var st = document.createElement('style');\n");
         js.append("  st.textContent = '' +\n");
         js.append("    '@keyframes smoothFadeIn{0%{opacity:0;}100%{opacity:1;}}' +\n");
+        js.append("    '@keyframes crtWhiteBeamCollapse{0%{opacity:0;transform:translate(-50%,-50%) scale(1,35);border-radius:0;}16%{opacity:1;transform:translate(-50%,-50%) scale(1,1.4);border-radius:2px;}46%{opacity:1;transform:translate(-50%,-50%) scale(0.92,0.65);border-radius:999px;}76%{opacity:1;transform:translate(-50%,-50%) scale(0.014,1.35);border-radius:50%;}92%{opacity:0.9;transform:translate(-50%,-50%) scale(0.006,0.6);border-radius:50%;}100%{opacity:0;transform:translate(-50%,-50%) scale(0,0);border-radius:50%;}}' +\n");
+        js.append("    'html.tv-shutting-down .scanner-display{background:#000!important;box-shadow:inset 0 0 24px #000!important;}' +\n");
+        js.append("    'html.tv-shutting-down .scanner-display > *{opacity:0!important;transition:opacity 0.15s ease!important;}' +\n");
+        js.append("    'html.tv-shutting-down .scanner-display::after{content:\"\"!important;position:absolute!important;left:50%!important;top:50%!important;width:96%!important;height:3px!important;background:#fff!important;box-shadow:0 0 8px #fff,0 0 18px rgba(255,255,255,0.95),0 0 32px rgba(200,230,255,0.75)!important;z-index:99!important;pointer-events:none!important;animation:crtWhiteBeamCollapse 0.48s cubic-bezier(0.4,0,0.2,1) forwards!important;}' +\n");
         js.append("    '#device-wrapper{width:95%!important;max-height:94dvh!important;animation:smoothFadeIn 0.25s ease-out forwards;transition:opacity 0.2s ease!important;}' +\n");
         js.append("    '#device-wrapper.fading-out{opacity:0!important;}' +\n");
         js.append("    '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;}' +\n");
-        /* Expanded Log Screen (345px in Normal Mode, 565px in Lite Mode) & Taller Controls */
         js.append("    '.scanner-display{height:345px!important;transition:height 0.22s ease!important;}.top-controls-container{height:34px!important;}.buttons-box{gap:8px!important;padding:9px!important;}#mech-bay{height:216px!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] #mech-bay{display:none!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] .scanner-display{height:565px!important;}' +\n");
 
-        /* MOBILE LANDSCAPE SPLIT-SCREEN COCKPIT LAYOUT (Log Screen on Left, 3D Deck & Controls on Right) */
+        /* MOBILE LANDSCAPE SPLIT-SCREEN COCKPIT LAYOUT */
         js.append("    '@media (orientation: landscape) and (max-height: 540px){' +\n");
         js.append("      '#device-wrapper{width:96vw!important;max-width:96vw!important;height:94dvh!important;max-height:94dvh!important;}' +\n");
         js.append("      '#custom-scanner-ui{display:grid!important;grid-template-columns:1.08fr 1fr!important;grid-template-rows:auto 1fr!important;gap:5px 12px!important;padding:10px 14px!important;height:100%!important;overflow:hidden!important;}' +\n");
@@ -837,42 +936,37 @@ public class PlayerActivity extends Activity {
         js.append("    '.rec-row.playing, .rec-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
         js.append("    '.rec-row.selected:not(.playing){outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(0,0,0,0.16)!important;color:var(--log-text)!important;font-weight:800!important;}' +\n");
 
-        /* Large Square-Proportioned Station Tiles for Radio Mode (No CH / BAND / MODE headings) */
+        /* Large Station Tiles for Radio Mode */
         js.append("    '.radio-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;padding:8px 6px!important;width:100%!important;}' +\n");
         js.append("    '.radio-tile{min-height:66px!important;padding:8px 10px!important;border:1.5px solid var(--log-cell-border)!important;border-radius:8px!important;background:rgba(0,0,0,0.14)!important;font-family:\"JetBrains Mono\",monospace!important;font-size:12px!important;font-weight:800!important;color:var(--log-text)!important;display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important;cursor:pointer!important;touch-action:pan-y!important;word-break:break-word!important;line-height:1.25!important;box-shadow:inset 0 1px 3px rgba(0,0,0,0.35)!important;transition:transform 0.1s ease,background 0.15s ease!important;}' +\n");
         js.append("    '.radio-tile:active{transform:scale(0.97)!important;}' +\n");
         js.append("    '.radio-tile.playing, .radio-tile.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:900!important;border-color:var(--log-text)!important;box-shadow:0 0 10px rgba(0,0,0,0.5)!important;outline:none!important;}' +\n");
         js.append("    '.radio-tile.selected:not(.playing){outline:2px dashed var(--log-text,#38bdf8)!important;outline-offset:-2px!important;background:rgba(0,0,0,0.28)!important;color:var(--log-text)!important;font-weight:900!important;}' +\n");
 
-        /* Top Screen Header: Clock on Left, Mode Title + Counter in Center, Battery on Right */
+        /* Top Screen Header */
         js.append("    '.disp-top-row{display:grid!important;grid-template-columns:auto 1fr auto!important;align-items:center!important;gap:6px!important;width:100%!important;}' +\n");
         js.append("    '#top-header-center{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;min-width:0!important;overflow:hidden!important;}' +\n");
         js.append("    '#deck-mode-hud{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;font-size:9.5px!important;}' +\n");
         js.append("    '#rec-count-hud{font-family:\"JetBrains Mono\",monospace!important;font-size:9px!important;font-weight:900!important;color:var(--log-header-text)!important;padding:0 5px!important;border:1px solid var(--log-cell-border)!important;border-radius:4px!important;white-space:nowrap!important;flex-shrink:0!important;}' +\n");
 
-        /* Top Row Navigation: Larger 35px Tall Buttons */
         js.append("    '.player-nav-row{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:6px!important;height:35px!important;}' +\n");
         js.append("    '.player-nav-row.radio-mode-nav{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important;}' +\n");
         js.append("    '.player-nav-row .btn{font-size:11px!important;font-weight:900!important;padding:2px 3px!important;letter-spacing:0.2px!important;}' +\n");
 
-        /* Transport Row: Giant 44px Tall Full-Width Buttons [ PLAY ] and [ STOP ] */
         js.append("    '.btn-row-4{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;height:44px!important;}' +\n");
         js.append("    '#btn-play, #btn-stop{font-size:14px!important;font-weight:900!important;letter-spacing:0.9px!important;}' +\n");
         js.append("    '#btn-prev, #btn-next{display:none!important;}' +\n");
 
-        /* Archive Mode: 34px Tall Search Input + [ ALL / NEW / UNPLAY ] Filter Button */
         js.append("    '.filter-row-archive{display:grid!important;grid-template-columns:1fr 84px!important;gap:6px!important;height:34px!important;}' +\n");
         js.append("    '#search-box{width:100%!important;height:100%!important;font-size:11px!important;}' +\n");
         js.append("    '#btn-filter-unread{font-size:10.5px!important;font-weight:900!important;padding:2px 4px!important;letter-spacing:0.3px!important;}' +\n");
 
-        /* Radio Mode: 34px Tall Clean Management Row [ MANAGE ] [ ▲ UP ] [ ▼ DN ] [ DEL ] */
         js.append("    '.radio-crud-bar{display:none;grid-template-columns:2fr 1fr 1fr 1fr!important;gap:6px!important;height:34px!important;}' +\n");
         js.append("    '.radio-crud-bar .btn{font-size:10.5px!important;font-weight:900!important;padding:2px!important;}' +\n");
 
-        /* Completely Hide Unwanted Elements */
         js.append("    '#date-select, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
 
-        /* 5-Style Live Signal Meter in #brand-logo-slot on Archive & Radio (With crisp black VU tick marks) */
+        /* Signal Meter */
         js.append("    '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:124px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
         js.append("    '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
         js.append("    '.sm-mode.active{display:flex;}' +\n");
@@ -919,7 +1013,7 @@ public class PlayerActivity extends Activity {
         js.append("    '#player-wake-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
         js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}' +\n");
 
-        /* Larger, More Square LAMP & EXIT Hardware Cap Buttons (22x16px) */
+        /* LAMP & EXIT Cap Buttons */
         js.append("    '#btn-player-lamp{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-right:8px;cursor:pointer;touch-action:manipulation;}' +\n");
         js.append("    '#btn-player-lamp .lamp-cap{width:22px;height:16px;border-radius:5px;background:linear-gradient(180deg,#eab308,#a16207);border:1px solid #422006;box-shadow:0 2px 3px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;}' +\n");
         js.append("    '#btn-player-lamp .lamp-cap::after{content:\"\";width:8px;height:3px;border-radius:1.5px;background:rgba(254,249,195,0.92);box-shadow:0 0 4px rgba(254,249,195,0.5);}' +\n");
@@ -934,7 +1028,7 @@ public class PlayerActivity extends Activity {
         js.append("    '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("  document.head.appendChild(st);\n");
 
-        /* Add 6th Deck Option: DECK: LITE (Hides 3D deck bay, expands Log Screen to 565px!) */
+        /* Add 6th Deck Option: DECK: LITE */
         js.append("  if (typeof decks !== 'undefined' && !decks.some(function(d){ return d.id === 'lite'; })) {\n");
         js.append("    decks.push({ id: 'lite', btn: 'DECK: LITE', hud: 'ARCHIVE // LITE LOG VIEW' });\n");
         js.append("  }\n");
@@ -974,108 +1068,7 @@ public class PlayerActivity extends Activity {
         js.append("    newCycBtn.addEventListener('pointercancel', function() { clearTimeout(dHoldTimer); dHoldTimer = null; });\n");
         js.append("  }\n");
 
-        /* Inject 5-Style Signal Meter: Steady RF Carrier for S-BAR (0), VU DIAL (1) & PEAK dB (4); Voice-Modulated for EQ (2) & SCOPE (3) */
-        js.append("  var bSlot = document.getElementById('brand-logo-slot');\n");
-        js.append("  if (bSlot && !document.getElementById('sig-meter-host')) {\n");
-        js.append("    window.__sigMeterStyle = parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0;\n");
-        js.append("    var segHtml = ''; for (var s=0; s<12; s++) segHtml += '<div class=\"sm-seg\"></div>';\n");
-        js.append("    var specHtml = ''; for (var sp=0; sp<10; sp++) specHtml += '<div class=\"sm-spec-bar\"></div>';\n");
-        js.append("    bSlot.innerHTML = '<div id=\"sig-meter-host\" title=\"Tap to cycle Signal Meter style\">' +\n");
-        js.append("      '<div class=\"sm-mode\" id=\"sm-mode-0\"><span class=\"sm-lbl\">S</span><div class=\"sm-bar-wrap\" id=\"sm-led-bars\">' + segHtml + '</div></div>' +\n");
-        js.append("      '<div class=\"sm-mode\" id=\"sm-mode-1\"><div class=\"sm-vu-wrap\"><div class=\"sm-vu-scale\"><span>S1</span><span>3</span><span>5</span><span>7</span><span>9</span><span style=\"color:#dc2626;\">+30</span></div><div id=\"sm-vu-needle\"></div></div></div>' +\n");
-        js.append("      '<div class=\"sm-mode\" id=\"sm-mode-2\"><span class=\"sm-lbl\">EQ</span><div class=\"sm-spec-wrap\" id=\"sm-spec-bars\">' + specHtml + '</div></div>' +\n");
-        js.append("      '<div class=\"sm-mode\" id=\"sm-mode-3\"><canvas id=\"sm-scope-canvas\" width=\"114\" height=\"16\"></canvas></div>' +\n");
-        js.append("      '<div class=\"sm-mode\" id=\"sm-mode-4\"><div class=\"sm-dig-wrap\"><span id=\"sm-dig-txt\">S0 -98dB</span><div class=\"sm-peak-track\"><div id=\"sm-peak-fill\"></div></div></div></div>' +\n");
-        js.append("    '</div>';\n");
-        js.append("    window.__applyPlayerSigMeterStyle = function(idx) {\n");
-        js.append("      window.__sigMeterStyle = ((idx % 5) + 5) % 5;\n");
-        js.append("      localStorage.setItem('proscan_sig_meter_style_v1', String(window.__sigMeterStyle));\n");
-        js.append("      for (var m = 0; m < 5; m++) {\n");
-        js.append("        var el = document.getElementById('sm-mode-' + m);\n");
-        js.append("        if (el) el.classList.toggle('active', m === window.__sigMeterStyle);\n");
-        js.append("      }\n");
-        js.append("    };\n");
-        js.append("    document.getElementById('sig-meter-host').addEventListener('click', function() {\n");
-        js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
-        js.append("      window.__applyPlayerSigMeterStyle((window.__sigMeterStyle || 0) + 1);\n");
-        js.append("    });\n");
-        js.append("    window.__applyPlayerSigMeterStyle(window.__sigMeterStyle);\n");
-
-        js.append("    var pSmCarrier = 0, pSmAudio = 0, pSmPhase = 0;\n");
-        js.append("    function updatePlayerTopSignalMeter() {\n");
-        js.append("      requestAnimationFrame(updatePlayerTopSignalMeter);\n");
-        js.append("      var rawAud = isPlayingNow ? (window.__audioLevel || 0) : 0;\n");
-        js.append("      var targetCarrier = isPlayingNow ? Math.min(0.94, 0.82 + rawAud * 0.12 + Math.sin(pSmPhase * 0.4) * 0.015) : 0;\n");
-        js.append("      pSmCarrier += (targetCarrier - pSmCarrier) * (targetCarrier > pSmCarrier ? 0.16 : 0.10);\n");
-        js.append("      if (pSmCarrier < 0.01) pSmCarrier = 0;\n");
-        js.append("      pSmAudio += (rawAud - pSmAudio) * (rawAud > pSmAudio ? 0.42 : 0.22);\n");
-        js.append("      if (pSmAudio < 0.015) pSmAudio = 0;\n");
-
-        js.append("      var stIdx = window.__sigMeterStyle || 0;\n");
-        js.append("      if (stIdx === 0) {\n");
-        js.append("        var activeSegs = pSmCarrier < 0.03 ? 0 : Math.min(12, Math.ceil(pSmCarrier * 12));\n");
-        js.append("        var segs = document.querySelectorAll('#sm-led-bars .sm-seg');\n");
-        js.append("        for (var k = 0; k < segs.length; k++) {\n");
-        js.append("          if (k < activeSegs) {\n");
-        js.append("            var col = k >= 9 ? '#ef4444' : (k >= 6 ? '#facc15' : '#22c55e');\n");
-        js.append("            segs[k].style.background = col; segs[k].style.boxShadow = '0 0 4px ' + col;\n");
-        js.append("          } else {\n");
-        js.append("            segs[k].style.background = '#1e293b'; segs[k].style.boxShadow = 'none';\n");
-        js.append("          }\n");
-        js.append("        }\n");
-        js.append("      } else if (stIdx === 1) {\n");
-        js.append("        var ndl = document.getElementById('sm-vu-needle');\n");
-        js.append("        if (ndl) {\n");
-        js.append("          var pct = Math.min(100, Math.max(0, pSmCarrier * 100));\n");
-        js.append("          ndl.style.left = 'calc(3px + ' + (pct * 0.92).toFixed(1) + '%)';\n");
-        js.append("        }\n");
-        js.append("      } else if (stIdx === 2) {\n");
-        js.append("        var bars = document.querySelectorAll('#sm-spec-bars .sm-spec-bar');\n");
-        js.append("        for (var b = 0; b < bars.length; b++) {\n");
-        js.append("          var h = 2;\n");
-        js.append("          if (pSmAudio >= 0.03) {\n");
-        js.append("            var bell = Math.sin(((b + 1) / 11) * Math.PI);\n");
-        js.append("            var wv = 0.55 + 0.45 * Math.sin(b * 0.8 + pSmPhase) * Math.cos(b * 0.4 - pSmPhase * 0.7);\n");
-        js.append("            h = Math.max(2, Math.min(15, Math.round(bell * wv * pSmAudio * 17)));\n");
-        js.append("          }\n");
-        js.append("          bars[b].style.height = h + 'px';\n");
-        js.append("        }\n");
-        js.append("      } else if (stIdx === 3) {\n");
-        js.append("        var cv = document.getElementById('sm-scope-canvas');\n");
-        js.append("        if (cv) {\n");
-        js.append("          var c = cv.getContext('2d'), W = cv.width, H = cv.height;\n");
-        js.append("          c.clearRect(0, 0, W, H);\n");
-        js.append("          c.strokeStyle = pSmAudio >= 0.03 ? '#39ff14' : '#334155';\n");
-        js.append("          c.lineWidth = 1.4; c.beginPath();\n");
-        js.append("          for (var x = 0; x < W; x += 2) {\n");
-        js.append("            var env = Math.sin((x / W) * Math.PI);\n");
-        js.append("            var y = (H / 2) + Math.sin(x * 0.14 + pSmPhase) * Math.cos(x * 0.06 - pSmPhase * 0.5) * env * (pSmAudio * (H * 0.48));\n");
-        js.append("            if (x === 0) c.moveTo(x, y); else c.lineTo(x, y);\n");
-        js.append("          }\n");
-        js.append("          c.stroke();\n");
-        js.append("        }\n");
-        js.append("      } else if (stIdx === 4) {\n");
-        js.append("        var dTxt = document.getElementById('sm-dig-txt');\n");
-        js.append("        var pFill = document.getElementById('sm-peak-fill');\n");
-        js.append("        if (dTxt) {\n");
-        js.append("          if (pSmCarrier < 0.03) {\n");
-        js.append("            dTxt.innerText = 'S0 -98dB'; dTxt.style.color = '#64748b';\n");
-        js.append("          } else {\n");
-        js.append("            var sUnit = Math.min(9, Math.max(1, Math.round(pSmCarrier * 10)));\n");
-        js.append("            var dbVal = -92 + Math.round(pSmCarrier * 58);\n");
-        js.append("            var plusStr = pSmCarrier > 0.80 ? ('S9+' + Math.round((pSmCarrier - 0.78) * 140)) : ('S' + sUnit + ' ' + dbVal + 'dB');\n");
-        js.append("            dTxt.innerText = plusStr;\n");
-        js.append("            dTxt.style.color = pSmCarrier > 0.76 ? '#facc15' : '#39ff14';\n");
-        js.append("          }\n");
-        js.append("        }\n");
-        js.append("        if (pFill) pFill.style.width = Math.min(100, Math.round(pSmCarrier * 100)) + '%';\n");
-        js.append("      }\n");
-        js.append("      pSmPhase += isPlayingNow ? (0.14 + pSmAudio * 0.25) : 0.02;\n");
-        js.append("    }\n");
-        js.append("    updatePlayerTopSignalMeter();\n");
-        js.append("  }\n");
-
-        /* Move #rec-count-hud into the Top Screen Header (between Clock on left and Battery on right) */
+        /* Top Screen Header: Clock on Left, Mode Title + Counter in Center, Battery on Right */
         js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  var modeHudEl = document.getElementById('deck-mode-hud');\n");
@@ -1106,7 +1099,7 @@ public class PlayerActivity extends Activity {
         js.append("    setInterval(updatePlayerBattery, 10000);\n");
         js.append("  }\n");
 
-        /* Middle Status Bar Left: Only WAKE pill */
+        /* Middle Status Bar Left: WAKE pill */
         js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
         js.append("    var wWrap = document.createElement('div');\n");
         js.append("    wWrap.style.cssText = 'display:flex;align-items:center;padding-left:2px;';\n");
@@ -1130,7 +1123,7 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
-        /* Middle Status Bar Right: Larger Square LAMP + EXIT Cap Buttons (EXIT: 1 Tap = System Bars, 2 Taps = Exit App, Long Press = Nothing) */
+        /* Middle Status Bar Right: LAMP + EXIT Cap Buttons (EXIT: 1 Short Tap = System Bars, Long Press 550ms = Full CRT Switch-Off Animation + Exit App) */
         js.append("  var contHud = document.getElementById('cont-status-hud');\n");
         js.append("  if (contHud && !document.getElementById('btn-player-exit')) {\n");
         js.append("    var rWrap = document.createElement('div');\n");
@@ -1168,39 +1161,29 @@ public class PlayerActivity extends Activity {
 
         js.append("    var exBtn = document.createElement('button');\n");
         js.append("    exBtn.id = 'btn-player-exit'; exBtn.type = 'button';\n");
-        js.append("    exBtn.title = '1 Tap: System Bars | 2 Taps: Exit App';\n");
+        js.append("    exBtn.title = 'Tap: System Bars | Hold: Switch Off & Exit App';\n");
         js.append("    exBtn.innerHTML = '<div class=\"exit-cap\"></div><span style=\"font-size:6.5px;font-weight:900;color:var(--toggle-color);letter-spacing:0.5px;\">EXIT</span>';\n");
         js.append("    rWrap.appendChild(exBtn);\n");
-        js.append("    var exDownTime = 0, lastExTap = 0, singleTapTimer = null;\n");
+        js.append("    var exHoldTimer = null, exLongFired = false;\n");
         js.append("    exBtn.addEventListener('pointerdown', function() {\n");
-        js.append("      exDownTime = Date.now();\n");
-        js.append("    });\n");
-        js.append("    exBtn.addEventListener('pointerup', function() {\n");
-        js.append("      var heldMs = Date.now() - exDownTime;\n");
-        js.append("      exDownTime = 0;\n");
-        js.append("      if (heldMs >= 450) return;\n"); /* Long press does nothing */
-        js.append("      var now = Date.now();\n");
-        js.append("      if (now - lastExTap < 360) {\n");
-        js.append("        clearTimeout(singleTapTimer);\n");
-        js.append("        lastExTap = 0;\n");
+        js.append("      clearTimeout(exHoldTimer); exLongFired = false;\n");
+        js.append("      exHoldTimer = setTimeout(function() {\n");
+        js.append("        exHoldTimer = null; exLongFired = true;\n");
         js.append("        if (navigator.vibrate) navigator.vibrate([45, 60, 55]);\n");
         js.append("        if (window.__stopAllRadioAndNativeAudio) window.__stopAllRadioAndNativeAudio();\n");
-        js.append("        var dw = document.getElementById('device-wrapper');\n");
-        js.append("        if (dw) dw.classList.add('fading-out');\n");
-        js.append("        setTimeout(function() { if (window.PlayerBridge && window.PlayerBridge.exitEntireApp) window.PlayerBridge.exitEntireApp(); }, 350);\n");
-        js.append("      } else {\n");
-        js.append("        lastExTap = now;\n");
-        js.append("        clearTimeout(singleTapTimer);\n");
-        js.append("        singleTapTimer = setTimeout(function() {\n");
-        js.append("          lastExTap = 0;\n");
-        js.append("          if (window.PlayerBridge && window.PlayerBridge.showSystemBars) window.PlayerBridge.showSystemBars();\n");
-        js.append("        }, 320);\n");
+        js.append("        document.documentElement.classList.add('tv-shutting-down');\n");
+        js.append("        setTimeout(function() { if (window.PlayerBridge && window.PlayerBridge.exitEntireApp) window.PlayerBridge.exitEntireApp(); }, 720);\n");
+        js.append("      }, 550);\n");
+        js.append("    });\n");
+        js.append("    exBtn.addEventListener('pointerup', function() {\n");
+        js.append("      var wasTap = exHoldTimer !== null; clearTimeout(exHoldTimer); exHoldTimer = null;\n");
+        js.append("      if (wasTap && !exLongFired) {\n");
+        js.append("        if (window.PlayerBridge && window.PlayerBridge.showSystemBars) window.PlayerBridge.showSystemBars();\n");
         js.append("      }\n");
         js.append("    });\n");
-        js.append("    exBtn.addEventListener('pointerleave', function() { exDownTime = 0; });\n");
-        js.append("    exBtn.addEventListener('pointercancel', function() { exDownTime = 0; });\n");
+        js.append("    exBtn.addEventListener('pointerleave', function() { clearTimeout(exHoldTimer); exHoldTimer = null; });\n");
+        js.append("    exBtn.addEventListener('pointercancel', function() { clearTimeout(exHoldTimer); exHoldTimer = null; });\n");
         js.append("  }\n");
-
         /* Stop all native audio AND immediately stop deck animations & reset VU meters */
         js.append("  window.__stopAllRadioAndNativeAudio = function() {\n");
         js.append("    window.__streamLaunchToken = (window.__streamLaunchToken || 0) + 1;\n");
@@ -1230,11 +1213,14 @@ public class PlayerActivity extends Activity {
         js.append("    origTopRow.replaceChild(newScannerBtn, origBackBtn);\n");
         js.append("    newScannerBtn.addEventListener('click', function() {\n");
         js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
-        js.append("      window.__stopAllRadioAndNativeAudio();\n");
+        js.append("      // If in Archive mode, stop archive playback; if in Broadcast Radio mode, keep Radio playing for Priority Auto-Ducking!\n");
+        js.append("      if (!window.__isBroadcastRadioMode) {\n");
+        js.append("        window.__stopAllRadioAndNativeAudio();\n");
+        js.append("      }\n");
         js.append("      if (window.markCurrentListAsVisited) window.markCurrentListAsVisited();\n");
         js.append("      var dw = document.getElementById('device-wrapper');\n");
         js.append("      if (dw) dw.classList.add('fading-out');\n");
-        js.append("      setTimeout(function() { if (window.PlayerBridge) window.PlayerBridge.closePlayer(); }, 180);\n");
+        js.append("      setTimeout(function() { if (window.PlayerBridge) window.PlayerBridge.closePlayerKeepRadio(); }, 180);\n");
         js.append("    });\n");
 
         js.append("    var modeSwitchBtn = document.createElement('button');\n");
@@ -1248,7 +1234,7 @@ public class PlayerActivity extends Activity {
         js.append("      window.setAppMode(!window.__isBroadcastRadioMode);\n");
         js.append("    });\n");
 
-        /* Continuous / Loop Mode Button (CONT: OFF -> CONT: ON -> LOOP: 1) */
+        /* Continuous / Loop Mode Button */
         js.append("    var oldContBtn = document.getElementById('btn-mode-cont');\n");
         js.append("    if (oldContBtn) {\n");
         js.append("      var cBtn = oldContBtn.cloneNode(true);\n");
@@ -1263,11 +1249,10 @@ public class PlayerActivity extends Activity {
         js.append("        cBtn.classList.toggle('active', window.__playModeState !== 0);\n");
         js.append("        var lbl = window.__playModeState === 0 ? 'CONT: OFF' : (window.__playModeState === 1 ? 'CONT: ON' : 'LOOP: 1');\n");
         js.append("        cBtn.innerText = lbl;\n");
-        js.append("        if (typeof showDisplayHud === 'function') showDisplayHud('PLAY MODE: ' + lbl, 1300);\n");
         js.append("      });\n");
         js.append("    }\n");
 
-        /* DSP Audio Clarity Button */
+        /* DSP Audio Clarity Button (Tap = Toggle DSP, Hold = Open Priority Audio Mixer Dialog) */
         js.append("    var dspBtn = document.createElement('button');\n");
         js.append("    dspBtn.id = 'btn-dsp-filter';\n");
         js.append("    dspBtn.className = 'btn';\n");
@@ -1279,11 +1264,23 @@ public class PlayerActivity extends Activity {
         js.append("    if (window.PlayerBridge && window.PlayerBridge.getClarityFilterState) {\n");
         js.append("      syncDspLabel(window.PlayerBridge.getClarityFilterState());\n");
         js.append("    } else { dspBtn.innerText = 'DSP: OFF'; }\n");
-        js.append("    dspBtn.addEventListener('click', function() {\n");
-        js.append("      if (navigator.vibrate) navigator.vibrate(25);\n");
-        js.append("      if (window.PlayerBridge && window.PlayerBridge.toggleClarityFilter) {\n");
-        js.append("        var state = window.PlayerBridge.toggleClarityFilter();\n");
-        js.append("        syncDspLabel(state);\n");
+        js.append("    var pDspTimer = null, pDspLong = false;\n");
+        js.append("    dspBtn.addEventListener('pointerdown', function() {\n");
+        js.append("      clearTimeout(pDspTimer); pDspLong = false;\n");
+        js.append("      pDspTimer = setTimeout(function() {\n");
+        js.append("        pDspTimer = null; pDspLong = true;\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(35);\n");
+        js.append("        if (window.PlayerBridge && window.PlayerBridge.openMixerDialog) window.PlayerBridge.openMixerDialog();\n");
+        js.append("      }, 480);\n");
+        js.append("    });\n");
+        js.append("    dspBtn.addEventListener('pointerup', function() {\n");
+        js.append("      var wasTap = pDspTimer !== null; clearTimeout(pDspTimer); pDspTimer = null;\n");
+        js.append("      if (wasTap && !pDspLong) {\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("        if (window.PlayerBridge && window.PlayerBridge.toggleClarityFilter) {\n");
+        js.append("          var state = window.PlayerBridge.toggleClarityFilter();\n");
+        js.append("          syncDspLabel(state);\n");
+        js.append("        }\n");
         js.append("      }\n");
         js.append("    });\n");
         js.append("    origTopRow.appendChild(dspBtn);\n");
@@ -1292,8 +1289,8 @@ public class PlayerActivity extends Activity {
         js.append("    if (oldTtsBtn) oldTtsBtn.remove();\n");
         js.append("  }\n");
 
-        /* Archive Filter Row ([Search Box] + [ALL / NEW / UNPLAY]) & Radio Management Bar (MANAGE, UP, DN, DEL) */
-        js.append("  window.__archiveFilterMode = 0;\n"); // 0 = ALL, 1 = NEW, 2 = UNPLAY
+        /* Archive Filter Row & Radio Management Bar */
+        js.append("  window.__archiveFilterMode = 0;\n");
         js.append("  var fRow = document.getElementById('date-select').parentNode;\n");
         js.append("  if (fRow && !document.getElementById('radio-crud-row')) {\n");
         js.append("    fRow.className = 'filter-row-archive';\n");
@@ -1368,7 +1365,6 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
-        /* No Default Preset Stations: Starts Empty on First Load, and Normalizes Legacy JSONs ({name, url}) */
         js.append("  window.__normalizeStationList = function(arr) {\n");
         js.append("    if (!Array.isArray(arr)) return [];\n");
         js.append("    var out = [];\n");
@@ -1406,7 +1402,6 @@ public class PlayerActivity extends Activity {
         js.append("    } catch(e) {}\n");
         js.append("  };\n");
 
-        /* Handle Adding or Editing a Radio Station (Only Name and URL—No Band/Mode) */
         js.append("  window.onNativeStationSaved = function(editIdx, name, url) {\n");
         js.append("    try {\n");
         js.append("      var stItem = { name: String(name || '').trim(), url: String(url || '').trim() };\n");
@@ -1426,18 +1421,19 @@ public class PlayerActivity extends Activity {
 
         js.append("  window.__isBroadcastRadioMode = false;\n");
         js.append("  window.__radioIdx = window.__radioStations.length > 0 ? 0 : -1;\n");
-        js.append("  window.__activeRadioUrl = '';\n");
+        js.append("  window.__activeRadioUrl = ").append(activeBgRadioUrl).append(";\n");
 
-        js.append("  window.__startHybridLiveStream = function(url) {\n");
+        js.append("  window.__startHybridLiveStream = function(url, name) {\n");
         js.append("    window.__stopAllRadioAndNativeAudio();\n");
-        js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) {\n");
+        js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrlWithName) {\n");
+        js.append("      window.PlayerBridge.playLiveStreamUrlWithName(url, name || 'RADIO');\n");
+        js.append("    } else if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) {\n");
         js.append("      window.PlayerBridge.playLiveStreamUrl(url);\n");
         js.append("    }\n");
         js.append("  };\n");
 
         js.append("  window.__seenOnPrevVisit = JSON.parse(localStorage.getItem('proscan_seen_visit_ids_v1') || '{}');\n");
         js.append("  window.__playedDriveIds = JSON.parse(localStorage.getItem('proscan_played_recs_v1') || '{}');\n");
-
         js.append("  var mb = document.getElementById('mech-bay');\n");
         js.append("  if (mb && !document.getElementById('deck-global-badge')) {\n");
         js.append("    var bdg = document.createElement('div'); bdg.id = 'deck-global-badge'; bdg.className = 'deck-track-badge';\n");
@@ -1492,7 +1488,7 @@ public class PlayerActivity extends Activity {
         js.append("  window.__audioLevel = 0;\n");
         js.append("  window.__audioProgress = 0;\n");
 
-        /* 3D Decks (Tonearm, Spools, Analog VU Needles, Laser Sled, LED Strip & HACK Scope) Modulate with Voice */
+        /* 3D Decks Modulate with Voice */
         js.append("  window.onNativeTelemetry = function(sec, totSec, prog, level) {\n");
         js.append("    window.__audioProgress = prog || 0;\n");
         js.append("    window.__audioLevel = level || 0;\n");
@@ -1603,7 +1599,7 @@ public class PlayerActivity extends Activity {
         js.append("    drawProSigintScope();\n");
         js.append("  }\n");
 
-        /* Select / Play Radio Station (Clean Station Name Only — No Band or Mode) */
+        /* Select / Play Radio Station */
         js.append("  window.selectRadioStationOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= window.__radioStations.length) return;\n");
         js.append("    window.__radioIdx = idx;\n");
@@ -1630,16 +1626,19 @@ public class PlayerActivity extends Activity {
         js.append("    if (bCh) bCh.innerText = stObj.name;\n");
         js.append("    if (bFr) bFr.innerText = 'ON AIR';\n");
         js.append("    window.renderPlaylist();\n");
-        js.append("    window.__startHybridLiveStream(stObj.url);\n");
+        js.append("    window.__startHybridLiveStream(stObj.url, stObj.name);\n");
         js.append("  };\n");
 
         js.append("  window.setAppMode = function(radioMode, skipAnim) {\n");
         js.append("    var dw = document.getElementById('device-wrapper');\n");
         js.append("    if (dw && !skipAnim) dw.classList.add('fading-out');\n");
         js.append("    setTimeout(function() {\n");
+        js.append("      var wasRadio = window.__isBroadcastRadioMode;\n");
         js.append("      window.__isBroadcastRadioMode = Boolean(radioMode);\n");
-        js.append("      window.__stopAllRadioAndNativeAudio();\n");
-        js.append("      setPlayingUI(false);\n");
+        js.append("      if (wasRadio !== window.__isBroadcastRadioMode && !skipAnim) {\n");
+        js.append("        window.__stopAllRadioAndNativeAudio();\n");
+        js.append("        setPlayingUI(false);\n");
+        js.append("      }\n");
         js.append("      var swBtn = document.getElementById('btn-switch-radio-archive');\n");
         js.append("      var navRowEl = swBtn ? swBtn.parentNode : document.querySelector('.player-nav-row');\n");
         js.append("      var hdr = document.querySelector('.screen-log-header');\n");
@@ -1651,12 +1650,16 @@ public class PlayerActivity extends Activity {
         js.append("        if (navRowEl) navRowEl.classList.add('radio-mode-nav');\n");
         js.append("        if (swBtn) swBtn.innerText = 'ARCHIVE';\n");
         js.append("        document.getElementById('deck-mode-hud').innerText = 'BROADCAST // TUNER';\n");
-        /* Hide the table column header bar completely in Radio Mode */
         js.append("        if (hdr) hdr.style.setProperty('display', 'none', 'important');\n");
         js.append("        if (fRowEl) fRowEl.style.setProperty('display', 'none', 'important');\n");
         js.append("        if (cRowEl) cRowEl.style.setProperty('display', 'grid', 'important');\n");
         js.append("        if (cModeBtn) cModeBtn.style.display = 'none';\n");
         js.append("        if (dspBtnEl) dspBtnEl.style.display = 'none';\n");
+        js.append("        if (").append(isBgRadioPlaying).append(" && window.__activeRadioUrl) {\n");
+        js.append("          var activeIdx = window.__radioStations.findIndex(function(s){ return s.url === window.__activeRadioUrl; });\n");
+        js.append("          if (activeIdx !== -1) window.__radioIdx = activeIdx;\n");
+        js.append("          setPlayingUI(true);\n");
+        js.append("        }\n");
         js.append("        window.renderPlaylist();\n");
         js.append("        if (window.__radioStations.length > 0) {\n");
         js.append("          if (window.__radioIdx < 0 || window.__radioIdx >= window.__radioStations.length) window.__radioIdx = 0;\n");
@@ -1886,20 +1889,22 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
-        /* Live Instant Search Filter for Archive */
         js.append("  var sBox = document.getElementById('search-box');\n");
         js.append("  if (sBox) sBox.addEventListener('input', function() { window.renderPlaylist(); });\n");
 
         if (openInRadio) {
             js.append("  window.setAppMode(true, true);\n");
+            if (isBgRadioPlaying) {
+                js.append("  if (window.PlayerBridge && window.PlayerBridge.attachActiveRadioSession) window.PlayerBridge.attachActiveRadioSession();\n");
+            }
         }
         js.append("})();");
 
         if (playerWeb != null) playerWeb.evaluateJavascript(js.toString(), null);
     }
-    private void stopNativePlayer() {
+
+    private void stopArchiveOnlyPlayer() {
         releaseEqualizer();
-        releasePlaybackLocks();
         currentStreamReqId++;
         liveStreamTapLevel = -1f;
         lastStreamTapUpdateMs = 0L;
@@ -1913,793 +1918,78 @@ public class PlayerActivity extends Activity {
         }
     }
 
-    /* Live Stream Frame Energy & Bit-Entropy Analyzer for Broadcast Radio when Visualizer is blocked by ROM/HLS */
-    private void startLiveStreamEnergyTap(final String resolvedUrl, final int reqId) {
-        liveStreamTapExecutor.execute(() -> {
-            HttpURLConnection conn = null;
-            InputStream is = null;
-            try {
-                String streamTarget = resolvedUrl;
-                if (streamTarget.toLowerCase().contains(".m3u8")) {
-                    String m3uText = fetchUrlText(streamTarget);
-                    String[] lines = m3uText.split("\n");
-                    for (String l : lines) {
-                        l = l.trim();
-                        if (!l.isEmpty() && !l.startsWith("#")) {
-                            streamTarget = new URL(new URL(resolvedUrl), l).toString();
-                            break;
-                        }
-                    }
-                }
-                conn = (HttpURLConnection) new URL(streamTarget).openConnection();
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
-                conn.setInstanceFollowRedirects(true);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                is = conn.getInputStream();
-                byte[] buf = new byte[1024];
-                float runningMin = 120f;
-                float runningMax = 195f;
-                while (reqId == currentStreamReqId && isLiveRadioStream) {
-                    int n = is.read(buf);
-                    if (n <= 0) break;
-                    int zeroRuns = 0;
-                    long diffSum = 0;
-                    int prev = buf[0] & 0xFF;
-                    for (int i = 1; i < n; i++) {
-                        int cur = buf[i] & 0xFF;
-                        int d = Math.abs(cur - prev);
-                        diffSum += d;
-                        if (cur == 0 || cur == 0xFF || d < 3) zeroRuns++;
-                        prev = cur;
-                    }
-                    float avgDiff = (float) diffSum / Math.max(1, n - 1);
-                    float activity = avgDiff * (1f - ((float) zeroRuns / n) * 0.65f);
-                    if (activity < runningMin) runningMin = activity;
-                    else runningMin += (activity - runningMin) * 0.015f;
-                    if (activity > runningMax) runningMax = activity;
-                    else runningMax -= (runningMax - activity) * 0.012f;
-
-                    float span = Math.max(4f, runningMax - runningMin);
-                    float norm = (activity - runningMin) / span;
-                    norm = Math.max(0f, Math.min(1f, norm));
-                    float shaped = (float) Math.pow(norm, 0.78);
-                    liveStreamTapLevel = Math.min(0.96f, Math.max(0.03f, shaped));
-                    lastStreamTapUpdateMs = System.currentTimeMillis();
-                    try { Thread.sleep(38); } catch (InterruptedException ie) { break; }
-                }
-            } catch (Exception ignored) {
-            } finally {
-                try { if (is != null) is.close(); } catch (Exception ignored) {}
-                try { if (conn != null) conn.disconnect(); } catch (Exception ignored) {}
-            }
-        });
-    }
-
-    private float[] extractMp3AmplitudeEnvelope(File mp3File) {
-        int buckets = 240;
-        float[] env = new float[buckets];
-        MediaExtractor extractor = null;
-        MediaCodec codec = null;
-        try {
-            extractor = new MediaExtractor();
-            extractor.setDataSource(mp3File.getAbsolutePath());
-            int numTracks = extractor.getTrackCount();
-            int audioTrack = -1;
-            MediaFormat format = null;
-            String mime = null;
-            for (int i = 0; i < numTracks; i++) {
-                MediaFormat fmt = extractor.getTrackFormat(i);
-                String m = fmt.getString(MediaFormat.KEY_MIME);
-                if (m != null && m.startsWith("audio/")) {
-                    audioTrack = i;
-                    format = fmt;
-                    mime = m;
-                    break;
-                }
-            }
-            if (audioTrack >= 0 && format != null && mime != null) {
-                extractor.selectTrack(audioTrack);
-                codec = MediaCodec.createDecoderByType(mime);
-                codec.configure(format, null, null, 0);
-                codec.start();
-
-                List<Float> windowRmsList = new ArrayList<>(512);
-                MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
-                boolean inputDone = false;
-                boolean outputDone = false;
-                int maxDecodeLoops = 2500;
-
-                while (!outputDone && maxDecodeLoops-- > 0) {
-                    if (!inputDone) {
-                        int inIdx = codec.dequeueInputBuffer(4000);
-                        if (inIdx >= 0) {
-                            ByteBuffer inBuf = codec.getInputBuffer(inIdx);
-                            if (inBuf != null) {
-                                int sampleSize = extractor.readSampleData(inBuf, 0);
-                                if (sampleSize < 0) {
-                                    codec.queueInputBuffer(inIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
-                                    inputDone = true;
-                                } else {
-                                    long pts = extractor.getSampleTime();
-                                    codec.queueInputBuffer(inIdx, 0, sampleSize, pts, 0);
-                                    extractor.advance();
-                                }
-                            }
-                        }
-                    }
-                    int outIdx = codec.dequeueOutputBuffer(info, 4000);
-                    if (outIdx >= 0) {
-                        ByteBuffer outBuf = codec.getOutputBuffer(outIdx);
-                        if (outBuf != null && info.size > 0) {
-                            outBuf.position(info.offset);
-                            outBuf.limit(info.offset + info.size);
-                            ShortBuffer sb = outBuf.order(ByteOrder.nativeOrder()).asShortBuffer();
-                            int nShorts = sb.remaining();
-                            int step = 256;
-                            for (int s = 0; s < nShorts; s += step) {
-                                int end = Math.min(nShorts, s + step);
-                                double sumSq = 0;
-                                int peak = 0;
-                                for (int k = s; k < end; k++) {
-                                    int val = Math.abs((int) sb.get(k));
-                                    if (val > peak) peak = val;
-                                    sumSq += (double) val * (double) val;
-                                }
-                                int count = Math.max(1, end - s);
-                                float rms = (float) Math.sqrt(sumSq / count);
-                                float combined = (rms * 0.65f) + (peak * 0.35f);
-                                windowRmsList.add(combined);
-                            }
-                        }
-                        codec.releaseOutputBuffer(outIdx, false);
-                        if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                            outputDone = true;
-                        }
-                    }
-                }
-
-                if (windowRmsList.size() > 8) {
-                    float maxRms = 1f;
-                    for (float v : windowRmsList) {
-                        if (v > maxRms) maxRms = v;
-                    }
-                    float noiseFloor = maxRms * 0.08f;
-                    int totalWins = windowRmsList.size();
-                    for (int b = 0; b < buckets; b++) {
-                        int wStart = (b * totalWins) / buckets;
-                        int wEnd = Math.max(wStart + 1, ((b + 1) * totalWins) / buckets);
-                        float localMax = 0f;
-                        for (int w = wStart; w < wEnd && w < totalWins; w++) {
-                            float val = windowRmsList.get(w);
-                            if (val > localMax) localMax = val;
-                        }
-                        if (localMax <= noiseFloor) {
-                            env[b] = 0.02f;
-                        } else {
-                            float norm = (localMax - noiseFloor) / Math.max(1f, (maxRms - noiseFloor));
-                            norm = (float) Math.pow(norm, 0.78);
-                            env[b] = Math.min(0.98f, Math.max(0.03f, norm));
-                        }
-                    }
-                    return env;
-                }
-            }
-        } catch (Exception ignored) {
-        } finally {
-            if (codec != null) {
-                try { codec.stop(); } catch (Exception ignored) {}
-                try { codec.release(); } catch (Exception ignored) {}
-            }
-            if (extractor != null) {
-                try { extractor.release(); } catch (Exception ignored) {}
-            }
-        }
-        return env;
-    }
-
-    private String resolveRedirects(String urlStr) {
-        String current = urlStr;
-        for (int hop = 0; hop < 6; hop++) {
-            try {
-                HttpURLConnection conn = (HttpURLConnection) new URL(current).openConnection();
-                conn.setInstanceFollowRedirects(false);
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                int code = conn.getResponseCode();
-                if (code >= 300 && code < 400) {
-                    String loc = conn.getHeaderField("Location");
-                    conn.disconnect();
-                    if (loc == null || loc.isEmpty()) break;
-                    current = new URL(new URL(current), loc).toString();
-                } else {
-                    conn.disconnect();
-                    break;
-                }
-            } catch (Exception e) {
-                break;
-            }
-        }
-        return current;
-    }
-
-    private void playLiveRadioUrlNatively(final String streamUrl) {
-        stopNativePlayer();
-        acquirePlaybackLocks();
-        activeLiveRadioUrl = streamUrl;
-        final int reqId = ++currentStreamReqId;
-        audioFetchExecutor.execute(() -> {
-            final String resolvedUrl = resolveRedirects(streamUrl);
-            if (reqId != currentStreamReqId) return;
-            mainHandler.post(() -> {
-                if (reqId != currentStreamReqId) return;
-                try {
-                    if (nativePlayer != null) {
-                        try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
-                        nativePlayer = null;
-                    }
-                    isLiveRadioStream = true;
-                    nativePlayer = new MediaPlayer();
-                    nativePlayer.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
-                    if (Build.VERSION.SDK_INT >= 21) {
-                        nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
-                                .setUsage(AudioAttributes.USAGE_MEDIA)
-                                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                                .build());
-                    }
-                    Map<String, String> headers = new HashMap<>();
-                    headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                    nativePlayer.setDataSource(PlayerActivity.this, Uri.parse(resolvedUrl), headers);
-                    nativePlayer.setOnPreparedListener(mp -> {
-                        if (reqId != currentStreamReqId) {
-                            try { mp.stop(); mp.release(); } catch (Exception ignored) {}
-                            return;
-                        }
-                        setupEqualizer(mp.getAudioSessionId());
-                        startLiveStreamEnergyTap(resolvedUrl, reqId);
-                        mp.start();
-                        if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
-                        mainHandler.post(progressTicker);
-                    });
-                    nativePlayer.setOnCompletionListener(mp -> {
-                        if (reqId == currentStreamReqId && isLiveRadioStream && !activeLiveRadioUrl.isEmpty()) {
-                            mainHandler.postDelayed(() -> {
-                                if (reqId == currentStreamReqId && isLiveRadioStream && !activeLiveRadioUrl.isEmpty()) {
-                                    playLiveRadioUrlNatively(activeLiveRadioUrl);
-                                }
-                            }, 1200);
-                        }
-                    });
-                    nativePlayer.setOnErrorListener((mp, what, extra) -> {
-                        if (reqId == currentStreamReqId) {
-                            if (isLiveRadioStream && !activeLiveRadioUrl.isEmpty()) {
-                                final String retryUrl = activeLiveRadioUrl;
-                                mainHandler.postDelayed(() -> {
-                                    if (isLiveRadioStream && !retryUrl.isEmpty()) {
-                                        playLiveRadioUrlNatively(retryUrl);
-                                    }
-                                }, 2000);
-                            } else {
-                                stopNativePlayer();
-                                if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM OFFLINE');", null);
-                            }
-                        }
-                        return true;
-                    });
-                    nativePlayer.prepareAsync();
-                } catch (Exception e) {
-                    if (reqId == currentStreamReqId && playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
-                    }
-                }
-            });
-        });
-    }
-
-    private void playDriveFileIdNatively(final String fileId) {
-        stopNativePlayer();
-        acquirePlaybackLocks();
-        final int reqId = ++currentStreamReqId;
-        final String urlStr = "https://drive.usercontent.google.com/download?id=" + fileId + "&export=download";
-        audioFetchExecutor.execute(() -> {
-            try {
-                File tempMp3 = new File(getCacheDir(), "active_track.mp3");
-                URL url = new URL(urlStr);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(9000);
-                conn.setReadTimeout(9000);
-                conn.setInstanceFollowRedirects(true);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                InputStream is = conn.getInputStream();
-                FileOutputStream fos = new FileOutputStream(tempMp3);
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = is.read(buf)) != -1) {
-                    if (reqId != currentStreamReqId) {
-                        fos.close(); is.close(); conn.disconnect();
-                        return;
-                    }
-                    fos.write(buf, 0, n);
-                }
-                fos.close();
-                is.close();
-                conn.disconnect();
-                if (reqId != currentStreamReqId) return;
-
-                final float[] env = extractMp3AmplitudeEnvelope(tempMp3);
-
-                mainHandler.post(() -> {
-                    if (reqId != currentStreamReqId) return;
-                    try {
-                        if (nativePlayer != null) {
-                            try { nativePlayer.reset(); nativePlayer.release(); } catch (Exception ignored) {}
-                            nativePlayer = null;
-                        }
-                        isLiveRadioStream = false;
-                        currentEnvelope = env;
-                        nativePlayer = new MediaPlayer();
-                        nativePlayer.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
-                        if (Build.VERSION.SDK_INT >= 21) {
-                            nativePlayer.setAudioAttributes(new AudioAttributes.Builder()
-                                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                    .build());
-                        }
-                        FileInputStream fis = new FileInputStream(tempMp3);
-                        nativePlayer.setDataSource(fis.getFD());
-                        fis.close();
-                        nativePlayer.setOnPreparedListener(mp -> {
-                            if (reqId != currentStreamReqId) {
-                                try { mp.stop(); mp.release(); } catch (Exception ignored) {}
-                                return;
-                            }
-                            setupEqualizer(mp.getAudioSessionId());
-                            mp.start();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
-                            mainHandler.post(progressTicker);
-                        });
-                        nativePlayer.setOnCompletionListener(mp -> {
-                            stopNativePlayer();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayEnded)window.onNativePlayEnded();", null);
-                        });
-                        nativePlayer.prepareAsync();
-                    } catch (Exception e) {
-                        if (playerWeb != null) playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('PLAY ERROR');", null);
-                    }
-                });
-            } catch (Exception e) {
-                mainHandler.post(() -> {
-                    if (reqId == currentStreamReqId && playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM ERROR');", null);
-                    }
-                });
-            }
-        });
-    }
-
-    /* Simplified Add / Edit Radio Station Dialog (Only Station Name and Direct Stream URL — No Band / Mode) */
-    private void openAddOrEditStationDialog(final int editIdx, String curName, String curUrl) {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int) (18 * getResources().getDisplayMetrics().density);
-        layout.setPadding(pad, pad, pad, pad);
-
-        TextView l1 = new TextView(this);
-        l1.setText("Station Name (e.g. BBC Radio 5 Live):");
-        layout.addView(l1);
-        final EditText nameInput = new EditText(this);
-        nameInput.setText(curName != null ? curName : "");
-        layout.addView(nameInput);
-
-        TextView l2 = new TextView(this);
-        l2.setText("\nDirect Stream URL (.mp3 / .aac / .m3u8):");
-        layout.addView(l2);
-        final EditText urlInput = new EditText(this);
-        urlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        urlInput.setText(curUrl != null ? curUrl : "");
-        layout.addView(urlInput);
-
-        new AlertDialog.Builder(this)
-                .setTitle(editIdx >= 0 ? "Edit Radio Station" : "Add Radio Station")
-                .setView(layout)
-                .setPositiveButton("Save Station", (d, w) -> {
-                    String n = nameInput.getText().toString().trim();
-                    String u = urlInput.getText().toString().trim();
-                    if (n.isEmpty() || u.isEmpty()) {
-                        Toast.makeText(PlayerActivity.this, "Station Name and Stream URL required", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    String jsCall = "if(window.onNativeStationSaved)window.onNativeStationSaved("
-                            + editIdx + "," + JSONObject.quote(n) + "," + JSONObject.quote(u) + ");";
-                    if (playerWeb != null) playerWeb.evaluateJavascript(jsCall, null);
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    public class PlayerBridge {
-        @JavascriptInterface
-        public String getServerUrl() { return serverBaseUrl; }
-
-        @JavascriptInterface
-        public String getBatteryStatus() { return getNativeBatteryStatus(); }
-
-        @JavascriptInterface
-        public void triggerBedroomLamp(final boolean turnOn) {
-            mainHandler.post(() -> triggerAlexaWebhook(turnOn));
-        }
-
-        @JavascriptInterface
-        public void openLampSetup() {
-            mainHandler.post(() -> showAlexaLampSetupDialog());
-        }
-
-        @JavascriptInterface
-        public boolean toggleClarityFilter() {
-            clarityFilterEnabled = !clarityFilterEnabled;
-            prefs.edit().putBoolean("clarity_filter_on", clarityFilterEnabled).apply();
-            mainHandler.post(() -> {
-                if (speechEqualizer != null) {
-                    try {
-                        speechEqualizer.setEnabled(clarityFilterEnabled);
-                        if (clarityFilterEnabled) {
-                            configureSpeechBands(speechEqualizer);
-                        }
-                    } catch (Exception ignored) {}
-                }
-                Toast.makeText(PlayerActivity.this, clarityFilterEnabled ? "Audio Clarity: ON (Voice Boost & De-Hiss)" : "Audio Clarity: OFF", Toast.LENGTH_SHORT).show();
-            });
-            return clarityFilterEnabled;
-        }
-
-        @JavascriptInterface
-        public boolean getClarityFilterState() {
-            return clarityFilterEnabled;
-        }
-
-        @JavascriptInterface
-        public void setWakeLock(final boolean keepOn) {
-            mainHandler.post(() -> {
-                applyPlayerWakeLock(keepOn);
-                Toast.makeText(PlayerActivity.this, keepOn ? "Screen Wake: ON (All Modes)" : "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
-            });
-        }
-
-        @JavascriptInterface
-        public void setWebStreamActive(final boolean active) {
-            mainHandler.post(() -> {
-                isLiveRadioStream = active;
-                mainHandler.removeCallbacks(progressTicker);
-                if (active) mainHandler.post(progressTicker);
-            });
-        }
-
-        @JavascriptInterface
-        public void saveStationsJson(final String jsonStr, final boolean showToast) {
-            mainHandler.post(() -> saveRadioStationsJsonToDownloads(jsonStr, showToast));
-        }
-
-        @JavascriptInterface
-        public void openStationJsonMenu(final int curIdx, final String name, final String url) {
-            mainHandler.post(() -> showStationMenuDialog(curIdx, name, url));
-        }
-
-        @JavascriptInterface
-        public void refreshRecordings() {
-            loadLiveGoogleDriveRecordings();
-        }
-
-        @JavascriptInterface
-        public void playDriveIdDirect(final String fileId) {
-            mainHandler.post(() -> playDriveFileIdNatively(fileId));
-        }
-
-        @JavascriptInterface
-        public void playLiveStreamUrl(final String url) {
-            mainHandler.post(() -> playLiveRadioUrlNatively(url));
-        }
-
-        @JavascriptInterface
-        public void showStationDialog(final int editIdx, final String name, final String url) {
-            mainHandler.post(() -> openAddOrEditStationDialog(editIdx, name, url));
-        }
-
-        @JavascriptInterface
-        public void seekToSeconds(final int sec) {
-            mainHandler.post(() -> {
-                try { if (nativePlayer != null && !isLiveRadioStream) nativePlayer.seekTo(sec * 1000); } catch (Exception ignored) {}
-            });
-        }
-
-        @JavascriptInterface
-        public void stopAudio() { mainHandler.post(() -> stopNativePlayer()); }
-
-        @JavascriptInterface
-        public void togglePause() {
-            mainHandler.post(() -> {
-                try {
-                    if (nativePlayer != null) {
-                        if (nativePlayer.isPlaying()) {
-                            nativePlayer.pause();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(typeof setPlayingUI==='function')setPlayingUI(false);renderPlaylist();", null);
-                        } else {
-                            nativePlayer.start();
-                            if (playerWeb != null) playerWeb.evaluateJavascript("if(typeof setPlayingUI==='function')setPlayingUI(true);renderPlaylist();", null);
-                            mainHandler.post(progressTicker);
-                        }
-                    }
-                } catch (Exception ignored) {}
-            });
-        }
-
-        @JavascriptInterface
-        public void openGoogleDriveFolder() {
-            mainHandler.post(() -> {
-                try {
-                    Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://drive.google.com/drive/folders/" + GDRIVE_ROOT_FOLDER_ID));
-                    startActivity(i);
-                } catch (Exception ignored) {}
-            });
-        }
-
-        @JavascriptInterface
-        public void speakCaption(final String text) {
-            mainHandler.post(() -> {
-                if (tts != null && ttsReady && text != null && !text.trim().isEmpty()) {
-                    String clean = text.trim();
-                    int commaIdx = clean.indexOf(',');
-                    String chKey = (commaIdx != -1 ? clean.substring(commaIdx + 1) : clean).trim().toLowerCase(Locale.ROOT);
-                    long now = System.currentTimeMillis();
-                    if (chKey.equals(lastSpokenCaption) && (now - lastSpokenCaptionMs < 30000L)) {
-                        return;
-                    }
-                    lastSpokenCaption = chKey;
-                    lastSpokenCaptionMs = now;
-                    if (Build.VERSION.SDK_INT >= 21) {
-                        Bundle params = new Bundle();
-                        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.25f);
-                        tts.speak(clean, TextToSpeech.QUEUE_FLUSH, params, "player_tts");
-                    } else {
-                        tts.speak(clean, TextToSpeech.QUEUE_FLUSH, null);
-                    }
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public void showSystemBars() {
-            mainHandler.post(() -> {
-                showBothSystemBarsNow();
-                mainHandler.postDelayed(() -> hideSystemUI(), 4500);
-            });
-        }
-
-        @JavascriptInterface
-        public void minimizeApp() {
-            mainHandler.post(() -> moveTaskToBack(true));
-        }
-
-        @JavascriptInterface
-        public void exitEntireApp() {
-            mainHandler.post(() -> {
-                stopNativePlayer();
-                try { stopService(new Intent(PlayerActivity.this, AudioKeepAliveService.class)); } catch (Exception ignored) {}
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    finishAffinity();
-                    finishAndRemoveTask();
-                } else {
-                    finishAffinity();
-                }
-                System.exit(0);
-            });
-        }
-
-        @JavascriptInterface
-        public void closePlayer() {
-            mainHandler.post(() -> {
-                stopNativePlayer();
-                finish();
-                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
-            });
-        }
-    }
-
-    private String fetchUrlText(String urlStr) {
-        try {
-            String sep = urlStr.contains("?") ? "&" : "?";
-            URL url = new URL(urlStr + sep + "_t=" + System.currentTimeMillis());
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(9000);
-            conn.setReadTimeout(9000);
-            conn.setUseCaches(false);
-            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
-            conn.setRequestProperty("Pragma", "no-cache");
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) sb.append(line).append("\n");
-            reader.close();
-            conn.disconnect();
-            return sb.toString();
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    private Map<String, String> parseDriveFolderAllItems(String folderId) {
-        Map<String, String> map = new LinkedHashMap<>();
-        if (folderId == null || folderId.isEmpty()) return map;
-        String html1 = fetchUrlText("https://drive.google.com/embeddedfolderview?id=" + folderId);
-        if (!html1.isEmpty()) {
-            Pattern p1 = Pattern.compile("id=\"entry-([A-Za-z0-9_-]{15,})\"[\\s\\S]*?<div class=\"flip-entry-title\">([^<]+)</div>");
-            Matcher m1 = p1.matcher(html1);
-            while (m1.find()) {
-                map.put(m1.group(2).trim().replace("&amp;", "&").replace("&#39;", "'").replace("&quot;", "\""), m1.group(1).trim());
-            }
-        }
-        String html2 = fetchUrlText("https://drive.google.com/drive/folders/" + folderId);
-        if (!html2.isEmpty()) {
-            String unescaped = html2.replace("\\u0022", "\"").replace("\\\"", "\"");
-            Pattern p2 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"([^\"]+\\.mp3)\"");
-            Matcher m2 = p2.matcher(unescaped);
-            while (m2.find()) map.put(m2.group(2).trim().replace("&amp;", "&").replace("&#39;", "'"), m2.group(1).trim());
-            Pattern p3 = Pattern.compile("\"([A-Za-z0-9_-]{25,44})\"[^\\[]{0,140}?\"(\\d{2}-\\d{2}-\\d{2}|Scan)\"");
-            Matcher m3 = p3.matcher(unescaped);
-            while (m3.find()) map.put(m3.group(2).trim(), m3.group(1).trim());
-        }
-        return map;
-    }
-
-    private static class RecItem implements Comparable<RecItem> {
-        String fileId, fileName, dateStr, timeStr, freq, dur, name, sortKey;
-        @Override
-        public int compareTo(RecItem o) { return o.sortKey.compareTo(this.sortKey); }
-    }
-
-    private RecItem parseMp3Filename(String dateFolder, String fileName, String fileId) {
-        String base = fileName.endsWith(".mp3") ? fileName.substring(0, fileName.length() - 4) : fileName;
-        Pattern pat = Pattern.compile("^(.*?)\\s+-\\s+(\\d+\\.\\d+)\\s+-\\s+(\\d{2})-(\\d{2})-(\\d{2})(?:.*?TO\\s+(\\d{2})-(\\d{2})-(\\d{2}))?");
-        Matcher m = pat.matcher(base);
-        RecItem item = new RecItem();
-        item.fileId = fileId;
-        item.fileName = fileName;
-        item.dateStr = dateFolder;
-        if (m.find()) {
-            item.name = m.group(1).trim();
-            item.freq = m.group(2).trim();
-            String h1 = m.group(3), m1 = m.group(4), s1 = m.group(5);
-            item.timeStr = h1 + ":" + m1 + ":" + s1;
-            item.dur = "00:03";
-            if (m.group(6) != null) {
-                try {
-                    int t1 = Integer.parseInt(h1) * 3600 + Integer.parseInt(m1) * 60 + Integer.parseInt(s1);
-                    int t2 = Integer.parseInt(m.group(6)) * 3600 + Integer.parseInt(m.group(7)) * 60 + Integer.parseInt(m.group(8));
-                    int diff = t2 - t1;
-                    if (diff < 0) diff += 86400;
-                    item.dur = String.format(Locale.US, "%02d:%02d", diff / 60, diff % 60);
-                } catch (Exception ignored) {}
-            }
-        } else {
-            String[] parts = base.split(" - ");
-            item.name = parts.length > 0 ? parts[0].trim() : base;
-            item.freq = parts.length > 1 ? parts[1].trim() : "---.----";
-            item.timeStr = parts.length > 2 ? parts[2].replace('-', ':').trim() : "00:00:00";
-            item.dur = "--:--";
-        }
-        String[] dp = dateFolder.split("-");
-        String isoDate = dp.length == 3 ? (dp[2] + "-" + dp[0] + "-" + dp[1]) : dateFolder;
-        item.sortKey = isoDate + " " + item.timeStr + " " + fileName;
-        return item;
-    }
-
-    private void loadLiveGoogleDriveRecordings() {
-        if (isFetchingDrive) return;
-        isFetchingDrive = true;
-        executor.execute(() -> {
-            try {
-                Map<String, String> rootItems = parseDriveFolderAllItems(GDRIVE_ROOT_FOLDER_ID);
-                List<String> dateFolders = new ArrayList<>();
-                for (String title : rootItems.keySet()) {
-                    if (title.matches("\\d{2}-\\d{2}-\\d{2}")) dateFolders.add(title);
-                }
-                Collections.sort(dateFolders, (a, b) -> {
-                    String[] pa = a.split("-"), pb = b.split("-");
-                    String ka = pa.length == 3 ? (pa[2] + pa[0] + pa[1]) : a;
-                    String kb = pb.length == 3 ? (pb[2] + pb[0] + pb[1]) : b;
-                    return kb.compareTo(ka);
-                });
-                List<RecItem> allItems = new ArrayList<>();
-                int maxDates = Math.min(dateFolders.size(), 3);
-                for (int i = 0; i < maxDates; i++) {
-                    String dFolder = dateFolders.get(i);
-                    String dId = rootItems.get(dFolder);
-                    if (dId == null) continue;
-                    Map<String, String> dateChildren = parseDriveFolderAllItems(dId);
-                    for (Map.Entry<String, String> e : dateChildren.entrySet()) {
-                        if (e.getKey().toLowerCase().endsWith(".mp3")) {
-                            allItems.add(parseMp3Filename(dFolder, e.getKey(), e.getValue()));
-                        } else {
-                            Map<String, String> subChildren = parseDriveFolderAllItems(e.getValue());
-                            for (Map.Entry<String, String> se : subChildren.entrySet()) {
-                                if (se.getKey().toLowerCase().endsWith(".mp3")) {
-                                    allItems.add(parseMp3Filename(dFolder, se.getKey(), se.getValue()));
-                                }
-                            }
-                        }
-                    }
-                }
-                Collections.sort(allItems);
-                JSONArray arr = new JSONArray();
-                for (RecItem it : allItems) {
-                    JSONObject o = new JSONObject();
-                    o.put("fileId", it.fileId);
-                    o.put("fileName", it.fileName);
-                    o.put("dateStr", it.dateStr);
-                    o.put("timeStr", it.timeStr);
-                    o.put("freq", it.freq);
-                    o.put("dur", it.dur);
-                    o.put("name", it.name);
-                    arr.put(o);
-                }
-                final String escapedJson = JSONObject.quote(arr.toString());
-                mainHandler.post(() -> {
-                    isFetchingDrive = false;
-                    if (playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onDriveRecordingsLoaded)window.onDriveRecordingsLoaded(" + escapedJson + ");", null);
-                    }
-                });
-            } catch (Exception ignored) {
-                isFetchingDrive = false;
-            }
-        });
-    }
-
-    private void hideSystemUI() {
-        try {
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-            getWindow().getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_FULLSCREEN
-            );
-            if (Build.VERSION.SDK_INT >= 30) {
-                WindowInsetsController ic = getWindow().getInsetsController();
-                if (ic != null) {
-                    ic.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                    ic.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                }
-            }
-        } catch (Exception ignored) {}
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        if (playerWeb != null) {
-            playerWeb.evaluateJavascript("if(window.markCurrentListAsVisited)window.markCurrentListAsVisited();", null);
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
-        try {
-            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
-                audioManager.unregisterAudioDeviceCallback(btDeviceCallback);
-            }
-        } catch (Exception ignored) {}
-        mainHandler.removeCallbacks(autoSyncRunnable);
-        stopNativePlayer();
+    private void stopNativePlayer() {
+        stopArchiveOnlyPlayer();
+        MainActivity.PriorityRadioEngine.stopStation();
         releasePlaybackLocks();
-        try {
-            if (tts != null) { tts.stop(); tts.shutdown(); }
-            if (playerWeb != null) { playerWeb.loadUrl("about:blank"); playerWeb.destroy(); }
-        } catch (Exception ignored) {}
-        super.onDestroy();
     }
-}
+    var FOLDER_ID = '1gToQyY6YPOk_3muiQSY5WLy7jTSvXbTv';
+
+    function driveListChildren(parentIds) {
+      var clauses = parentIds.map(function(id) { return "'" + id + "' in parents"; }).join(' or ');
+      var q = encodeURIComponent("(" + clauses + ") and trashed = false");
+      var url = 'https://www.googleapis.com/drive/v3/files?q=' + q +
+                '&fields=files(id,name,createdTime,mimeType,trashed,size)&orderBy=name+desc&pageSize=250' +
+                '&key=' + encodeURIComponent(apiKey) + '&_t=' + Date.now();
+      return fetch(url, { cache: 'no-store' }).then(function(r) { return r.json(); });
+    }
+
+    function fetchRecordings() {
+      if (window.AndroidApp && typeof window.AndroidApp.fetchDriveRecordingsForWeb === 'function') {
+        listEl.textContent = 'Syncing active recordings from Google Drive...';
+        window.__renderPcTapeDeckFromNative = function(items) {
+          tracks = (items || []).filter(function(f) {
+            return f && !window.__deletedDriveIds[f.id] && !window.__deletedDriveIds[f.name];
+          });
+          renderTracks();
+        };
+        window.AndroidApp.fetchDriveRecordingsForWeb();
+        return;
+      }
+      if (!apiKey) {
+        listEl.textContent = 'Missing Google Drive API Key. Tap [API KEY] above.';
+        return;
+      }
+      window.__deletedDriveIds = JSON.parse(localStorage.getItem('proscan_deleted_recs_v1') || '{}');
+      listEl.textContent = 'Syncing date folders from Google Drive...';
+
+      driveListChildren([FOLDER_ID]).then(function(rootData) {
+        if (rootData.error) {
+          listEl.textContent = 'Drive Error: ' + (rootData.error.message || 'Check API Key');
+          return;
+        }
+        var rootFiles = rootData.files || [];
+        var dateFolders = rootFiles.filter(function(f) {
+          return f.mimeType === 'application/vnd.google-apps.folder' && /^\d{2}-\d{2}-\d{2}$/.test(f.name);
+        }).slice(0, 3);
+
+        var directMp3s = rootFiles.filter(function(f) { return /\.(mp3|wav|m4a)$/i.test(f.name); });
+        if (!dateFolders.length) {
+          tracks = directMp3s;
+          renderTracks();
+          return;
+        }
+        return driveListChildren(dateFolders.map(function(d) { return d.id; })).then(function(level1) {
+          var l1Files = (level1 && level1.files) || [];
+          var subFolders = l1Files.filter(function(f) { return f.mimeType === 'application/vnd.google-apps.folder'; });
+          var l1Mp3s = l1Files.filter(function(f) { return /\.(mp3|wav|m4a)$/i.test(f.name); });
+          if (!subFolders.length) {
+            tracks = directMp3s.concat(l1Mp3s);
+            renderTracks();
+            return;
+          }
+          return driveListChildren(subFolders.map(function(s) { return s.id; })).then(function(level2) {
+            var l2Mp3s = ((level2 && level2.files) || []).filter(function(f) { return /\.(mp3|wav|m4a)$/i.test(f.name); });
+            tracks = directMp3s.concat(l1Mp3s).concat(l2Mp3s).filter(function(f) {
+              if (!f || f.trashed === true) return false;
+              if (f.size !== undefined && parseInt(f.size, 10) <= 0) return false;
+              if (window.__deletedDriveIds[f.id] || window.__deletedDriveIds[f.name]) return false;
+              return true;
+            });
+            renderTracks();
+          });
+        });
+      }).catch(function() {
+        listEl.textContent = 'Network error connecting to Google Drive.';
+      });
+    }
