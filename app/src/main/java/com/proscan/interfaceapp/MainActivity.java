@@ -193,7 +193,6 @@ public class MainActivity extends Activity implements SensorEventListener {
                         isScannerRxActive = false;
                         handler.removeCallbacks(restoreVolumeRunnable);
                         if (voiceReadoutEnabled) {
-                            // Give the post-transmission log poll + TTS up to 1.4s to start speaking before starting the 2.5s timer
                             isWaitingForPendingTts = true;
                             handler.removeCallbacks(clearPendingTtsWaitRunnable);
                             handler.postDelayed(clearPendingTtsWaitRunnable, 1400);
@@ -204,6 +203,14 @@ public class MainActivity extends Activity implements SensorEventListener {
                     }
                 }
             });
+        }
+
+        public static void notifyScannerRx(final SharedPreferences prefs, final boolean rxActive, final boolean voiceReadoutEnabled) {
+            onScannerRxStateChanged(prefs, rxActive, voiceReadoutEnabled);
+        }
+
+        public static void notifyScannerRx(final SharedPreferences prefs, final boolean rxActive) {
+            onScannerRxStateChanged(prefs, rxActive, false);
         }
 
         public static void onTtsSpeechStateChanged(final SharedPreferences prefs, final boolean speaking) {
@@ -222,6 +229,11 @@ public class MainActivity extends Activity implements SensorEventListener {
                     }
                 }
             });
+        }
+
+        // Backwards-compatible alias so PlayerActivity.java compiles whether it calls notifyTtsSpeaking or onTtsSpeechStateChanged
+        public static void notifyTtsSpeaking(final SharedPreferences prefs, final boolean speaking) {
+            onTtsSpeechStateChanged(prefs, speaking);
         }
 
         public static synchronized boolean isRadioPlaying() {
@@ -345,7 +357,6 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-
     private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
@@ -1153,332 +1164,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 600);
     }
-    private void injectEnhancements() {
-        String sharedStorage = prefs.getString("shared_web_storage", "");
-        String safeShared = JSONObject.quote(sharedStorage);
-        boolean wakePref = prefs.getBoolean("wake_lock_on", true);
-
-        StringBuilder js = new StringBuilder();
-        js.append("(function() {\n");
-        js.append("  try {\n");
-        js.append("    try {\n");
-        js.append("      Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });\n");
-        js.append("      Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });\n");
-        js.append("    } catch(e) {}\n");
-
-        js.append("    var existingSt = document.getElementById('proscan-v7-upgrade-css');\n");
-        js.append("    if (document.head && !existingSt) {\n");
-        js.append("      var st = document.createElement('style');\n");
-        js.append("      st.id = 'proscan-v7-upgrade-css';\n");
-        js.append("      st.textContent = '' +\n");
-        js.append("        'html{--gloss-deg:125deg;--gloss-pos:34%;--tilt-x:0px;--tilt-y:0px;}' +\n");
-        js.append("        '#device-wrapper{width:95%!important;max-height:94dvh!important;transition:opacity 0.18s ease!important;}' +\n");
-        js.append("        '#device-wrapper.flipping-out{opacity:0!important;}' +\n");
-        js.append("        '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;}' +\n");
-        /* Tilt-Reactive Dynamic Lighting on All 24 Skins */
-        js.append("        '#custom-scanner-ui::after{background:radial-gradient(circle at calc(50% + var(--tilt-x,0px) * 5) calc(22% + var(--tilt-y,0px) * 5),rgba(255,255,255,0.09) 0%,transparent 62%)!important;transition:background 0.08s linear!important;}' +\n");
-        js.append("        '.scanner-display{height:325px!important;transition:height 0.22s ease!important;}' +\n");
-        js.append("        '.top-controls-container{height:34px!important;}' +\n");
-        js.append("        '.top-right-group{height:34px!important;}' +\n");
-        js.append("        '.top-right-group .btn{font-size:11px!important;}' +\n");
-        js.append("        '.scanner-nav-6{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:4px!important;height:32px!important;}' +\n");
-        js.append("        '.scanner-nav-6 .btn{font-size:8.5px!important;letter-spacing:-0.3px!important;padding:2px 1px!important;white-space:nowrap!important;}' +\n");
-        js.append("        '.essential-controls{grid-auto-rows:33px!important;gap:6px!important;}' +\n");
-        js.append("        '.essential-controls > .btn{font-size:11.5px!important;}' +\n");
-        js.append("        '.essential-controls .scroll-btn{font-size:9px!important;}' +\n");
-        js.append("        '.numpad{grid-auto-rows:34px!important;gap:6px!important;}' +\n");
-        js.append("        '.numpad .btn{font-size:15.5px!important;font-weight:900!important;}' +\n");
-
-        /* Original Classic Gloss Glass Reflection — Now Moves Smoothly with Phone Tilt Angle! */
-        js.append("        'html[data-disp-tex=\"glass\"] .scanner-display::after{opacity:1!important;background:linear-gradient(var(--gloss-deg,125deg),rgba(255,255,255,0.16) 0%,rgba(255,255,255,0.04) var(--gloss-pos,34%),transparent calc(var(--gloss-pos,34%) + 1.2%),transparent 100%),radial-gradient(circle at center,transparent 62%,rgba(0,0,0,0.34) 100%)!important;transition:background 0.08s linear!important;}' +\n");
-
-        /* Pure Black Screen Before/With CRT Switch-Off Animation (Hides all text & log immediately so only the white CRT beam/dot is seen!) */
-        js.append("        'html.tv-off .scanner-display, .scanner-display.tv-shutting-down{background:#000000!important;border-color:#0a0a0a!important;box-shadow:inset 0 0 24px #000000!important;filter:brightness(1)!important;transition:none!important;}' +\n");
-        js.append("        'html.tv-off .scanner-display #custom-imgd, html.tv-off .scanner-display #custom-imgf, html.tv-off .scanner-display .log-wrapper, html.tv-off .scanner-display #display-clock-hud, html.tv-off .scanner-display #scanner-bat-hud, html.tv-off .scanner-display #display-font-hud, .scanner-display.tv-shutting-down #custom-imgd, .scanner-display.tv-shutting-down #custom-imgf, .scanner-display.tv-shutting-down .log-wrapper, .scanner-display.tv-shutting-down #display-clock-hud, .scanner-display.tv-shutting-down #scanner-bat-hud, .scanner-display.tv-shutting-down #display-font-hud{opacity:0!important;visibility:hidden!important;animation:none!important;transition:none!important;}' +\n");
-
-        /* 3D Bevelled Buttons on WIRE, TRON, NEON & TERM Skins */
-        js.append("        'html[data-skin=\"whiteline\"]{--ui-bg:radial-gradient(circle at 50% 12%,#26292e 0%,#121417 65%,#070809 100%)!important;--btn-bg:linear-gradient(180deg,#2e3238 0%,#181a1e 55%,#0d0e11 100%)!important;--btn-color:#ffffff!important;--btn-active-color:#38bdf8!important;--btn-border:1px solid rgba(255,255,255,0.75)!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #94a3b8,0 4px 6px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.45)!important;--btn-shadow-active:0 0 0 #94a3b8,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
-        js.append("        'html[data-skin=\"whiteline\"] .btn:active{background:linear-gradient(180deg,#181a1e 0%,#0d0e11 100%)!important;color:#38bdf8!important;}' +\n");
-        js.append("        'html[data-skin=\"tron\"]{--ui-bg:radial-gradient(circle at 50% 12%,#0c2e36 0%,#06161a 65%,#02080a 100%)!important;--btn-bg:linear-gradient(180deg,#103c47 0%,#071f26 55%,#031014 100%)!important;--btn-color:#00ffff!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #00ffff!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #008b8b,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(180,255,255,0.45)!important;--btn-shadow-active:0 0 0 #008b8b,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
-        js.append("        'html[data-skin=\"tron\"] .btn:active{background:linear-gradient(180deg,#071f26 0%,#031014 100%)!important;color:#ffffff!important;box-shadow:0 0 12px rgba(0,255,255,0.5),inset 0 2px 5px rgba(0,0,0,0.9)!important;}' +\n");
-        js.append("        'html[data-skin=\"neongreen\"]{--ui-bg:radial-gradient(circle at 50% 12%,#11330d 0%,#081906 65%,#030a02 100%)!important;--btn-bg:linear-gradient(180deg,#184212 0%,#0b2108 55%,#051104 100%)!important;--btn-color:#39ff14!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #39ff14!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #1b8a08,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(190,255,180,0.45)!important;--btn-shadow-active:0 0 0 #1b8a08,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
-        js.append("        'html[data-skin=\"neongreen\"] .btn:active{background:linear-gradient(180deg,#0b2108 0%,#051104 100%)!important;color:#ffffff!important;box-shadow:0 0 12px rgba(57,255,20,0.5),inset 0 2px 5px rgba(0,0,0,0.9)!important;}' +\n");
-        js.append("        'html[data-skin=\"amber\"]{--ui-bg:radial-gradient(circle at 50% 12%,#332406 0%,#1a1203 65%,#0a0701 100%)!important;--btn-bg:linear-gradient(180deg,#422f08 0%,#211704 55%,#120c02 100%)!important;--btn-color:#ffb000!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #ffb000!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #996900,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,230,170,0.45)!important;--btn-shadow-active:0 0 0 #996900,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
-        js.append("        'html[data-skin=\"amber\"] .btn:active{background:linear-gradient(180deg,#211704 0%,#120c02 100%)!important;color:#ffffff!important;box-shadow:0 0 12px rgba(255,176,0,0.5),inset 0 2px 5px rgba(0,0,0,0.9)!important;}' +\n");
-
-        /* SCANNER LITE MODE */
-        js.append("        'html[data-scanner-lite=\"true\"] .scanner-display{height:420px!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(4),' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(5),' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(6),' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(8),' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(11),' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(12),' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] #btn-brt-toggle{display:none!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls{grid-auto-rows:44px!important;gap:8px!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > .btn{font-size:13.5px!important;font-weight:900!important;letter-spacing:0.6px!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls .scroll-btn{font-size:10.5px!important;font-weight:900!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .numpad{grid-auto-rows:40px!important;gap:7px!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .numpad .btn{font-size:16.5px!important;font-weight:900!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .top-right-group{height:38px!important;}' +\n");
-        js.append("        'html[data-scanner-lite=\"true\"] .top-right-group .btn{font-size:12px!important;}' +\n");
-
-        /* MOBILE LANDSCAPE SPLIT-SCREEN COCKPIT LAYOUT */
-        js.append("        '@media (orientation: landscape) and (max-height: 540px){' +\n");
-        js.append("          '#device-wrapper{width:96vw!important;max-width:96vw!important;height:94dvh!important;max-height:94dvh!important;}' +\n");
-        js.append("          '#custom-scanner-ui{display:grid!important;grid-template-columns:1.08fr 1fr!important;grid-template-rows:auto 1fr!important;gap:6px 12px!important;padding:10px 14px!important;height:100%!important;overflow:hidden!important;}' +\n");
-        js.append("          '.scanner-display, html[data-scanner-lite=\"true\"] .scanner-display{grid-column:1!important;grid-row:1 / span 2!important;height:100%!important;min-height:0!important;}' +\n");
-        js.append("          '#custom-imgd{max-height:92px!important;}' +\n");
-        js.append("          '.top-controls-container{grid-column:2!important;grid-row:1!important;height:30px!important;}' +\n");
-        js.append("          '.buttons-box{grid-column:2!important;grid-row:2!important;height:100%!important;min-height:0!important;padding:6px!important;gap:5px!important;justify-content:space-between!important;}' +\n");
-        js.append("          '.top-btn-wrapper{gap:4px!important;}' +\n");
-        js.append("          '.top-right-group, html[data-scanner-lite=\"true\"] .top-right-group{height:26px!important;}' +\n");
-        js.append("          '.scanner-nav-6{height:25px!important;gap:3px!important;}' +\n");
-        js.append("          '.keypads-wrapper{flex-direction:row!important;gap:6px!important;flex:1!important;min-height:0!important;}' +\n");
-        js.append("          '.keypad-half{flex:1!important;height:100%!important;}' +\n");
-        js.append("          '.essential-controls, .numpad, html[data-scanner-lite=\"true\"] .essential-controls, html[data-scanner-lite=\"true\"] .numpad{height:100%!important;grid-auto-rows:1fr!important;gap:4px!important;}' +\n");
-        js.append("          '.essential-controls > .btn, html[data-scanner-lite=\"true\"] .essential-controls > .btn{font-size:9px!important;letter-spacing:0!important;}' +\n");
-        js.append("          '.essential-controls .scroll-btn, .essential-controls .split-btn-group .btn, html[data-scanner-lite=\"true\"] .essential-controls .scroll-btn{font-size:7.5px!important;}' +\n");
-        js.append("          '.numpad .btn, html[data-scanner-lite=\"true\"] .numpad .btn{font-size:13px!important;}' +\n");
-        js.append("        '}' +\n");
-
-        js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:8px!important;gap:8px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
-        js.append("        '.scanner-display .log-container{display:flex!important;flex-direction:column!important;overflow:hidden!important;}' +\n");
-        js.append("        '#mini-log-table{display:flex!important;flex-direction:column!important;height:100%!important;width:100%!important;}' +\n");
-        js.append("        '#mini-log-table thead{flex:0 0 auto!important;display:table!important;width:100%!important;table-layout:fixed!important;background:transparent!important;}' +\n");
-        js.append("        '#mini-log-table thead th{background:transparent!important;position:static!important;}' +\n");
-        js.append("        '#mini-log-table tbody{flex:1 1 auto!important;display:block!important;overflow-y:auto!important;overflow-x:hidden!important;width:100%!important;scrollbar-width:thin!important;scrollbar-color:var(--log-header-text) transparent!important;}' +\n");
-        js.append("        '#mini-log-table tbody::-webkit-scrollbar{width:4px!important;}' +\n");
-        js.append("        '#mini-log-table tbody::-webkit-scrollbar-thumb{background:var(--log-header-text)!important;border-radius:2px!important;}' +\n");
-        js.append("        '#mini-log-table tbody tr{display:table!important;width:100%!important;table-layout:fixed!important;cursor:pointer;}' +\n");
-        js.append("        '#mini-log-table tbody tr:active{background:rgba(255,255,255,0.15)!important;}' +\n");
-        js.append("        '.freq-hit-badge, #mini-log-table .freq-hit-badge, #mini-log-table td:nth-child(5) .freq-hit-badge, #mini-log-table td:nth-child(5) span[class*=\"hit\"], #mini-log-table td:nth-child(5) span[class*=\"badge\"]{display:none!important;visibility:hidden!important;width:0!important;height:0!important;padding:0!important;margin:0!important;border:none!important;overflow:hidden!important;font-size:0!important;}' +\n");
-        js.append("        '#mini-log-table th,#mini-log-table td{padding:3.5px 2px 3.5px 4px!important;}' +\n");
-        js.append("        '#mini-log-table th:nth-child(1),#mini-log-table td:nth-child(1){width:19%!important;}' +\n");
-        js.append("        '#mini-log-table th:nth-child(2),#mini-log-table td:nth-child(2){width:20%!important;}' +\n");
-        js.append("        '#mini-log-table th:nth-child(3),#mini-log-table td:nth-child(3){width:13%!important;}' +\n");
-        js.append("        '#mini-log-table th:nth-child(4),#mini-log-table td:nth-child(4){width:14%!important;}' +\n");
-        js.append("        '#mini-log-table th:nth-child(5),#mini-log-table td:nth-child(5){width:34%!important;}' +\n");
-        js.append("        '.top-leds-left{gap:8px!important;}' +\n");
-        js.append("        '.top-leds-right{gap:8px!important;}' +\n");
-        js.append("        '#voice-switch-track{width:24px;height:11px;border-radius:999px;background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.16);box-shadow:inset 0 1px 3px rgba(0,0,0,0.85),0 1px 0 rgba(255,255,255,0.08);padding:1px;display:flex;align-items:center;position:relative;flex-shrink:0;}' +\n");
-        js.append("        '#voice-switch-thumb{width:10px;height:7px;border-radius:999px;background:var(--btn-bg);border:var(--btn-border);box-shadow:0 1px 2px rgba(0,0,0,0.75),inset 0 1px 0 rgba(255,255,255,0.2);transform:translateX(0);transition:transform 0.22s cubic-bezier(0.4,0,0.2,1);display:flex;align-items:center;justify-content:center;}' +\n");
-        js.append("        '#voice-switch-thumb::after{content:\"\";width:2px;height:3px;border-radius:1px;background:rgba(255,220,220,0.85);}' +\n");
-        js.append("        '#btn-voice-toggle.active #voice-switch-thumb{transform:translateX(10px);}' +\n");
-        js.append("        '#voice-led{flex-shrink:0;width:10px;height:10px;border-radius:50%;background-color:var(--led-off-bg,#1a1a1a);border:var(--led-off-border,2px solid #000);box-shadow:var(--led-off-shadow,inset 1px 1px 3px rgba(0,0,0,0.8),0 1px 1px rgba(255,255,255,0.1));transition:all 0.3s ease;}' +\n");
-        js.append("        '@keyframes voice-led-pulse-green{0%,100%{background-color:#10b981;border-color:#a7f3d0;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.9),0 0 0 1px rgba(0,0,0,0.65),0 0 8px #10b981,0 0 14px rgba(16,185,129,0.75);}50%{background-color:#065f46;border-color:#059669;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.35),0 0 0 1px rgba(0,0,0,0.65),0 0 2px rgba(16,185,129,0.25);}}' +\n");
-        js.append("        '#btn-voice-toggle.active #voice-led{border-style:solid!important;border-width:2px!important;animation:voice-led-pulse-green 3.8s ease-in-out infinite!important;}' +\n");
-
-        /* LAMP & PWR Button Caps */
-        js.append("        '#btn-lamp-toggle{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 3px 0 1px;cursor:pointer;touch-action:manipulation;}' +\n");
-        js.append("        '#btn-lamp-toggle .lamp-cap{width:22px;height:16px;border-radius:5px;background:linear-gradient(180deg,#eab308,#a16207);border:1px solid #422006;box-shadow:0 2px 3px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;}' +\n");
-        js.append("        '#btn-lamp-toggle .lamp-cap::after{content:\"\";width:8px;height:3px;border-radius:1.5px;background:rgba(254,249,195,0.92);box-shadow:0 0 4px rgba(254,249,195,0.5);}' +\n");
-        js.append("        '#btn-lamp-toggle:active .lamp-cap{transform:translateY(1px);filter:brightness(1.25);}' +\n");
-        js.append("        '#btn-hardware-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 0 0 2px;cursor:pointer;touch-action:manipulation;}' +\n");
-        js.append("        '#btn-hardware-exit .exit-cap{width:22px;height:16px;border-radius:5px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 2px 3px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.32);display:flex;align-items:center;justify-content:center;}' +\n");
-        js.append("        '#btn-hardware-exit .exit-cap::after{content:\"\";width:8px;height:3px;border-radius:1.5px;background:rgba(255,220,220,0.88);}' +\n");
-        js.append("        '#btn-hardware-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
-
-        /* Signal Meter */
-        js.append("        '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:124px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
-        js.append("        '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
-        js.append("        '.sm-mode.active{display:flex;}' +\n");
-        js.append("        '.sm-lbl{font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;color:#38bdf8;letter-spacing:0.3px;margin-right:3px;flex-shrink:0;}' +\n");
-        js.append("        '.sm-bar-wrap{display:flex;align-items:center;gap:2px;flex:1;height:11px;justify-content:space-between;}' +\n");
-        js.append("        '.sm-seg{flex:1;height:100%;border-radius:1px;background:#1e293b;transition:background 0.04s linear;}' +\n");
-        js.append("        '.sm-vu-wrap{width:100%;height:100%;background:linear-gradient(90deg,#fef9c3 0%,#fde047 68%,#f59e0b 100%);border-radius:3px;position:relative;overflow:hidden;border:1px solid #000;box-shadow:inset 0 1px 3px rgba(0,0,0,0.45);}' +\n");
-        js.append("        '.sm-vu-wrap::after{content:\"\";position:absolute;left:4px;right:4px;bottom:1px;height:5px;border-bottom:1.5px solid #0f172a;background:repeating-linear-gradient(90deg,#0f172a 0px,#0f172a 2px,transparent 2px,transparent 8px);opacity:0.9;z-index:1;pointer-events:none;}' +\n");
-        js.append("        '.sm-vu-scale{position:absolute;top:1px;left:4px;right:4px;font-family:monospace;font-size:6.5px;font-weight:900;color:#0f172a;display:flex;justify-content:space-between;line-height:1;z-index:2;pointer-events:none;}' +\n");
-        js.append("        '#sm-vu-needle{position:absolute;top:0;bottom:0;left:3px;width:2.5px;background:#dc2626;border-radius:1px;box-shadow:0 0 4px rgba(220,38,38,0.9),1px 0 2px rgba(0,0,0,0.6);transition:left 0.14s ease-out;z-index:3;}' +\n");
-        js.append("        '.sm-spec-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:2px;width:100%;height:15px;padding-top:1px;}' +\n");
-        js.append("        '.sm-spec-bar{flex:1;height:2px;background:linear-gradient(180deg,#ef4444 0%,#facc15 35%,#22c55e 100%);border-radius:1px 1px 0 0;transition:height 0.04s linear;}' +\n");
-        js.append("        '#sm-scope-canvas{width:100%;height:16px;display:block;}' +\n");
-        js.append("        '.sm-dig-wrap{display:flex;align-items:center;justify-content:space-between;width:100%;gap:4px;font-family:\"JetBrains Mono\",monospace;}' +\n");
-        js.append("        '#sm-dig-txt{font-size:8.5px;font-weight:900;color:#39ff14;min-width:46px;text-align:left;letter-spacing:-0.3px;}' +\n");
-        js.append("        '.sm-peak-track{flex:1;height:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;overflow:hidden;position:relative;}' +\n");
-        js.append("        '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.14s ease-out;}' +\n");
-
-        js.append("        '#display-clock-hud{position:absolute!important;top:6px!important;left:10px!important;right:auto!important;z-index:3!important;}' +\n");
-        js.append("        '#scanner-bat-hud{position:absolute!important;top:6px!important;right:9px!important;left:auto!important;z-index:3!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10px!important;font-weight:700!important;letter-spacing:0.8px!important;color:var(--log-text)!important;opacity:0.88;pointer-events:none;display:inline-flex!important;align-items:center!important;line-height:1;transition:opacity 0.3s ease,color 0.3s ease;}' +\n");
-        js.append("        '#scanner-bat-hud *{font-family:inherit!important;font-size:inherit!important;font-weight:inherit!important;letter-spacing:inherit!important;line-height:inherit!important;}' +\n");
-        js.append("        '#scanner-bat-txt{color:inherit!important;}' +\n");
-        js.append("        '#scanner-bat-hud.disconnected{opacity:0!important;}' +\n");
-        js.append("        '.bat-icon-box{display:inline-block;width:13px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;margin-right:4px;box-sizing:border-box;flex-shrink:0;}' +\n");
-        js.append("        '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
-        js.append("        '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;};'\n");
-        js.append("      document.head.appendChild(st);\n");
-        js.append("    } else if (existingSt && document.head.lastElementChild !== existingSt) {\n");
-        js.append("      document.head.appendChild(existingSt);\n");
-        js.append("    }\n");
-
-        /* Non-Stalling History Log.txt Polling + Simple Single-Source Squelch Detector */
-        js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
-        js.append("      window.__reliableLogAndSquelchHooked = true;\n");
-        js.append("      window.updateMiniLog = function() {\n");
-        js.append("        if (typeof isDisplayOn !== 'undefined' && !isDisplayOn && (typeof isConnected === 'undefined' || !isConnected)) return;\n");
-        js.append("        fetch('History Log.txt?_t=' + Date.now(), { cache: 'no-store', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } })\n");
-        js.append("          .then(function(r) { if (!r.ok) throw 0; return r.text(); })\n");
-        js.append("          .then(function(text) {\n");
-        js.append("            isLogFetchInFlight = false;\n");
-        js.append("            if (!text || text.toLowerCase().indexOf('<html') !== -1) return;\n");
-        js.append("            var dataLines = text.trim().split('\\n').filter(function(l) { return l.indexOf(',') !== -1 && l.toLowerCase().indexOf('frequency') === -1; });\n");
-        js.append("            if (!dataLines.length) return;\n");
-        js.append("            var counts = {}, hits = new Array(dataLines.length);\n");
-        js.append("            for (var k = 0; k < dataLines.length; k++) {\n");
-        js.append("              var fc = dataLines[k].indexOf(','), fk = fc > 0 ? dataLines[k].slice(0, fc).trim() : '';\n");
-        js.append("              if (fk && fk !== '---') { counts[fk] = (counts[fk] || 0) + 1; hits[k] = counts[fk]; } else hits[k] = 1;\n");
-        js.append("            }\n");
-        js.append("            var html = '', added = 0, newRow = false;\n");
-        js.append("            for (var i = dataLines.length - 1; i >= 0 && added < 25; i--) {\n");
-        js.append("              var p = dataLines[i].split(',');\n");
-        js.append("              if (p.length >= 5) {\n");
-        js.append("                var fq = (p[0] || '---').trim(), tn = (p[1] || '').trim(), nm = (p[p.length - 1] || '---').trim(), du = '---', tr = '---';\n");
-        js.append("                for (var j = 0; j < p.length; j++) {\n");
-        js.append("                  var v = p[j].trim();\n");
-        js.append("                  if (/^\\d{2}:\\d{2}:\\d{2}$/.test(v)) du = v;\n");
-        js.append("                  else if (/^\\d{1,4}[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,4}\\s+\\d{1,2}:\\d{2}(:\\d{2})?$/.test(v)) tr = v;\n");
-        js.append("                }\n");
-        js.append("                var tp = tr.split(' '), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
-        js.append("                if (du.indexOf('00:') === 0) du = du.slice(3);\n");
-        js.append("                var id = tm + '|' + fq + '|' + nm;\n");
-        js.append("                var isN = !knownLogLines.has(id);\n");
-        js.append("                if (isN) { knownLogLines.add(id); newRow = true; }\n");
-        js.append("                if (knownLogLines.size > 150) knownLogLines.delete(knownLogLines.values().next().value);\n");
-        js.append("                var h = hits[i] || 1;\n");
-        js.append("                if (fq !== '---' && fq !== '') {\n");
-        js.append("                  html += '<tr class=\"' + ((isN && !isFirstLoad) ? 'new-log-row' : '') + '\"><td title=\"' + tm + '\">' + tm + '</td><td title=\"' + fq + '\">' + fq + '</td><td title=\"' + tn + '\">' + tn + '</td><td title=\"' + du + '\">' + du + '</td><td title=\"(Hit #' + h + ') ' + nm + '\" data-hit-count=\"' + h + '\"><span class=\"freq-hit-badge\" style=\"display:none\">×' + h + '</span>' + nm + '</td></tr>';\n");
-        js.append("                  added++;\n");
-        js.append("                }\n");
-        js.append("              }\n");
-        js.append("            }\n");
-        js.append("            if (html && isDisplayOn) {\n");
-        js.append("              var tb = document.getElementById('mini-log-data');\n");
-        js.append("              if (tb && tb.innerHTML !== html) tb.innerHTML = html;\n");
-        js.append("            }\n");
-        js.append("            if (newRow && !isFirstLoad) {\n");
-        js.append("              if (typeof triggerLogLight === 'function') triggerLogLight();\n");
-        js.append("            }\n");
-        js.append("            isFirstLoad = false;\n");
-        js.append("          })\n");
-        js.append("          .catch(function() { isLogFetchInFlight = false; });\n");
-        js.append("      };\n");
-
-        /* Single Clean Squelch Detector: Mutes Radio on RX Open, Restores 2.5s after RX Close (or 2.5s after TTS finishes) */
-        js.append("      window.detectAudio = function() {};\n");
-        js.append("      window.__lastLogPollMs = 0;\n");
-        js.append("      window.__bgTickSquelchAndLog = function() {\n");
-        js.append("        var nowWall = Date.now();\n");
-        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1800)) {\n");
-        js.append("          window.__lastLogPollMs = nowWall;\n");
-        js.append("          window.updateMiniLog();\n");
-        js.append("        }\n");
-        js.append("        var led = document.getElementById('rx-led');\n");
-        js.append("        if (typeof isConnected === 'undefined' || !isConnected || !window.analyser || typeof dataArray === 'undefined' || !dataArray) {\n");
-        js.append("          if (led && led.classList.contains('active')) led.classList.remove('active');\n");
-        js.append("          if (window.__lastNotifiedRxState) {\n");
-        js.append("            window.__lastNotifiedRxState = false;\n");
-        js.append("            if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
-        js.append("              window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
-        js.append("            }\n");
-        js.append("          }\n");
-        js.append("          return;\n");
-        js.append("        }\n");
-        js.append("        if (window.audioContext && window.audioContext.state === 'suspended') {\n");
-        js.append("          try { window.audioContext.resume(); } catch(e) {}\n");
-        js.append("        }\n");
-        js.append("        window.analyser.getByteTimeDomainData(dataArray);\n");
-        js.append("        var maxDev = 0;\n");
-        js.append("        for (var i = 0; i < dataArray.length; i++) {\n");
-        js.append("          var d = Math.abs(dataArray[i] - 128);\n");
-        js.append("          if (d > maxDev) maxDev = d;\n");
-        js.append("        }\n");
-        js.append("        var now = performance.now();\n");
-        js.append("        if (maxDev > 3) {\n");
-        js.append("          var isBeep = false;\n");
-        js.append("          if (typeof freqArray !== 'undefined' && freqArray) {\n");
-        js.append("            window.analyser.getByteFrequencyData(freqArray);\n");
-        js.append("            var bins = 0, tot = 0, pk = 0;\n");
-        js.append("            for (var f = 2; f < freqArray.length; f++) {\n");
-        js.append("              var v = freqArray[f]; tot += v; if (v > pk) pk = v; if (v > 40) bins++;\n");
-        js.append("            }\n");
-        js.append("            isBeep = (bins <= 4) && (pk > (tot / (freqArray.length - 2)) * 5.5);\n");
-        js.append("          }\n");
-        js.append("          var isKey = (now - lastScannerKeyTime) < 2200;\n");
-        js.append("          if (rxSignalStartTime === 0) rxSignalStartTime = now;\n");
-        js.append("          rxLastActiveTime = now;\n");
-        js.append("          var reqMs = isKey ? (isBeep ? 450 : 260) : (isBeep ? 300 : 80);\n");
-        js.append("          if ((now - rxSignalStartTime) >= reqMs) {\n");
-        js.append("            if (led && !led.classList.contains('active')) led.classList.add('active');\n");
-        js.append("            if (!window.__lastNotifiedRxState) {\n");
-        js.append("              window.__lastNotifiedRxState = true;\n");
-        js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
-        js.append("                window.AndroidApp.notifyScannerRx(true, Boolean(window.__voiceReadoutEnabled));\n");
-        js.append("              }\n");
-        js.append("            }\n");
-        js.append("            clearTimeout(rxHoldTimeout);\n");
-        js.append("            rxHoldTimeout = setTimeout(function() {\n");
-        js.append("              if (led) led.classList.remove('active');\n");
-        js.append("              if (window.__lastNotifiedRxState) {\n");
-        js.append("                window.__lastNotifiedRxState = false;\n");
-        js.append("                if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
-        js.append("                  window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
-        js.append("                }\n");
-        js.append("              }\n");
-        js.append("              if (isDisplayOn || isConnected) {\n");
-        js.append("                clearTimeout(rxPostLogTimeout);\n");
-        js.append("                rxPostLogTimeout = setTimeout(window.updateMiniLog, 450);\n");
-        js.append("              }\n");
-        js.append("            }, 350);\n");
-        js.append("          }\n");
-        js.append("        } else if (rxSignalStartTime !== 0 && (now - rxLastActiveTime) > 140) {\n");
-        js.append("          rxSignalStartTime = 0;\n");
-        js.append("        }\n");
-        js.append("      };\n");
-        js.append("      setInterval(window.__bgTickSquelchAndLog, 65);\n");
-        js.append("    }\n");
-        /* Signal Meter in #brand-logo-slot */
-        js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
-        js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
-        js.append("      window.renderCustomBrand = function() {};\n");
-        js.append("      var mShortNames = ['BAR', 'VU', 'EQ', 'SCP', 'dB'];\n");
-        js.append("      var mHudNames   = ['S-BAR', 'VU DIAL', 'SPECTRUM', 'SCOPE', 'PEAK dB'];\n");
-        js.append("      window.__sigMeterStyle = parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0;\n");
-        js.append("      var segHtml = ''; for (var s=0; s<12; s++) segHtml += '<div class=\"sm-seg\"></div>';\n");
-        js.append("      var specHtml = ''; for (var sp=0; sp<10; sp++) specHtml += '<div class=\"sm-spec-bar\"></div>';\n");
-        js.append("      bSlot.innerHTML = '<div id=\"sig-meter-host\" title=\"Tap to cycle Signal Meter style\">' +\n");
-        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-0\"><span class=\"sm-lbl\">S</span><div class=\"sm-bar-wrap\" id=\"sm-led-bars\">' + segHtml + '</div></div>' +\n");
-        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-1\"><div class=\"sm-vu-wrap\"><div class=\"sm-vu-scale\"><span>S1</span><span>3</span><span>5</span><span>7</span><span>9</span><span style=\"color:#dc2626;\">+30</span></div><div id=\"sm-vu-needle\"></div></div></div>' +\n");
-        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-2\"><span class=\"sm-lbl\">EQ</span><div class=\"sm-spec-wrap\" id=\"sm-spec-bars\">' + specHtml + '</div></div>' +\n");
-        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-3\"><canvas id=\"sm-scope-canvas\" width=\"114\" height=\"16\"></canvas></div>' +\n");
-        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-4\"><div class=\"sm-dig-wrap\"><span id=\"sm-dig-txt\">S0 -98dB</span><div class=\"sm-peak-track\"><div id=\"sm-peak-fill\"></div></div></div></div>' +\n");
-        js.append("      '</div>';\n");
-
-        js.append("      window.__applySigMeterStyle = function(idx, showHudMsg) {\n");
-        js.append("        window.__sigMeterStyle = ((idx % 5) + 5) % 5;\n");
-        js.append("        localStorage.setItem('proscan_sig_meter_style_v1', String(window.__sigMeterStyle));\n");
-        js.append("        for (var m = 0; m < 5; m++) {\n");
-        js.append("          var el = document.getElementById('sm-mode-' + m);\n");
-        js.append("          if (el) el.classList.toggle('active', m === window.__sigMeterStyle);\n");
-        js.append("        }\n");
-        js.append("        var mBtn = document.getElementById('btn-brand-open');\n");
-        js.append("        if (mBtn) mBtn.innerText = 'MTR: ' + mShortNames[window.__sigMeterStyle];\n");
-        js.append("        if (showHudMsg && typeof showDisplayHud === 'function') {\n");
-        js.append("          showDisplayHud('SIGNAL METER: ' + mHudNames[window.__sigMeterStyle], 1300);\n");
-        js.append("        }\n");
-        js.append("      };\n");
-
-        js.append("      window.handleBrandCornerTap = function() {\n");
-        js.append("        if (navigator.vibrate) navigator.vibrate(20);\n");
-        js.append("        var bp = document.getElementById('proscan-brand-panel');\n");
-        js.append("        if (bp) bp.hidden = true;\n");
-        js.append("        window.__applySigMeterStyle((window.__sigMeterStyle || 0) + 1, true);\n");
-        js.append("      };\n");
-
-        js.append("      var mHost = document.getElementById('sig-meter-host');\n");
-        js.append("      if (mHost) mHost.addEventListener('click', window.handleBrandCornerTap);\n");
-        js.append("      window.__applySigMeterStyle(window.__sigMeterStyle, false);\n");
-
-        js.append("      var smCarrierLvl = 0, smAudioLvl = 0, smAdaptiveMax = 14.0, smPhase = 0;\n");
+    js.append("      var smCarrierLvl = 0, smAudioLvl = 0, smAdaptiveMax = 14.0, smPhase = 0;\n");
         js.append("      function renderLiveScannerSignalMeter() {\n");
         js.append("        requestAnimationFrame(renderLiveScannerSignalMeter);\n");
         js.append("        var rawAud = 0;\n");
@@ -1739,6 +1425,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      var origSave = window.savePresetToSlot;\n");
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
+
         /* Second Row: Clean 6-Button Grid [ LOG IN ] [ ARCHIVE ] [ RADIO ] [ MTR ] [ LITE ] [ DSP ] */
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
