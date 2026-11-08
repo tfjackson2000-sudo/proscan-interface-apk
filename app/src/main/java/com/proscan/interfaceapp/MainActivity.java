@@ -1,6 +1,5 @@
 package com.proscan.interfaceapp;
 
-import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
@@ -10,6 +9,10 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
@@ -37,7 +40,6 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
-import android.view.animation.DecelerateInterpolator;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -70,15 +72,17 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements SensorEventListener {
 
     private static final int REQ_LOAD_JSON = 901;
 
     /**
-     * Unified Priority Auto-Ducking Commercial Radio Engine.
-     * - Default Baseline Volume: 40% (0.40f) everywhere (Scanner screen, Radio screen, Background).
-     * - Default Ducked Volume: 0% (0.00f — Full Mute on any Scanner transmission or TTS readout).
-     * - Default Hold Time: 3500ms (3.5s) so back-to-back transmissions never let the radio pop up in between.
+     * Ultra-Simple, Rock-Solid Commercial Radio & Auto-Duck Engine:
+     * - Independent Radio Volume (0% to 100%, default 50%) controlled directly from the Radio Player slider.
+     * - Simple Auto-Duck ON/OFF (toggled by Long-Pressing AUDIO on the Scanner).
+     * - When Auto-Duck is ON:
+     *   1) Radio volume immediately drops to 0.0f (mute) the instant a scanner transmission starts or TTS speaks.
+     *   2) Radio volume only cuts back in 2.5 seconds (2500ms) AFTER both the scanner transmission AND any TTS readout have finished.
      */
     public static final class PriorityRadioEngine {
         private static MediaPlayer radioPlayer = null;
@@ -86,37 +90,138 @@ public class MainActivity extends Activity {
         private static String activeStationName = "";
         private static int activeSessionId = 0;
         private static boolean isPlaying = false;
-        private static volatile boolean isScannerSquelchOpen = false;
-        private static volatile boolean isTtsSpeaking = false;
-        private static volatile long lastScannerHitTimestampMs = 0L;
-        private static float currentVolume = 0.40f;
-        private static ValueAnimator fadeAnimator = null;
+        private static boolean isScannerRxActive = false;
+        private static boolean isTtsSpeaking = false;
+        private static boolean isWaitingForPendingTts = false;
         private static final Handler handler = new Handler(Looper.getMainLooper());
-        private static Runnable holdRestoreRunnable = null;
         private static final ExecutorService radioExecutor = Executors.newSingleThreadExecutor();
 
+        private static final Runnable restoreVolumeRunnable = new Runnable() {
+            @Override
+            public void run() {
+                synchronized (PriorityRadioEngine.class) {
+                    if (radioPlayer == null || !isPlaying) return;
+                    if (isScannerRxActive || isTtsSpeaking || isWaitingForPendingTts) return;
+                    applyCurrentVolumeLocked(cachedPrefs);
+                }
+            }
+        };
+
+        private static final Runnable clearPendingTtsWaitRunnable = new Runnable() {
+            @Override
+            public void run() {
+                synchronized (PriorityRadioEngine.class) {
+                    isWaitingForPendingTts = false;
+                    if (!isScannerRxActive && !isTtsSpeaking) {
+                        scheduleRestoreAfter2500msLocked();
+                    }
+                }
+            }
+        };
+
+        private static SharedPreferences cachedPrefs = null;
+
         public static boolean isAutoDuckEnabled(SharedPreferences prefs) {
-            return prefs == null || prefs.getBoolean("mixer_auto_duck_on", true);
+            if (prefs != null) cachedPrefs = prefs;
+            return cachedPrefs == null || cachedPrefs.getBoolean("simple_auto_duck_on", true);
         }
 
-        public static float getBaselineVolume(SharedPreferences prefs) {
-            int pct = prefs != null ? prefs.getInt("mixer_radio_ceiling_pct", 40) : 40;
-            return Math.max(0.10f, Math.min(1.0f, pct / 100f));
+        public static boolean toggleAutoDuck(SharedPreferences prefs) {
+            if (prefs != null) cachedPrefs = prefs;
+            boolean next = !isAutoDuckEnabled(cachedPrefs);
+            if (cachedPrefs != null) {
+                cachedPrefs.edit().putBoolean("simple_auto_duck_on", next).apply();
+            }
+            handler.post(() -> {
+                synchronized (PriorityRadioEngine.class) {
+                    handler.removeCallbacks(restoreVolumeRunnable);
+                    applyCurrentVolumeLocked(cachedPrefs);
+                }
+            });
+            return next;
         }
 
-        public static float getDuckedVolume(SharedPreferences prefs) {
-            // Default is 0% (Full Mute) for any scanner transmission
-            int pct = prefs != null ? prefs.getInt("mixer_radio_duck_pct_v2", 0) : 0;
-            return Math.max(0.0f, Math.min(0.25f, pct / 100f));
+        public static int getRadioVolumePct(SharedPreferences prefs) {
+            if (prefs != null) cachedPrefs = prefs;
+            return cachedPrefs != null ? cachedPrefs.getInt("radio_independent_vol_pct", 50) : 50;
         }
 
-        public static int getHoldTimeMs(SharedPreferences prefs) {
-            // Default is 3500ms (3.5s) to bridge back-to-back transmissions
-            return prefs != null ? prefs.getInt("mixer_duck_hold_ms_v2", 3500) : 3500;
+        public static void setRadioVolumePct(SharedPreferences prefs, int pct) {
+            if (prefs != null) cachedPrefs = prefs;
+            int clamped = Math.max(0, Math.min(100, pct));
+            if (cachedPrefs != null) {
+                cachedPrefs.edit().putInt("radio_independent_vol_pct", clamped).apply();
+            }
+            handler.post(() -> {
+                synchronized (PriorityRadioEngine.class) {
+                    applyCurrentVolumeLocked(cachedPrefs);
+                }
+            });
         }
 
-        public static int getScannerAgcDb(SharedPreferences prefs) {
-            return prefs != null ? prefs.getInt("mixer_scanner_agc_db", 8) : 8;
+        public static float getUserRadioVolumeScalar(SharedPreferences prefs) {
+            int pct = getRadioVolumePct(prefs);
+            return Math.max(0f, Math.min(1f, pct / 100f));
+        }
+
+        private static synchronized void applyCurrentVolumeLocked(SharedPreferences prefs) {
+            if (radioPlayer == null || !isPlaying) return;
+            boolean ducked = isAutoDuckEnabled(prefs) && (isScannerRxActive || isTtsSpeaking || isWaitingForPendingTts);
+            float target = ducked ? 0.0f : getUserRadioVolumeScalar(prefs);
+            try {
+                radioPlayer.setVolume(target, target);
+            } catch (Exception ignored) {}
+        }
+
+        private static synchronized void scheduleRestoreAfter2500msLocked() {
+            handler.removeCallbacks(restoreVolumeRunnable);
+            if (!isScannerRxActive && !isTtsSpeaking && !isWaitingForPendingTts) {
+                handler.postDelayed(restoreVolumeRunnable, 2500);
+            }
+        }
+
+        public static void onScannerRxStateChanged(final SharedPreferences prefs, final boolean rxActive, final boolean voiceReadoutEnabled) {
+            if (prefs != null) cachedPrefs = prefs;
+            handler.post(() -> {
+                synchronized (PriorityRadioEngine.class) {
+                    if (rxActive) {
+                        isScannerRxActive = true;
+                        handler.removeCallbacks(restoreVolumeRunnable);
+                        handler.removeCallbacks(clearPendingTtsWaitRunnable);
+                        applyCurrentVolumeLocked(cachedPrefs);
+                    } else if (isScannerRxActive) {
+                        isScannerRxActive = false;
+                        handler.removeCallbacks(restoreVolumeRunnable);
+                        if (voiceReadoutEnabled) {
+                            // Give the post-transmission log poll + TTS up to 1.4s to start speaking before starting the 2.5s timer
+                            isWaitingForPendingTts = true;
+                            handler.removeCallbacks(clearPendingTtsWaitRunnable);
+                            handler.postDelayed(clearPendingTtsWaitRunnable, 1400);
+                        } else {
+                            isWaitingForPendingTts = false;
+                            scheduleRestoreAfter2500msLocked();
+                        }
+                    }
+                }
+            });
+        }
+
+        public static void onTtsSpeechStateChanged(final SharedPreferences prefs, final boolean speaking) {
+            if (prefs != null) cachedPrefs = prefs;
+            handler.post(() -> {
+                synchronized (PriorityRadioEngine.class) {
+                    handler.removeCallbacks(clearPendingTtsWaitRunnable);
+                    isWaitingForPendingTts = false;
+                    if (speaking) {
+                        isTtsSpeaking = true;
+                        handler.removeCallbacks(restoreVolumeRunnable);
+                        applyCurrentVolumeLocked(cachedPrefs);
+                    } else if (isTtsSpeaking) {
+                        isTtsSpeaking = false;
+                        scheduleRestoreAfter2500msLocked();
+                    }
+                }
+            });
         }
 
         public static synchronized boolean isRadioPlaying() {
@@ -139,120 +244,8 @@ public class MainActivity extends Activity {
             return activeSessionId;
         }
 
-        public static void updateSettingsLive(final SharedPreferences prefs) {
-            handler.post(() -> {
-                synchronized (PriorityRadioEngine.class) {
-                    if (radioPlayer == null || !isPlaying) return;
-                    boolean shouldBeDucked = isAutoDuckEnabled(prefs) && (isScannerSquelchOpen || isTtsSpeaking);
-                    float target = shouldBeDucked ? getDuckedVolume(prefs) : getBaselineVolume(prefs);
-                    cancelFade();
-                    setPlayerVolumeInternal(target);
-                }
-            });
-        }
-
-        public static void notifyScannerHit(final SharedPreferences prefs, final boolean squelchOpen) {
-            handler.post(() -> {
-                synchronized (PriorityRadioEngine.class) {
-                    if (squelchOpen) {
-                        lastScannerHitTimestampMs = System.currentTimeMillis();
-                    }
-                    isScannerSquelchOpen = squelchOpen;
-                    evaluateDuckStateOnMainThread(prefs);
-                }
-            });
-        }
-
-        public static void notifyTtsSpeaking(final SharedPreferences prefs, final boolean speaking) {
-            handler.post(() -> {
-                synchronized (PriorityRadioEngine.class) {
-                    if (speaking) {
-                        lastScannerHitTimestampMs = System.currentTimeMillis();
-                    }
-                    isTtsSpeaking = speaking;
-                    evaluateDuckStateOnMainThread(prefs);
-                }
-            });
-        }
-
-        private static synchronized void evaluateDuckStateOnMainThread(final SharedPreferences prefs) {
-            if (radioPlayer == null || !isPlaying) return;
-            if (!isAutoDuckEnabled(prefs)) {
-                cancelHoldAndFade();
-                setPlayerVolumeInternal(getBaselineVolume(prefs));
-                return;
-            }
-            if (isScannerSquelchOpen || isTtsSpeaking) {
-                // Immediately cancel any ongoing fade-up and mute/duck the radio
-                cancelHoldAndFade();
-                setPlayerVolumeInternal(getDuckedVolume(prefs));
-            } else {
-                // Schedule hold timer before fading back up
-                if (holdRestoreRunnable != null) {
-                    handler.removeCallbacks(holdRestoreRunnable);
-                }
-                final int holdMs = getHoldTimeMs(prefs);
-                holdRestoreRunnable = new Runnable() {
-                    @Override
-                    public void run() {
-                        synchronized (PriorityRadioEngine.class) {
-                            if (isScannerSquelchOpen || isTtsSpeaking || radioPlayer == null || !isPlaying) return;
-                            long elapsedSinceLastHit = System.currentTimeMillis() - lastScannerHitTimestampMs;
-                            if (elapsedSinceLastHit < holdMs - 50) {
-                                handler.postDelayed(this, holdMs - elapsedSinceLastHit);
-                                return;
-                            }
-                            float startVol = currentVolume;
-                            float endVol = getBaselineVolume(prefs);
-                            cancelFade();
-                            fadeAnimator = ValueAnimator.ofFloat(startVol, endVol);
-                            fadeAnimator.setDuration(600);
-                            fadeAnimator.setInterpolator(new DecelerateInterpolator());
-                            fadeAnimator.addUpdateListener(anim -> {
-                                synchronized (PriorityRadioEngine.class) {
-                                    // Abort fade-up immediately if a new transmission started mid-fade!
-                                    if (isScannerSquelchOpen || isTtsSpeaking) {
-                                        anim.cancel();
-                                        setPlayerVolumeInternal(getDuckedVolume(prefs));
-                                        return;
-                                    }
-                                    float v = (Float) anim.getAnimatedValue();
-                                    setPlayerVolumeInternal(v);
-                                }
-                            });
-                            fadeAnimator.start();
-                        }
-                    }
-                };
-                handler.postDelayed(holdRestoreRunnable, holdMs);
-            }
-        }
-
-        private static synchronized void setPlayerVolumeInternal(float vol) {
-            currentVolume = Math.max(0f, Math.min(1f, vol));
-            if (radioPlayer != null) {
-                try {
-                    radioPlayer.setVolume(currentVolume, currentVolume);
-                } catch (Exception ignored) {}
-            }
-        }
-
-        private static synchronized void cancelFade() {
-            if (fadeAnimator != null) {
-                try { fadeAnimator.cancel(); } catch (Exception ignored) {}
-                fadeAnimator = null;
-            }
-        }
-
-        private static synchronized void cancelHoldAndFade() {
-            if (holdRestoreRunnable != null) {
-                handler.removeCallbacks(holdRestoreRunnable);
-                holdRestoreRunnable = null;
-            }
-            cancelFade();
-        }
-
         public static void startStation(final Context context, final SharedPreferences prefs, final String streamUrl, final String stationName, final Runnable onStarted, final Runnable onError) {
+            if (prefs != null) cachedPrefs = prefs;
             stopStation();
             activeStationUrl = streamUrl != null ? streamUrl : "";
             activeStationName = stationName != null ? stationName : "RADIO";
@@ -276,9 +269,7 @@ public class MainActivity extends Activity {
                             synchronized (PriorityRadioEngine.class) {
                                 isPlaying = true;
                                 activeSessionId = mp.getAudioSessionId();
-                                boolean duckNow = isAutoDuckEnabled(prefs) && (isScannerSquelchOpen || isTtsSpeaking);
-                                float initVol = duckNow ? getDuckedVolume(prefs) : getBaselineVolume(prefs);
-                                setPlayerVolumeInternal(initVol);
+                                applyCurrentVolumeLocked(cachedPrefs);
                                 mp.start();
                             }
                             if (onStarted != null) onStarted.run();
@@ -296,22 +287,23 @@ public class MainActivity extends Activity {
         }
 
         public static synchronized void togglePause(SharedPreferences prefs) {
+            if (prefs != null) cachedPrefs = prefs;
             if (radioPlayer == null) return;
             try {
                 if (radioPlayer.isPlaying()) {
                     radioPlayer.pause();
                     isPlaying = false;
                 } else {
-                    boolean duckNow = isAutoDuckEnabled(prefs) && (isScannerSquelchOpen || isTtsSpeaking);
-                    setPlayerVolumeInternal(duckNow ? getDuckedVolume(prefs) : getBaselineVolume(prefs));
-                    radioPlayer.start();
                     isPlaying = true;
+                    applyCurrentVolumeLocked(cachedPrefs);
+                    radioPlayer.start();
                 }
             } catch (Exception ignored) {}
         }
 
         private static synchronized void stopStationInternalOnly() {
-            cancelHoldAndFade();
+            handler.removeCallbacks(restoreVolumeRunnable);
+            handler.removeCallbacks(clearPendingTtsWaitRunnable);
             isPlaying = false;
             activeSessionId = 0;
             if (radioPlayer != null) {
@@ -357,6 +349,12 @@ public class MainActivity extends Activity {
     private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
+    private SensorManager sensorManager;
+    private Sensor tiltSensor;
+    private float smoothTiltX = 0f;
+    private float smoothTiltY = 0f;
+    private long lastTiltPushMs = 0L;
+
     private AudioFocusRequest scannerAudioFocusReq = null;
     private PowerManager.WakeLock scannerCpuLock = null;
     private WifiManager.WifiLock scannerWifiLock = null;
@@ -373,6 +371,33 @@ public class MainActivity extends Activity {
 
     private String lastSpokenText = "";
     private long lastSpokenTimestamp = 0;
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (event == null || event.values == null || event.values.length < 2 || webView == null) return;
+        long now = System.currentTimeMillis();
+        if (now - lastTiltPushMs < 45) return;
+        lastTiltPushMs = now;
+        float rawX = Math.max(-7f, Math.min(7f, event.values[0])) / 7f;
+        float rawY = Math.max(-7f, Math.min(7f, event.values[1] - 4.5f)) / 7f;
+        smoothTiltX += (rawX - smoothTiltX) * 0.22f;
+        smoothTiltY += (rawY - smoothTiltY) * 0.22f;
+        int deg = Math.round(125f - smoothTiltX * 28f + smoothTiltY * 14f);
+        int posPct = Math.round(34f + smoothTiltX * 18f - smoothTiltY * 12f);
+        int bx = Math.round(-smoothTiltX * 8f);
+        int by = Math.round(smoothTiltY * 8f);
+        webView.evaluateJavascript(
+                "try{var r=document.documentElement.style;" +
+                "r.setProperty('--gloss-deg','" + deg + "deg');" +
+                "r.setProperty('--gloss-pos','" + posPct + "%');" +
+                "r.setProperty('--tilt-x','" + bx + "px');" +
+                "r.setProperty('--tilt-y','" + by + "px');}catch(e){}",
+                null
+        );
+    }
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
     private synchronized void acquireScannerWakeAndWifiLocks() {
         try {
@@ -534,17 +559,17 @@ public class MainActivity extends Activity {
                     tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                         @Override
                         public void onStart(String utteranceId) {
-                            PriorityRadioEngine.notifyTtsSpeaking(prefs, true);
+                            PriorityRadioEngine.onTtsSpeechStateChanged(prefs, true);
                         }
 
                         @Override
                         public void onDone(String utteranceId) {
-                            PriorityRadioEngine.notifyTtsSpeaking(prefs, false);
+                            PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
                         }
 
                         @Override
                         public void onError(String utteranceId) {
-                            PriorityRadioEngine.notifyTtsSpeaking(prefs, false);
+                            PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
                         }
                     });
                     ttsReady = true;
@@ -608,10 +633,6 @@ public class MainActivity extends Activity {
         }
     };
 
-    /**
-     * Native Background Tick: Ensures WebView's audio squelch detector & live log poller
-     * continue running even when the app is in the background, minimized, or on the Radio screen!
-     */
     private final Runnable periodicInjector = new Runnable() {
         @Override
         public void run() {
@@ -658,6 +679,16 @@ public class MainActivity extends Activity {
             }
         } catch (Exception ignored) {}
 
+        try {
+            sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+            if (sensorManager != null) {
+                tiltSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY);
+                if (tiltSensor == null) {
+                    tiltSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+                }
+            }
+        } catch (Exception ignored) {}
+
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
 
         initTTS();
@@ -665,7 +696,6 @@ public class MainActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
-        // Custom WebView that never suspends JS timers or audio when in background or when PlayerActivity is open
         webView = new WebView(this) {
             @Override
             public void setKeepScreenOn(boolean keepScreenOn) {
@@ -684,12 +714,10 @@ public class MainActivity extends Activity {
 
             @Override
             public void onPause() {
-                // Never pause WebView media or JS timers so background squelch detection & live logs stay active
             }
 
             @Override
             public void pauseTimers() {
-                // Never pause JS timers
             }
         };
         webView.setKeepScreenOn(false);
@@ -915,7 +943,7 @@ public class MainActivity extends Activity {
             mainHandler.post(() -> {
                 scannerAudioConnected = connected;
                 if (!connected) {
-                    PriorityRadioEngine.notifyScannerHit(prefs, false);
+                    PriorityRadioEngine.onScannerRxStateChanged(prefs, false, false);
                 }
                 setBgServiceRunning(connected || bgAudioModeEnabled);
             });
@@ -925,44 +953,26 @@ public class MainActivity extends Activity {
         public void setBackgroundAudioMode(final boolean enabled) {
             mainHandler.post(() -> {
                 setBgServiceRunning(enabled);
-                if (enabled) Toast.makeText(MainActivity.this, "Screen-Off Audio Keep-Alive: ON", Toast.LENGTH_SHORT).show();
             });
         }
 
         @JavascriptInterface
-        public void notifyScannerSquelchState(final boolean squelchOpen, final String modulation, final float channelGainOffsetDb) {
-            PriorityRadioEngine.notifyScannerHit(prefs, squelchOpen);
+        public boolean isAutoDuckOn() {
+            return PriorityRadioEngine.isAutoDuckEnabled(prefs);
         }
 
         @JavascriptInterface
-        public String getMixerSettingsJson() {
-            try {
-                JSONObject o = new JSONObject();
-                o.put("autoDuck", PriorityRadioEngine.isAutoDuckEnabled(prefs));
-                o.put("ceilingPct", prefs.getInt("mixer_radio_ceiling_pct", 40));
-                o.put("duckPct", prefs.getInt("mixer_radio_duck_pct_v2", 0));
-                o.put("agcDb", PriorityRadioEngine.getScannerAgcDb(prefs));
-                o.put("holdMs", PriorityRadioEngine.getHoldTimeMs(prefs));
-                o.put("radioPlaying", PriorityRadioEngine.isRadioPlaying());
-                o.put("radioName", PriorityRadioEngine.getActiveStationName());
-                return o.toString();
-            } catch (Exception e) {
-                return "{}";
-            }
+        public boolean toggleSimpleAutoDuck() {
+            final boolean nextState = PriorityRadioEngine.toggleAutoDuck(prefs);
+            mainHandler.post(() -> Toast.makeText(MainActivity.this,
+                    nextState ? "Radio Auto-Duck: ON (Mutes on Scanner Hit)" : "Radio Auto-Duck: OFF",
+                    Toast.LENGTH_SHORT).show());
+            return nextState;
         }
 
         @JavascriptInterface
-        public void saveMixerSettings(final boolean autoDuck, final int ceilingPct, final int duckPct, final int agcDb, final int holdMs) {
-            mainHandler.post(() -> {
-                prefs.edit()
-                        .putBoolean("mixer_auto_duck_on", autoDuck)
-                        .putInt("mixer_radio_ceiling_pct", Math.max(10, Math.min(100, ceilingPct)))
-                        .putInt("mixer_radio_duck_pct_v2", Math.max(0, Math.min(25, duckPct)))
-                        .putInt("mixer_scanner_agc_db", Math.max(0, Math.min(15, agcDb)))
-                        .putInt("mixer_duck_hold_ms_v2", Math.max(1000, Math.min(5000, holdMs)))
-                        .apply();
-                PriorityRadioEngine.updateSettingsLive(prefs);
-            });
+        public void notifyScannerRx(final boolean rxActive, final boolean voiceReadoutEnabled) {
+            PriorityRadioEngine.onScannerRxStateChanged(prefs, rxActive, voiceReadoutEnabled);
         }
 
         @JavascriptInterface
@@ -975,12 +985,13 @@ public class MainActivity extends Activity {
                 if (!cleanText.equalsIgnoreCase("Voice readout on")
                         && cleanText.equalsIgnoreCase(lastSpokenText)
                         && (now - lastSpokenTimestamp < 30000)) {
+                    PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
                     return;
                 }
                 lastSpokenText = cleanText;
                 lastSpokenTimestamp = now;
 
-                PriorityRadioEngine.notifyTtsSpeaking(prefs, true);
+                PriorityRadioEngine.onTtsSpeechStateChanged(prefs, true);
 
                 if (tts == null || !ttsReady) {
                     initTTS();
@@ -1017,7 +1028,7 @@ public class MainActivity extends Activity {
                             tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null);
                         }
                     } else {
-                        PriorityRadioEngine.notifyTtsSpeaking(prefs, false);
+                        PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
                     }
                 }, 1000);
             }
@@ -1090,6 +1101,7 @@ public class MainActivity extends Activity {
         PriorityRadioEngine.stopStation();
         setBgServiceRunning(false);
         releaseScannerWakeAndWifiLocks();
+        try { if (sensorManager != null) sensorManager.unregisterListener(this); } catch (Exception ignored) {}
         try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
         try {
             if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
@@ -1141,7 +1153,7 @@ public class MainActivity extends Activity {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 600);
     }
-private void injectEnhancements() {
+    private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -1159,9 +1171,12 @@ private void injectEnhancements() {
         js.append("      var st = document.createElement('style');\n");
         js.append("      st.id = 'proscan-v7-upgrade-css';\n");
         js.append("      st.textContent = '' +\n");
+        js.append("        'html{--gloss-deg:125deg;--gloss-pos:34%;--tilt-x:0px;--tilt-y:0px;}' +\n");
         js.append("        '#device-wrapper{width:95%!important;max-height:94dvh!important;transition:opacity 0.18s ease!important;}' +\n");
         js.append("        '#device-wrapper.flipping-out{opacity:0!important;}' +\n");
         js.append("        '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;}' +\n");
+        /* Tilt-Reactive Dynamic Lighting on All 24 Skins */
+        js.append("        '#custom-scanner-ui::after{background:radial-gradient(circle at calc(50% + var(--tilt-x,0px) * 5) calc(22% + var(--tilt-y,0px) * 5),rgba(255,255,255,0.09) 0%,transparent 62%)!important;transition:background 0.08s linear!important;}' +\n");
         js.append("        '.scanner-display{height:325px!important;transition:height 0.22s ease!important;}' +\n");
         js.append("        '.top-controls-container{height:34px!important;}' +\n");
         js.append("        '.top-right-group{height:34px!important;}' +\n");
@@ -1174,8 +1189,12 @@ private void injectEnhancements() {
         js.append("        '.numpad{grid-auto-rows:34px!important;gap:6px!important;}' +\n");
         js.append("        '.numpad .btn{font-size:15.5px!important;font-weight:900!important;}' +\n");
 
-        /* Realistic Gloss Glass Display Surface Texture */
-        js.append("        'html[data-disp-tex=\"glass\"] .scanner-display::after{opacity:1!important;background:linear-gradient(180deg,rgba(255,255,255,0.24) 0%,rgba(255,255,255,0.07) 4.5%,transparent 13%,transparent 89%,rgba(255,255,255,0.06) 100%),linear-gradient(115deg,transparent 0%,transparent 35%,rgba(255,255,255,0.10) 35.5%,rgba(255,255,255,0.025) 43%,transparent 43.5%,transparent 47.5%,rgba(255,255,255,0.055) 48%,transparent 51.5%,transparent 100%),radial-gradient(ellipse at 50% 50%,transparent 68%,rgba(0,0,0,0.42) 100%)!important;box-shadow:inset 0 1px 1px rgba(255,255,255,0.38),inset 0 -1px 2px rgba(0,0,0,0.65)!important;}' +\n");
+        /* Original Classic Gloss Glass Reflection — Now Moves Smoothly with Phone Tilt Angle! */
+        js.append("        'html[data-disp-tex=\"glass\"] .scanner-display::after{opacity:1!important;background:linear-gradient(var(--gloss-deg,125deg),rgba(255,255,255,0.16) 0%,rgba(255,255,255,0.04) var(--gloss-pos,34%),transparent calc(var(--gloss-pos,34%) + 1.2%),transparent 100%),radial-gradient(circle at center,transparent 62%,rgba(0,0,0,0.34) 100%)!important;transition:background 0.08s linear!important;}' +\n");
+
+        /* Pure Black Screen Before/With CRT Switch-Off Animation (Hides all text & log immediately so only the white CRT beam/dot is seen!) */
+        js.append("        'html.tv-off .scanner-display, .scanner-display.tv-shutting-down{background:#000000!important;border-color:#0a0a0a!important;box-shadow:inset 0 0 24px #000000!important;filter:brightness(1)!important;transition:none!important;}' +\n");
+        js.append("        'html.tv-off .scanner-display #custom-imgd, html.tv-off .scanner-display #custom-imgf, html.tv-off .scanner-display .log-wrapper, html.tv-off .scanner-display #display-clock-hud, html.tv-off .scanner-display #scanner-bat-hud, html.tv-off .scanner-display #display-font-hud, .scanner-display.tv-shutting-down #custom-imgd, .scanner-display.tv-shutting-down #custom-imgf, .scanner-display.tv-shutting-down .log-wrapper, .scanner-display.tv-shutting-down #display-clock-hud, .scanner-display.tv-shutting-down #scanner-bat-hud, .scanner-display.tv-shutting-down #display-font-hud{opacity:0!important;visibility:hidden!important;animation:none!important;transition:none!important;}' +\n");
 
         /* 3D Bevelled Buttons on WIRE, TRON, NEON & TERM Skins */
         js.append("        'html[data-skin=\"whiteline\"]{--ui-bg:radial-gradient(circle at 50% 12%,#26292e 0%,#121417 65%,#070809 100%)!important;--btn-bg:linear-gradient(180deg,#2e3238 0%,#181a1e 55%,#0d0e11 100%)!important;--btn-color:#ffffff!important;--btn-active-color:#38bdf8!important;--btn-border:1px solid rgba(255,255,255,0.75)!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #94a3b8,0 4px 6px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.45)!important;--btn-shadow-active:0 0 0 #94a3b8,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
@@ -1250,7 +1269,7 @@ private void injectEnhancements() {
         js.append("        '@keyframes voice-led-pulse-green{0%,100%{background-color:#10b981;border-color:#a7f3d0;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.9),0 0 0 1px rgba(0,0,0,0.65),0 0 8px #10b981,0 0 14px rgba(16,185,129,0.75);}50%{background-color:#065f46;border-color:#059669;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.35),0 0 0 1px rgba(0,0,0,0.65),0 0 2px rgba(16,185,129,0.25);}}' +\n");
         js.append("        '#btn-voice-toggle.active #voice-led{border-style:solid!important;border-width:2px!important;animation:voice-led-pulse-green 3.8s ease-in-out infinite!important;}' +\n");
 
-        /* LAMP & EXIT Button Caps */
+        /* LAMP & PWR Button Caps */
         js.append("        '#btn-lamp-toggle{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;padding:0;margin:0 3px 0 1px;cursor:pointer;touch-action:manipulation;}' +\n");
         js.append("        '#btn-lamp-toggle .lamp-cap{width:22px;height:16px;border-radius:5px;background:linear-gradient(180deg,#eab308,#a16207);border:1px solid #422006;box-shadow:0 2px 3px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;}' +\n");
         js.append("        '#btn-lamp-toggle .lamp-cap::after{content:\"\";width:8px;height:3px;border-radius:1.5px;background:rgba(254,249,195,0.92);box-shadow:0 0 4px rgba(254,249,195,0.5);}' +\n");
@@ -1279,23 +1298,6 @@ private void injectEnhancements() {
         js.append("        '.sm-peak-track{flex:1;height:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;overflow:hidden;position:relative;}' +\n");
         js.append("        '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.14s ease-out;}' +\n");
 
-        /* Unified DSP & Priority Audio Mixer Modal Styles */
-        js.append("        '#proscan-dsp-mixer-modal{position:absolute;z-index:130;inset:10px;border:1px solid #6b777d;border-radius:16px;background:linear-gradient(180deg,#161b20 0%,#0d1014 100%);box-shadow:0 16px 40px rgba(0,0,0,0.92),inset 0 1px 0 rgba(255,255,255,0.12);color:#e2e8f0;display:flex;flex-direction:column;overflow:hidden;font-family:\"JetBrains Mono\",monospace;}' +\n");
-        js.append("        '#proscan-dsp-mixer-modal[hidden]{display:none!important;}' +\n");
-        js.append("        '.dm-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:rgba(0,0,0,0.55);border-bottom:1px solid rgba(255,255,255,0.12);}' +\n");
-        js.append("        '.dm-title{font-family:\"Orbitron\",sans-serif;font-size:11px;font-weight:800;color:#38bdf8;letter-spacing:1px;}' +\n");
-        js.append("        '.dm-body{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:9px;font-size:10px;}' +\n");
-        js.append("        '.dm-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;}' +\n");
-        js.append("        '.dm-card-title{font-size:9.5px;font-weight:900;color:#facc15;letter-spacing:0.6px;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center;}' +\n");
-        js.append("        '.dm-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}' +\n");
-        js.append("        '.dm-row label{font-size:9.5px;color:#cbd5e1;font-weight:700;}' +\n");
-        js.append("        '.dm-slider-wrap{display:flex;align-items:center;gap:6px;flex:1;max-width:58%;}' +\n");
-        js.append("        '.dm-slider-wrap input[type=range]{flex:1;accent-color:#38bdf8;height:5px;}' +\n");
-        js.append("        '.dm-val{min-width:42px;text-align:right;font-weight:800;color:#39ff14;font-size:9.5px;}' +\n");
-        js.append("        '.dm-preset-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;}' +\n");
-        js.append("        '.dm-pbtn{padding:5px 2px;font-family:\"JetBrains Mono\",monospace;font-size:8.5px;font-weight:800;border-radius:5px;border:1px solid #334155;background:#1e293b;color:#cbd5e1;cursor:pointer;text-align:center;}' +\n");
-        js.append("        '.dm-pbtn.active{background:#38bdf8;color:#090d14;border-color:#bae6fd;font-weight:900;}' +\n");
-
         js.append("        '#display-clock-hud{position:absolute!important;top:6px!important;left:10px!important;right:auto!important;z-index:3!important;}' +\n");
         js.append("        '#scanner-bat-hud{position:absolute!important;top:6px!important;right:9px!important;left:auto!important;z-index:3!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10px!important;font-weight:700!important;letter-spacing:0.8px!important;color:var(--log-text)!important;opacity:0.88;pointer-events:none;display:inline-flex!important;align-items:center!important;line-height:1;transition:opacity 0.3s ease,color 0.3s ease;}' +\n");
         js.append("        '#scanner-bat-hud *{font-family:inherit!important;font-size:inherit!important;font-weight:inherit!important;letter-spacing:inherit!important;line-height:inherit!important;}' +\n");
@@ -1303,15 +1305,13 @@ private void injectEnhancements() {
         js.append("        '#scanner-bat-hud.disconnected{opacity:0!important;}' +\n");
         js.append("        '.bat-icon-box{display:inline-block;width:13px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;margin-right:4px;box-sizing:border-box;flex-shrink:0;}' +\n");
         js.append("        '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
-        js.append("        '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}' +\n");
-
-        js.append("        'html.tv-off #scanner-bat-hud,.scanner-display.tv-shutting-down #scanner-bat-hud{filter:grayscale(1) brightness(2.5)!important;animation:crtPowerOffImgF 0.38s cubic-bezier(0.4,0,0.2,1) forwards!important;};'\n");
+        js.append("        '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;};'\n");
         js.append("      document.head.appendChild(st);\n");
         js.append("    } else if (existingSt && document.head.lastElementChild !== existingSt) {\n");
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Replace History Log.txt Polling & Squelch Detection with Background-Safe, Non-Stalling Engine */
+        /* Non-Stalling History Log.txt Polling + Simple Single-Source Squelch Detector */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
         js.append("      window.updateMiniLog = function() {\n");
@@ -1363,22 +1363,22 @@ private void injectEnhancements() {
         js.append("          .catch(function() { isLogFetchInFlight = false; });\n");
         js.append("      };\n");
 
-        /* Background-Safe Audio Squelch Detector (Uses 60ms setInterval + Native Heartbeat instead of requestAnimationFrame!) */
+        /* Single Clean Squelch Detector: Mutes Radio on RX Open, Restores 2.5s after RX Close (or 2.5s after TTS finishes) */
         js.append("      window.detectAudio = function() {};\n");
         js.append("      window.__lastLogPollMs = 0;\n");
         js.append("      window.__bgTickSquelchAndLog = function() {\n");
         js.append("        var nowWall = Date.now();\n");
-        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1600)) {\n");
+        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1800)) {\n");
         js.append("          window.__lastLogPollMs = nowWall;\n");
         js.append("          window.updateMiniLog();\n");
         js.append("        }\n");
         js.append("        var led = document.getElementById('rx-led');\n");
         js.append("        if (typeof isConnected === 'undefined' || !isConnected || !window.analyser || typeof dataArray === 'undefined' || !dataArray) {\n");
         js.append("          if (led && led.classList.contains('active')) led.classList.remove('active');\n");
-        js.append("          if (window.__lastNotifiedSquelch) {\n");
-        js.append("            window.__lastNotifiedSquelch = false;\n");
-        js.append("            if (window.AndroidApp && window.AndroidApp.notifyScannerSquelchState) {\n");
-        js.append("              window.AndroidApp.notifyScannerSquelchState(false, 'NFM', 0);\n");
+        js.append("          if (window.__lastNotifiedRxState) {\n");
+        js.append("            window.__lastNotifiedRxState = false;\n");
+        js.append("            if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
+        js.append("              window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
         js.append("            }\n");
         js.append("          }\n");
         js.append("          return;\n");
@@ -1406,33 +1406,36 @@ private void injectEnhancements() {
         js.append("          var isKey = (now - lastScannerKeyTime) < 2200;\n");
         js.append("          if (rxSignalStartTime === 0) rxSignalStartTime = now;\n");
         js.append("          rxLastActiveTime = now;\n");
-        js.append("          var reqMs = isKey ? (isBeep ? 450 : 260) : (isBeep ? 300 : 90);\n");
+        js.append("          var reqMs = isKey ? (isBeep ? 450 : 260) : (isBeep ? 300 : 80);\n");
         js.append("          if ((now - rxSignalStartTime) >= reqMs) {\n");
         js.append("            if (led && !led.classList.contains('active')) led.classList.add('active');\n");
-        js.append("            if (!window.__lastNotifiedSquelch) {\n");
-        js.append("              window.__lastNotifiedSquelch = true;\n");
-        js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerSquelchState) {\n");
-        js.append("                window.AndroidApp.notifyScannerSquelchState(true, window.__currentChannelMod || 'NFM', window.__currentChannelGainDb || 0);\n");
+        js.append("            if (!window.__lastNotifiedRxState) {\n");
+        js.append("              window.__lastNotifiedRxState = true;\n");
+        js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
+        js.append("                window.AndroidApp.notifyScannerRx(true, Boolean(window.__voiceReadoutEnabled));\n");
         js.append("              }\n");
-        js.append("              window.updateMiniLog();\n");
         js.append("            }\n");
         js.append("            clearTimeout(rxHoldTimeout);\n");
         js.append("            rxHoldTimeout = setTimeout(function() {\n");
         js.append("              if (led) led.classList.remove('active');\n");
-        js.append("              window.__lastNotifiedSquelch = false;\n");
-        js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerSquelchState) {\n");
-        js.append("                window.AndroidApp.notifyScannerSquelchState(false, window.__currentChannelMod || 'NFM', window.__currentChannelGainDb || 0);\n");
+        js.append("              if (window.__lastNotifiedRxState) {\n");
+        js.append("                window.__lastNotifiedRxState = false;\n");
+        js.append("                if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
+        js.append("                  window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
+        js.append("                }\n");
         js.append("              }\n");
-        js.append("              setTimeout(window.updateMiniLog, 450);\n");
-        js.append("            }, 450);\n");
+        js.append("              if (isDisplayOn || isConnected) {\n");
+        js.append("                clearTimeout(rxPostLogTimeout);\n");
+        js.append("                rxPostLogTimeout = setTimeout(window.updateMiniLog, 450);\n");
+        js.append("              }\n");
+        js.append("            }, 350);\n");
         js.append("          }\n");
-        js.append("        } else if (rxSignalStartTime !== 0 && (now - rxLastActiveTime) > 150) {\n");
+        js.append("        } else if (rxSignalStartTime !== 0 && (now - rxLastActiveTime) > 140) {\n");
         js.append("          rxSignalStartTime = 0;\n");
         js.append("        }\n");
         js.append("      };\n");
         js.append("      setInterval(window.__bgTickSquelchAndLog, 65);\n");
         js.append("    }\n");
-
         /* Signal Meter in #brand-logo-slot */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
@@ -1475,7 +1478,6 @@ private void injectEnhancements() {
         js.append("      if (mHost) mHost.addEventListener('click', window.handleBrandCornerTap);\n");
         js.append("      window.__applySigMeterStyle(window.__sigMeterStyle, false);\n");
 
-        /* Visual Signal Meter Loop */
         js.append("      var smCarrierLvl = 0, smAudioLvl = 0, smAdaptiveMax = 14.0, smPhase = 0;\n");
         js.append("      function renderLiveScannerSignalMeter() {\n");
         js.append("        requestAnimationFrame(renderLiveScannerSignalMeter);\n");
@@ -1585,7 +1587,8 @@ private void injectEnhancements() {
         js.append("      }\n");
         js.append("      renderLiveScannerSignalMeter();\n");
         js.append("    }\n");
-/* Isolated LITE button replacement */
+
+        /* Isolated LITE button replacement */
         js.append("    var oldGuideBtn = document.getElementById('btn-manual-open');\n");
         js.append("    if (oldGuideBtn) {\n");
         js.append("      var freshLiteBtn = document.createElement('button');\n");
@@ -1736,8 +1739,7 @@ private void injectEnhancements() {
         js.append("      var origSave = window.savePresetToSlot;\n");
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
-
-        /* Second Row: Clean 6-Button Grid + Unified Per-Channel DSP & Priority Mixer Modal */
+        /* Second Row: Clean 6-Button Grid [ LOG IN ] [ ARCHIVE ] [ RADIO ] [ MTR ] [ LITE ] [ DSP ] */
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
@@ -1777,35 +1779,9 @@ private void injectEnhancements() {
         js.append("        setTimeout(function() { if (window.AndroidApp) window.AndroidApp.openBroadcastRadio(); }, 160);\n");
         js.append("      });\n");
 
-        /* Per-Channel DSP Profiles, AGC Makeup Boost & Priority Mixer Engine */
-        js.append("      window.__channelDspProfiles = JSON.parse(localStorage.getItem('proscan_ch_dsp_profiles_v1') || '{}');\n");
-        js.append("      window.__currentActiveChannelKey = 'GLOBAL';\n");
-        js.append("      window.__currentActiveChannelName = 'GLOBAL DEFAULT';\n");
-        js.append("      window.__currentChannelMod = 'NFM';\n");
-        js.append("      window.__currentChannelGainDb = 0;\n");
-
-        js.append("      window.__dspPresetCurves = {\n");
-        js.append("        'AUTO':     { hp: 320, peakFreq: 2150, peakQ: 1.1, peakGain: 7.5, lp: 3900 },\n");
-        js.append("        'AIRBAND':  { hp: 420, peakFreq: 2250, peakQ: 1.3, peakGain: 10.5, lp: 3200 },\n");
-        js.append("        'VHF_WEAK': { hp: 460, peakFreq: 2050, peakQ: 1.4, peakGain: 9.5, lp: 3000 },\n");
-        js.append("        'REPEATER': { hp: 220, peakFreq: 2100, peakQ: 0.9, peakGain: 4.5, lp: 4500 },\n");
-        js.append("        'FLAT':     { hp: 60,  peakFreq: 2000, peakQ: 0.7, peakGain: 0.0, lp: 12000 }\n");
-        js.append("      };\n");
-
+        /* Clean Scanner Web Audio DSP (Zero Graph Disconnects) */
         js.append("      window.__scannerDspOn = localStorage.getItem('proscan_scanner_dsp_v1') !== 'false';\n");
         js.append("      window.__applyScannerDspRouting = function() {\n");
-        js.append("        var prof = window.__channelDspProfiles[window.__currentActiveChannelKey] || { preset: 'AUTO', gainDb: 0 };\n");
-        js.append("        var presetKey = prof.preset || 'AUTO';\n");
-        js.append("        if (presetKey === 'AUTO' && (window.__currentChannelMod === 'AM' || /^1[1-3]\\d\\./.test(window.__currentActiveChannelKey))) {\n");
-        js.append("          presetKey = 'AIRBAND';\n");
-        js.append("        }\n");
-        js.append("        var curve = window.__dspPresetCurves[presetKey] || window.__dspPresetCurves['AUTO'];\n");
-        js.append("        var chGainDb = parseFloat(prof.gainDb || 0);\n");
-        js.append("        window.__currentChannelGainDb = chGainDb;\n");
-        js.append("        var baseAgcDb = window.__cachedAgcDb !== undefined ? window.__cachedAgcDb : 8;\n");
-        js.append("        var amBonusDb = (window.__currentChannelMod === 'AM' || presetKey === 'AIRBAND') ? 3.0 : 0.0;\n");
-        js.append("        var totalBoostDb = Math.max(-6, Math.min(24, baseAgcDb + amBonusDb + chGainDb));\n");
-
         js.append("        if (!window.audioContext || !window.source || !window.analyser) return;\n");
         js.append("        if (!window.__dspNodes) {\n");
         js.append("          try {\n");
@@ -1813,191 +1789,30 @@ private void injectEnhancements() {
         js.append("            var hp = ctx.createBiquadFilter(); hp.type = 'highpass';\n");
         js.append("            var peak = ctx.createBiquadFilter(); peak.type = 'peaking';\n");
         js.append("            var lp = ctx.createBiquadFilter(); lp.type = 'lowpass';\n");
-        js.append("            var preGain = ctx.createGain();\n");
         js.append("            var comp = ctx.createDynamicsCompressor();\n");
-        js.append("            comp.threshold.value = -22;\n");
-        js.append("            comp.knee.value = 6;\n");
-        js.append("            comp.ratio.value = 12;\n");
-        js.append("            comp.attack.value = 0.0015;\n");
-        js.append("            comp.release.value = 0.18;\n");
-        js.append("            hp.connect(peak); peak.connect(lp); lp.connect(preGain); preGain.connect(comp);\n");
+        js.append("            comp.threshold.value = -24;\n");
+        js.append("            comp.knee.value = 8;\n");
+        js.append("            comp.ratio.value = 6;\n");
+        js.append("            comp.attack.value = 0.002;\n");
+        js.append("            comp.release.value = 0.20;\n");
+        js.append("            hp.connect(peak); peak.connect(lp); lp.connect(comp);\n");
         js.append("            window.source.disconnect();\n");
         js.append("            window.source.connect(hp);\n");
         js.append("            comp.connect(window.analyser);\n");
-        js.append("            window.__dspNodes = { hp: hp, peak: peak, lp: lp, preGain: preGain, comp: comp };\n");
+        js.append("            window.__dspNodes = { hp: hp, peak: peak, lp: lp, comp: comp };\n");
         js.append("          } catch(e) {}\n");
         js.append("        }\n");
         js.append("        if (window.__dspNodes) {\n");
         js.append("          try {\n");
-        js.append("            window.__dspNodes.hp.frequency.value = window.__scannerDspOn ? curve.hp : 40;\n");
-        js.append("            window.__dspNodes.peak.frequency.value = curve.peakFreq;\n");
-        js.append("            window.__dspNodes.peak.Q.value = curve.peakQ;\n");
-        js.append("            window.__dspNodes.peak.gain.value = window.__scannerDspOn ? curve.peakGain : 0;\n");
-        js.append("            window.__dspNodes.lp.frequency.value = window.__scannerDspOn ? curve.lp : 16000;\n");
-        js.append("            window.__dspNodes.preGain.gain.value = Math.pow(10, totalBoostDb / 20);\n");
+        js.append("            window.__dspNodes.hp.frequency.value = window.__scannerDspOn ? 340 : 40;\n");
+        js.append("            window.__dspNodes.peak.frequency.value = 2150;\n");
+        js.append("            window.__dspNodes.peak.Q.value = 1.1;\n");
+        js.append("            window.__dspNodes.peak.gain.value = window.__scannerDspOn ? 8.5 : 0;\n");
+        js.append("            window.__dspNodes.lp.frequency.value = window.__scannerDspOn ? 3900 : 16000;\n");
         js.append("          } catch(e) {}\n");
         js.append("        }\n");
         js.append("      };\n");
 
-        /* Unified Per-Channel DSP & Priority Mixer Modal */
-        js.append("      var scannerUiBox = document.getElementById('custom-scanner-ui');\n");
-        js.append("      if (scannerUiBox && !document.getElementById('proscan-dsp-mixer-modal')) {\n");
-        js.append("        var dmModal = document.createElement('div');\n");
-        js.append("        dmModal.id = 'proscan-dsp-mixer-modal';\n");
-        js.append("        dmModal.hidden = true;\n");
-        js.append("        dmModal.innerHTML = '' +\n");
-        js.append("          '<div class=\"dm-hdr\">' +\n");
-        js.append("            '<span class=\"dm-title\">AUDIO MIXER &amp; DSP PROFILES</span>' +\n");
-        js.append("            '<button class=\"manual-close-btn\" type=\"button\" id=\"dm-close-btn\">CLOSE ✕</button>' +\n");
-        js.append("          '</div>' +\n");
-        js.append("          '<div class=\"dm-body\">' +\n");
-        js.append("            '<div class=\"dm-card\">' +\n");
-        js.append("              '<div class=\"dm-card-title\"><span>PER-CHANNEL DSP PROFILE</span><span id=\"dm-active-ch-lbl\" style=\"color:#38bdf8;\">GLOBAL</span></div>' +\n");
-        js.append("              '<div class=\"dm-preset-grid\" id=\"dm-preset-btns\">' +\n");
-        js.append("                '<button type=\"button\" class=\"dm-pbtn\" data-p=\"AUTO\">AUTO</button>' +\n");
-        js.append("                '<button type=\"button\" class=\"dm-pbtn\" data-p=\"AIRBAND\">AIR AM</button>' +\n");
-        js.append("                '<button type=\"button\" class=\"dm-pbtn\" data-p=\"VHF_WEAK\">VHF DX</button>' +\n");
-        js.append("                '<button type=\"button\" class=\"dm-pbtn\" data-p=\"REPEATER\">RPT FM</button>' +\n");
-        js.append("                '<button type=\"button\" class=\"dm-pbtn\" data-p=\"FLAT\">FLAT</button>' +\n");
-        js.append("              '</div>' +\n");
-        js.append("              '<div class=\"dm-row\" style=\"margin-top:4px;\">' +\n");
-        js.append("                '<label>Channel Gain Offset</label>' +\n");
-        js.append("                '<div class=\"dm-slider-wrap\">' +\n");
-        js.append("                  '<input type=\"range\" id=\"dm-ch-gain\" min=\"-6\" max=\"12\" step=\"1\" value=\"0\">' +\n");
-        js.append("                  '<span class=\"dm-val\" id=\"dm-ch-gain-val\">0 dB</span>' +\n");
-        js.append("                '</div>' +\n");
-        js.append("              '</div>' +\n");
-        js.append("            '</div>' +\n");
-        js.append("            '<div class=\"dm-card\">' +\n");
-        js.append("              '<div class=\"dm-card-title\"><span>PRIORITY AUTO-DUCK MIXER</span><button type=\"button\" class=\"dm-pbtn\" id=\"dm-autoduck-toggle\" style=\"padding:3px 8px;\">ON</button></div>' +\n");
-        js.append("              '<div class=\"dm-row\">' +\n");
-        js.append("                '<label>Scanner AGC Boost</label>' +\n");
-        js.append("                '<div class=\"dm-slider-wrap\">' +\n");
-        js.append("                  '<input type=\"range\" id=\"dm-agc-db\" min=\"0\" max=\"15\" step=\"1\" value=\"8\">' +\n");
-        js.append("                  '<span class=\"dm-val\" id=\"dm-agc-db-val\">+8 dB</span>' +\n");
-        js.append("                '</div>' +\n");
-        js.append("              '</div>' +\n");
-        js.append("              '<div class=\"dm-row\">' +\n");
-        js.append("                '<label>Radio Baseline Ceiling</label>' +\n");
-        js.append("                '<div class=\"dm-slider-wrap\">' +\n");
-        js.append("                  '<input type=\"range\" id=\"dm-rad-ceil\" min=\"10\" max=\"100\" step=\"5\" value=\"40\">' +\n");
-        js.append("                  '<span class=\"dm-val\" id=\"dm-rad-ceil-val\">40%</span>' +\n");
-        js.append("                '</div>' +\n");
-        js.append("              '</div>' +\n");
-        js.append("              '<div class=\"dm-row\">' +\n");
-        js.append("                '<label>Radio Ducked Level</label>' +\n");
-        js.append("                '<div class=\"dm-slider-wrap\">' +\n");
-        js.append("                  '<input type=\"range\" id=\"dm-rad-duck\" min=\"0\" max=\"25\" step=\"1\" value=\"0\">' +\n");
-        js.append("                  '<span class=\"dm-val\" id=\"dm-rad-duck-val\">0% (MUTE)</span>' +\n");
-        js.append("                '</div>' +\n");
-        js.append("              '</div>' +\n");
-        js.append("              '<div class=\"dm-row\">' +\n");
-        js.append("                '<label>Duck Hold Time</label>' +\n");
-        js.append("                '<div class=\"dm-slider-wrap\">' +\n");
-        js.append("                  '<input type=\"range\" id=\"dm-duck-hold\" min=\"1000\" max=\"5000\" step=\"250\" value=\"3500\">' +\n");
-        js.append("                  '<span class=\"dm-val\" id=\"dm-duck-hold-val\">3.5s</span>' +\n");
-        js.append("                '</div>' +\n");
-        js.append("              '</div>' +\n");
-        js.append("            '</div>' +\n");
-        js.append("          '</div>';\n");
-        js.append("        ['pointerdown','pointerup','click'].forEach(function(ev){ dmModal.addEventListener(ev, function(e){ e.stopPropagation(); }); });\n");
-        js.append("        scannerUiBox.appendChild(dmModal);\n");
-
-        js.append("        window.__openDspMixerModal = function() {\n");
-        js.append("          var chKey = window.__currentActiveChannelKey || 'GLOBAL';\n");
-        js.append("          document.getElementById('dm-active-ch-lbl').innerText = chKey + ' (' + (window.__currentChannelMod || 'NFM') + ')';\n");
-        js.append("          var prof = window.__channelDspProfiles[chKey] || { preset: 'AUTO', gainDb: 0 };\n");
-        js.append("          document.querySelectorAll('#dm-preset-btns .dm-pbtn').forEach(function(b){\n");
-        js.append("            b.classList.toggle('active', b.getAttribute('data-p') === (prof.preset || 'AUTO'));\n");
-        js.append("          });\n");
-        js.append("          var gSl = document.getElementById('dm-ch-gain');\n");
-        js.append("          gSl.value = prof.gainDb || 0;\n");
-        js.append("          document.getElementById('dm-ch-gain-val').innerText = (gSl.value > 0 ? '+' : '') + gSl.value + ' dB';\n");
-        js.append("          try {\n");
-        js.append("            if (window.AndroidApp && window.AndroidApp.getMixerSettingsJson) {\n");
-        js.append("              var m = JSON.parse(window.AndroidApp.getMixerSettingsJson());\n");
-        js.append("              var adBtn = document.getElementById('dm-autoduck-toggle');\n");
-        js.append("              var isAd = m.autoDuck !== false;\n");
-        js.append("              adBtn.classList.toggle('active', isAd);\n");
-        js.append("              adBtn.innerText = isAd ? 'AUTO-DUCK: ON' : 'AUTO-DUCK: OFF';\n");
-        js.append("              window.__cachedAgcDb = m.agcDb !== undefined ? m.agcDb : 8;\n");
-        js.append("              document.getElementById('dm-agc-db').value = window.__cachedAgcDb;\n");
-        js.append("              document.getElementById('dm-agc-db-val').innerText = '+' + window.__cachedAgcDb + ' dB';\n");
-        js.append("              document.getElementById('dm-rad-ceil').value = m.ceilingPct !== undefined ? m.ceilingPct : 40;\n");
-        js.append("              document.getElementById('dm-rad-ceil-val').innerText = document.getElementById('dm-rad-ceil').value + '%';\n");
-        js.append("              var dVal = m.duckPct !== undefined ? m.duckPct : 0;\n");
-        js.append("              document.getElementById('dm-rad-duck').value = dVal;\n");
-        js.append("              document.getElementById('dm-rad-duck-val').innerText = dVal === 0 ? '0% (MUTE)' : (dVal + '%');\n");
-        js.append("              document.getElementById('dm-duck-hold').value = m.holdMs !== undefined ? m.holdMs : 3500;\n");
-        js.append("              document.getElementById('dm-duck-hold-val').innerText = (document.getElementById('dm-duck-hold').value / 1000).toFixed(1) + 's';\n");
-        js.append("            }\n");
-        js.append("          } catch(e) {}\n");
-        js.append("          dmModal.hidden = false;\n");
-        js.append("        };\n");
-
-        js.append("        function saveCurrentChannelProfile(preset, gainDb) {\n");
-        js.append("          var chKey = window.__currentActiveChannelKey || 'GLOBAL';\n");
-        js.append("          var cur = window.__channelDspProfiles[chKey] || { preset: 'AUTO', gainDb: 0 };\n");
-        js.append("          if (preset !== null) cur.preset = preset;\n");
-        js.append("          if (gainDb !== null) cur.gainDb = parseInt(gainDb, 10) || 0;\n");
-        js.append("          window.__channelDspProfiles[chKey] = cur;\n");
-        js.append("          localStorage.setItem('proscan_ch_dsp_profiles_v1', JSON.stringify(window.__channelDspProfiles));\n");
-        js.append("          window.__applyScannerDspRouting();\n");
-        js.append("        }\n");
-
-        js.append("        document.querySelectorAll('#dm-preset-btns .dm-pbtn').forEach(function(btn) {\n");
-        js.append("          btn.addEventListener('click', function() {\n");
-        js.append("            var p = btn.getAttribute('data-p');\n");
-        js.append("            document.querySelectorAll('#dm-preset-btns .dm-pbtn').forEach(function(b){ b.classList.toggle('active', b === btn); });\n");
-        js.append("            saveCurrentChannelProfile(p, null);\n");
-        js.append("          });\n");
-        js.append("        });\n");
-
-        js.append("        document.getElementById('dm-ch-gain').addEventListener('input', function() {\n");
-        js.append("          document.getElementById('dm-ch-gain-val').innerText = (this.value > 0 ? '+' : '') + this.value + ' dB';\n");
-        js.append("          saveCurrentChannelProfile(null, this.value);\n");
-        js.append("        });\n");
-
-        js.append("        function pushMixerToNative() {\n");
-        js.append("          var ad = document.getElementById('dm-autoduck-toggle').classList.contains('active');\n");
-        js.append("          var agc = parseInt(document.getElementById('dm-agc-db').value, 10) || 8;\n");
-        js.append("          window.__cachedAgcDb = agc;\n");
-        js.append("          var ceil = parseInt(document.getElementById('dm-rad-ceil').value, 10) || 40;\n");
-        js.append("          var duck = parseInt(document.getElementById('dm-rad-duck').value, 10) || 0;\n");
-        js.append("          var hold = parseInt(document.getElementById('dm-duck-hold').value, 10) || 3500;\n");
-        js.append("          if (window.AndroidApp && window.AndroidApp.saveMixerSettings) {\n");
-        js.append("            window.AndroidApp.saveMixerSettings(ad, ceil, duck, agc, hold);\n");
-        js.append("          }\n");
-        js.append("          window.__applyScannerDspRouting();\n");
-        js.append("        }\n");
-
-        js.append("        document.getElementById('dm-autoduck-toggle').addEventListener('click', function() {\n");
-        js.append("          var nxt = !this.classList.contains('active');\n");
-        js.append("          this.classList.toggle('active', nxt);\n");
-        js.append("          this.innerText = nxt ? 'AUTO-DUCK: ON' : 'AUTO-DUCK: OFF';\n");
-        js.append("          pushMixerToNative();\n");
-        js.append("        });\n");
-        js.append("        document.getElementById('dm-agc-db').addEventListener('input', function() {\n");
-        js.append("          document.getElementById('dm-agc-db-val').innerText = '+' + this.value + ' dB';\n");
-        js.append("          pushMixerToNative();\n");
-        js.append("        });\n");
-        js.append("        document.getElementById('dm-rad-ceil').addEventListener('input', function() {\n");
-        js.append("          document.getElementById('dm-rad-ceil-val').innerText = this.value + '%';\n");
-        js.append("          pushMixerToNative();\n");
-        js.append("        });\n");
-        js.append("        document.getElementById('dm-rad-duck').addEventListener('input', function() {\n");
-        js.append("          var dv = parseInt(this.value, 10) || 0;\n");
-        js.append("          document.getElementById('dm-rad-duck-val').innerText = dv === 0 ? '0% (MUTE)' : (dv + '%');\n");
-        js.append("          pushMixerToNative();\n");
-        js.append("        });\n");
-        js.append("        document.getElementById('dm-duck-hold').addEventListener('input', function() {\n");
-        js.append("          document.getElementById('dm-duck-hold-val').innerText = (this.value / 1000).toFixed(1) + 's';\n");
-        js.append("          pushMixerToNative();\n");
-        js.append("        });\n");
-        js.append("        document.getElementById('dm-close-btn').addEventListener('click', function() { dmModal.hidden = true; });\n");
-        js.append("      }\n");
-
-        /* Add DSP as the 6th button in the second row */
         js.append("      var dspBtn = document.createElement('button');\n");
         js.append("      dspBtn.id = 'btn-scanner-dsp'; dspBtn.className = 'btn'; dspBtn.type = 'button';\n");
         js.append("      function syncDspBtnUi(active) {\n");
@@ -2005,37 +1820,23 @@ private void injectEnhancements() {
         js.append("        dspBtn.innerText = active ? 'DSP: ON' : 'DSP: OFF';\n");
         js.append("      }\n");
         js.append("      syncDspBtnUi(window.__scannerDspOn);\n");
-        js.append("      var dspHoldTimer = null, dspLongFired = false;\n");
-        js.append("      dspBtn.addEventListener('pointerdown', function() {\n");
-        js.append("        clearTimeout(dspHoldTimer); dspLongFired = false;\n");
-        js.append("        dspHoldTimer = setTimeout(function() {\n");
-        js.append("          dspHoldTimer = null; dspLongFired = true;\n");
-        js.append("          if (navigator.vibrate) navigator.vibrate(35);\n");
-        js.append("          if (window.__openDspMixerModal) window.__openDspMixerModal();\n");
-        js.append("        }, 480);\n");
-        js.append("      });\n");
-        js.append("      dspBtn.addEventListener('pointerup', function() {\n");
-        js.append("        var wasTap = dspHoldTimer !== null; clearTimeout(dspHoldTimer); dspHoldTimer = null;\n");
-        js.append("        if (wasTap && !dspLongFired) {\n");
-        js.append("          if (navigator.vibrate) navigator.vibrate(20);\n");
-        js.append("          window.__scannerDspOn = !window.__scannerDspOn;\n");
-        js.append("          localStorage.setItem('proscan_scanner_dsp_v1', String(window.__scannerDspOn));\n");
-        js.append("          syncDspBtnUi(window.__scannerDspOn);\n");
-        js.append("          window.__applyScannerDspRouting();\n");
-        js.append("          if (typeof showDisplayHud === 'function') {\n");
-        js.append("            showDisplayHud('DSP + AGC: ' + (window.__scannerDspOn ? 'ON (HOLD=MIXER)' : 'OFF (HOLD=MIXER)'), 1400);\n");
-        js.append("          }\n");
+        js.append("      dspBtn.addEventListener('click', function() {\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("        window.__scannerDspOn = !window.__scannerDspOn;\n");
+        js.append("        localStorage.setItem('proscan_scanner_dsp_v1', String(window.__scannerDspOn));\n");
+        js.append("        syncDspBtnUi(window.__scannerDspOn);\n");
+        js.append("        window.__applyScannerDspRouting();\n");
+        js.append("        if (typeof showDisplayHud === 'function') {\n");
+        js.append("          showDisplayHud('DSP CLARITY: ' + (window.__scannerDspOn ? 'ON' : 'OFF'), 1300);\n");
         js.append("        }\n");
         js.append("      });\n");
-        js.append("      dspBtn.addEventListener('pointerleave', function() { clearTimeout(dspHoldTimer); dspHoldTimer = null; });\n");
-        js.append("      dspBtn.addEventListener('pointercancel', function() { clearTimeout(dspHoldTimer); dspHoldTimer = null; });\n");
         js.append("      rowParent.appendChild(dspBtn);\n");
         js.append("    }\n");
 
-        /* Top LEDs Left: WAKE and VOICE + Instant Radio Mute on New Log Row */
+        /* Top LEDs Left: WAKE and VOICE */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
-        js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = ''; window.__lastDuckedLogKey = '';\n");
+        js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = '';\n");
         js.append("      var rxWaitTimer = null;\n");
         js.append("      function speakTextNow(txt, immediate) {\n");
         js.append("        if (!window.AndroidApp) return;\n");
@@ -2047,7 +1848,7 @@ private void injectEnhancements() {
         js.append("          if (rx && rx.classList.contains('active') && tries++ < 25) {\n");
         js.append("            rxWaitTimer = setTimeout(waitRxOff, 220);\n");
         js.append("          } else {\n");
-        js.append("            rxWaitTimer = setTimeout(function() { window.AndroidApp.speakChannel(txt); }, 120);\n");
+        js.append("            rxWaitTimer = setTimeout(function() { window.AndroidApp.speakChannel(txt); }, 150);\n");
         js.append("          }\n");
         js.append("        })();\n");
         js.append("      }\n");
@@ -2077,8 +1878,8 @@ private void injectEnhancements() {
         js.append("      var logBody = document.getElementById('mini-log-data');\n");
         js.append("      if (logBody) {\n");
         js.append("        var speechThrottleTimer = null;\n");
-        js.append("        var logDuckReleaseTimer = null;\n");
-        js.append("        function checkTopLogRowForSpeechAndDsp() {\n");
+        js.append("        function checkTopLogRowForSpeech() {\n");
+        js.append("          if (!window.__voiceReadoutEnabled) return;\n");
         js.append("          var topRow = logBody.querySelector('tr.new-log-row') || logBody.querySelector('tr');\n");
         js.append("          if (!topRow || topRow.children.length < 5) return;\n");
         js.append("          var timeStr = (topRow.children[0].textContent || '').trim();\n");
@@ -2088,36 +1889,16 @@ private void injectEnhancements() {
         js.append("          var closeParen = rawTitle.indexOf(')');\n");
         js.append("          var chName = (closeParen !== -1 ? rawTitle.slice(closeParen + 1) : rawTitle).replace(/^[×xX]\\s*\\d+\\s*/, '').trim();\n");
         js.append("          if (!chName || chName === '---') chName = freqStr;\n");
-        js.append("          if (freqStr && freqStr !== '---' && freqStr !== window.__currentActiveChannelKey) {\n");
-        js.append("            window.__currentActiveChannelKey = freqStr;\n");
-        js.append("            window.__currentActiveChannelName = chName;\n");
-        js.append("            var fVal = parseFloat(freqStr) || 0;\n");
-        js.append("            window.__currentChannelMod = ((fVal >= 108.0 && fVal <= 137.0) || (fVal >= 225.0 && fVal <= 400.0) || /airport|tower|approach|radar|ctrl|guard|atis/i.test(chName)) ? 'AM' : 'NFM';\n");
-        js.append("            if (window.__applyScannerDspRouting) window.__applyScannerDspRouting();\n");
-        js.append("          }\n");
-        js.append("          var rowKey = timeStr + '|' + freqStr + '|' + chName;\n");
-        js.append("          if (topRow.classList.contains('new-log-row') && rowKey !== window.__lastDuckedLogKey) {\n");
-        js.append("            window.__lastDuckedLogKey = rowKey;\n");
-        js.append("            if (typeof isConnected !== 'undefined' && isConnected && window.AndroidApp && window.AndroidApp.notifyScannerSquelchState) {\n");
-        js.append("              window.AndroidApp.notifyScannerSquelchState(true, window.__currentChannelMod || 'NFM', window.__currentChannelGainDb || 0);\n");
-        js.append("              clearTimeout(logDuckReleaseTimer);\n");
-        js.append("              logDuckReleaseTimer = setTimeout(function() {\n");
-        js.append("                var rx = document.getElementById('rx-led');\n");
-        js.append("                if (!rx || !rx.classList.contains('active')) {\n");
-        js.append("                  window.AndroidApp.notifyScannerSquelchState(false, window.__currentChannelMod || 'NFM', window.__currentChannelGainDb || 0);\n");
-        js.append("                }\n");
-        js.append("              }, 1200);\n");
-        js.append("            }\n");
-        js.append("          }\n");
-        js.append("          if (!window.__voiceReadoutEnabled || !chName) return;\n");
+        js.append("          if (!chName) return;\n");
         js.append("          if (speechThrottleTimer) return;\n");
         js.append("          speechThrottleTimer = setTimeout(function() { speechThrottleTimer = null; }, 400);\n");
+        js.append("          var rowKey = timeStr + '|' + freqStr + '|' + chName;\n");
         js.append("          if (rowKey !== window.__lastSpokenRowKey) {\n");
         js.append("            window.__lastSpokenRowKey = rowKey;\n");
         js.append("            speakTextNow(chName, false);\n");
         js.append("          }\n");
         js.append("        }\n");
-        js.append("        new MutationObserver(checkTopLogRowForSpeechAndDsp).observe(logBody, { childList: true });\n");
+        js.append("        new MutationObserver(checkTopLogRowForSpeech).observe(logBody, { childList: true });\n");
         js.append("      }\n");
         js.append("      setInterval(function() {\n");
         js.append("        try {\n");
@@ -2135,34 +1916,28 @@ private void injectEnhancements() {
         js.append("      logTb.__hitHudHooked = true;\n");
         js.append("      logTb.addEventListener('click', function(e) {\n");
         js.append("        var tr = e.target.closest('tr'); if (!tr || tr.children.length < 5) return;\n");
-        js.append("        var freqStr = (tr.children[1].textContent || '').trim();\n");
         js.append("        var nameTd = tr.children[4]; var badge = nameTd.querySelector('.freq-hit-badge');\n");
         js.append("        var hitsText = nameTd.getAttribute('data-hit-count') || (badge ? (badge.textContent || '').replace(/[^0-9]/g, '') : '') || '1';\n");
         js.append("        var rawTitle = nameTd.getAttribute('title') || nameTd.innerText || '';\n");
         js.append("        var closeParen = rawTitle.indexOf(')');\n");
         js.append("        var cleanName = (closeParen !== -1 ? rawTitle.slice(closeParen + 1) : rawTitle).trim();\n");
-        js.append("        if (freqStr && freqStr !== '---') {\n");
-        js.append("          window.__currentActiveChannelKey = freqStr;\n");
-        js.append("          window.__currentActiveChannelName = cleanName;\n");
-        js.append("        }\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(15);\n");
         js.append("        if (typeof showDisplayHud === 'function') showDisplayHud(cleanName + ' • HITS: ' + hitsText, 2200);\n");
         js.append("      });\n");
         js.append("    }\n");
 
-        /* AUDIO Toggle */
+        /* AUDIO Toggle: Short Tap = Toggle Scanner Audio ON/OFF; Long Press = Toggle Simple Auto-Duck ON/OFF */
         js.append("    var oldAudioBtn = document.getElementById('btn-audio-toggle');\n");
         js.append("    if (oldAudioBtn && !oldAudioBtn.__vlcUnifiedHooked) {\n");
         js.append("      var aBtn = oldAudioBtn.cloneNode(true); aBtn.__vlcUnifiedHooked = true;\n");
         js.append("      oldAudioBtn.parentNode.replaceChild(aBtn, oldAudioBtn);\n");
-        js.append("      var isVlcMode = true;\n");
+        js.append("      window.__simpleAutoDuckOn = (window.AndroidApp && window.AndroidApp.isAutoDuckOn) ? window.AndroidApp.isAutoDuckOn() : true;\n");
         js.append("      function renderAudioLabel() {\n");
-        js.append("        var cone = (isConnected && isVlcMode) ? ' <span style=\"color:#ff8c00;font-size:10px;margin-left:2px;\">&#9650;</span>' : '';\n");
-        js.append("        aBtn.innerHTML = '<span class=\"inline-led\" id=\"audio-inline-led\"></span> AUDIO' + cone;\n");
+        js.append("        var duckTag = window.__simpleAutoDuckOn ? ' <span style=\"color:#38bdf8;font-size:8.5px;margin-left:3px;\">[DUCK]</span>' : '';\n");
+        js.append("        aBtn.innerHTML = '<span class=\"inline-led\" id=\"audio-inline-led\"></span> AUDIO' + duckTag;\n");
         js.append("      }\n");
-        js.append("      function setAudioPlaying(play, vlcBg) {\n");
+        js.append("      window.__setScannerAudioState = function(play) {\n");
         js.append("        var player = document.getElementById('audio_player');\n");
-        js.append("        isVlcMode = Boolean(play && vlcBg);\n");
         js.append("        if (play) {\n");
         js.append("          isConnected = true;\n");
         js.append("          if (player) {\n");
@@ -2175,7 +1950,7 @@ private void injectEnhancements() {
         js.append("          if (window.AndroidApp && window.AndroidApp.setScannerAudioConnected) window.AndroidApp.setScannerAudioConnected(true);\n");
         js.append("          if (window.AndroidApp) window.AndroidApp.setBackgroundAudioMode(true);\n");
         js.append("        } else {\n");
-        js.append("          isConnected = false; isVlcMode = false;\n");
+        js.append("          isConnected = false;\n");
         js.append("          if (player && !player.paused) player.pause();\n");
         js.append("          aBtn.classList.remove('active');\n");
         js.append("          if (window.__setVoiceReadoutState) window.__setVoiceReadoutState(false, false);\n");
@@ -2183,7 +1958,8 @@ private void injectEnhancements() {
         js.append("          if (window.AndroidApp) window.AndroidApp.setBackgroundAudioMode(false);\n");
         js.append("        }\n");
         js.append("        renderAudioLabel();\n");
-        js.append("      }\n");
+        js.append("      };\n");
+        js.append("      renderAudioLabel();\n");
         js.append("      setInterval(function() {\n");
         js.append("        if (typeof isConnected !== 'undefined' && isConnected) {\n");
         js.append("          var p = document.getElementById('audio_player');\n");
@@ -2191,24 +1967,35 @@ private void injectEnhancements() {
         js.append("          if (window.audioContext && window.audioContext.state === 'suspended') { try { window.audioContext.resume(); } catch(e){} }\n");
         js.append("        }\n");
         js.append("      }, 2500);\n");
-        js.append("      window.__stopScannerAudioFromBt = function() { setAudioPlaying(false, false); };\n");
+        js.append("      window.__stopScannerAudioFromBt = function() { window.__setScannerAudioState(false); };\n");
         js.append("      var aTimer = null, aLong = false;\n");
         js.append("      aBtn.addEventListener('pointerdown', function() {\n");
         js.append("        clearTimeout(aTimer); aLong = false;\n");
         js.append("        aTimer = setTimeout(function() {\n");
         js.append("          aTimer = null; aLong = true; if (navigator.vibrate) navigator.vibrate(40);\n");
-        js.append("          if (window.__openDspMixerModal) window.__openDspMixerModal();\n");
+        js.append("          if (window.AndroidApp && window.AndroidApp.toggleSimpleAutoDuck) {\n");
+        js.append("            window.__simpleAutoDuckOn = window.AndroidApp.toggleSimpleAutoDuck();\n");
+        js.append("          } else {\n");
+        js.append("            window.__simpleAutoDuckOn = !window.__simpleAutoDuckOn;\n");
+        js.append("          }\n");
+        js.append("          renderAudioLabel();\n");
+        js.append("          if (typeof showDisplayHud === 'function') {\n");
+        js.append("            showDisplayHud('RADIO AUTO-DUCK: ' + (window.__simpleAutoDuckOn ? 'ON' : 'OFF'), 1600);\n");
+        js.append("          }\n");
         js.append("        }, 500);\n");
         js.append("      });\n");
         js.append("      aBtn.addEventListener('pointerup', function() {\n");
         js.append("        var wasActive = aTimer !== null; clearTimeout(aTimer); aTimer = null;\n");
-        js.append("        if (wasActive && !aLong) { if (!isConnected) setAudioPlaying(true, true); else setAudioPlaying(false, false); }\n");
+        js.append("        if (wasActive && !aLong) { window.__setScannerAudioState(!isConnected); }\n");
         js.append("      });\n");
         js.append("      aBtn.addEventListener('pointerleave', function() { clearTimeout(aTimer); aTimer = null; });\n");
         js.append("      aBtn.addEventListener('pointercancel', function() { clearTimeout(aTimer); aTimer = null; });\n");
         js.append("    }\n");
 
-        /* Top LEDs Right: RX, LOG, LAMP, and EXIT */
+        /* Top LEDs Right: RX, LOG, LAMP, and PWR (ON/OFF) Button:
+           - Double-Tap (whether ON or OFF) = Show Android Top/Bottom System Bars
+           - Long-Press (550ms) when OFF = Power ON both DISPLAY and AUDIO
+           - Long-Press (550ms) when ON  = Turn OFF AUDIO & DISPLAY, blank screen to pure black with white CRT animation, and Exit App */
         js.append("    var ledsRight = document.querySelector('.top-leds-right');\n");
         js.append("    if (ledsRight && !document.getElementById('btn-hardware-exit')) {\n");
         js.append("      var lampBtn = document.createElement('button');\n");
@@ -2241,32 +2028,55 @@ private void injectEnhancements() {
 
         js.append("      var exitBtn = document.createElement('button');\n");
         js.append("      exitBtn.id = 'btn-hardware-exit'; exitBtn.type = 'button';\n");
-        js.append("      exitBtn.title = 'Tap: System Bars | Hold: Switch Off & Exit App';\n");
-        js.append("      exitBtn.innerHTML = '<div class=\"exit-cap\"></div><span class=\"rx-label\">EXIT</span>';\n");
+        js.append("      exitBtn.title = 'Hold: Power ON / OFF | Double-Tap: System Bars';\n");
+        js.append("      exitBtn.innerHTML = '<div class=\"exit-cap\"></div><span class=\"rx-label\">PWR</span>';\n");
         js.append("      ledsRight.appendChild(exitBtn);\n");
-        js.append("      var exHoldTimer = null, exLongFired = false;\n");
+        js.append("      var exHoldTimer = null, exLongFired = false, lastPwrTapMs = 0;\n");
         js.append("      exitBtn.addEventListener('pointerdown', function() {\n");
         js.append("        clearTimeout(exHoldTimer); exLongFired = false;\n");
         js.append("        exHoldTimer = setTimeout(function() {\n");
         js.append("          exHoldTimer = null; exLongFired = true;\n");
-        js.append("          if (navigator.vibrate) navigator.vibrate([45, 60, 55]);\n");
-        js.append("          if (typeof isConnected !== 'undefined' && isConnected) {\n");
-        js.append("            var p = document.getElementById('audio_player'); if (p && !p.paused) p.pause();\n");
-        js.append("            isConnected = false; var ab = document.getElementById('btn-audio-toggle'); if (ab) ab.classList.remove('active');\n");
-        js.append("            if (window.__setVoiceReadoutState) window.__setVoiceReadoutState(false, false);\n");
+        js.append("          var anyOn = (typeof isDisplayOn !== 'undefined' && isDisplayOn) || (typeof isConnected !== 'undefined' && isConnected);\n");
+        js.append("          if (!anyOn) {\n");
+        js.append("            // Currently OFF -> Long-Press powers ON both DISPLAY and AUDIO!\n");
+        js.append("            if (navigator.vibrate) navigator.vibrate(40);\n");
+        js.append("            if (typeof isDisplayOn !== 'undefined' && !isDisplayOn && typeof toggleDisplay === 'function') {\n");
+        js.append("              toggleDisplay();\n");
+        js.append("            }\n");
+        js.append("            if (window.__setScannerAudioState) {\n");
+        js.append("              window.__setScannerAudioState(true);\n");
+        js.append("            }\n");
+        js.append("          } else {\n");
+        js.append("            // Currently ON -> Long-Press turns off AUDIO & DISPLAY, blanks screen to pure black with CRT animation, and Exits App!\n");
+        js.append("            if (navigator.vibrate) navigator.vibrate([45, 60, 55]);\n");
+        js.append("            if (window.__setScannerAudioState) window.__setScannerAudioState(false);\n");
+        js.append("            isDisplayOn = false;\n");
+        js.append("            var dBtn = document.getElementById('btn-disp-toggle'); if (dBtn) dBtn.classList.remove('active');\n");
+        js.append("            var dispEl = document.querySelector('.scanner-display');\n");
+        js.append("            var logWrap = document.querySelector('.log-wrapper');\n");
+        js.append("            var imgD = document.getElementById('custom-imgd'); if (imgD) imgD.classList.add('disconnected');\n");
+        js.append("            var imgF = document.getElementById('custom-imgf'); if (imgF) imgF.classList.add('disconnected');\n");
+        js.append("            var clk = document.getElementById('display-clock-hud'); if (clk) clk.classList.add('disconnected');\n");
+        js.append("            var bat = document.getElementById('scanner-bat-hud'); if (bat) bat.classList.add('disconnected');\n");
+        js.append("            document.documentElement.classList.add('tv-off', 'tv-shutting-down');\n");
+        js.append("            if (dispEl) dispEl.classList.add('tv-shutting-down');\n");
+        js.append("            if (logWrap) logWrap.classList.add('tv-shutting-down');\n");
+        js.append("            setTimeout(function() { if (window.AndroidApp) window.AndroidApp.exitApp(); }, 720);\n");
         js.append("          }\n");
-        js.append("          var dispEl = document.querySelector('.scanner-display');\n");
-        js.append("          var logWrap = document.querySelector('.log-wrapper');\n");
-        js.append("          document.documentElement.classList.add('tv-off', 'tv-shutting-down');\n");
-        js.append("          if (dispEl) dispEl.classList.add('tv-shutting-down');\n");
-        js.append("          if (logWrap) logWrap.classList.add('tv-shutting-down');\n");
-        js.append("          setTimeout(function() { if (window.AndroidApp) window.AndroidApp.exitApp(); }, 720);\n");
         js.append("        }, 550);\n");
         js.append("      });\n");
         js.append("      exitBtn.addEventListener('pointerup', function() {\n");
-        js.append("        var wasTap = exHoldTimer !== null; clearTimeout(exHoldTimer); exHoldTimer = null;\n");
-        js.append("        if (wasTap && !exLongFired) {\n");
-        js.append("          if (window.AndroidApp) window.AndroidApp.showSystemBars();\n");
+        js.append("        var wasShort = exHoldTimer !== null;\n");
+        js.append("        clearTimeout(exHoldTimer); exHoldTimer = null;\n");
+        js.append("        if (wasShort && !exLongFired) {\n");
+        js.append("          var now = Date.now();\n");
+        js.append("          if (now - lastPwrTapMs < 380) {\n");
+        js.append("            lastPwrTapMs = 0;\n");
+        js.append("            if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("            if (window.AndroidApp) window.AndroidApp.showSystemBars();\n");
+        js.append("          } else {\n");
+        js.append("            lastPwrTapMs = now;\n");
+        js.append("          }\n");
         js.append("        }\n");
         js.append("      });\n");
         js.append("      exitBtn.addEventListener('pointerleave', function() { clearTimeout(exHoldTimer); exHoldTimer = null; });\n");
@@ -2479,6 +2289,11 @@ private void injectEnhancements() {
     @Override
     protected void onResume() {
         super.onResume();
+        try {
+            if (sensorManager != null && tiltSensor != null) {
+                sensorManager.registerListener(this, tiltSensor, SensorManager.SENSOR_DELAY_GAME);
+            }
+        } catch (Exception ignored) {}
         if (webView != null) {
             webView.onResume();
             webView.resumeTimers();
@@ -2487,7 +2302,16 @@ private void injectEnhancements() {
     }
 
     @Override
+    protected void onPause() {
+        try {
+            if (sensorManager != null) sensorManager.unregisterListener(this);
+        } catch (Exception ignored) {}
+        super.onPause();
+    }
+
+    @Override
     protected void onDestroy() {
+        try { if (sensorManager != null) sensorManager.unregisterListener(this); } catch (Exception ignored) {}
         try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
         try {
             if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
