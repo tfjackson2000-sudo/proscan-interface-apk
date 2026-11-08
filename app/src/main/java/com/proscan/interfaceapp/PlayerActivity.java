@@ -47,10 +47,8 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -198,93 +196,6 @@ public class PlayerActivity extends Activity {
                             .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
                             .apply();
                     triggerAlexaWebhook(false);
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private void showNativeAudioMixerDialog() {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int) (16 * getResources().getDisplayMetrics().density);
-        layout.setPadding(pad, pad, pad, pad);
-
-        final CheckBox autoDuckCheck = new CheckBox(this);
-        autoDuckCheck.setText("Auto-Duck Radio on Scanner Hit / TTS");
-        autoDuckCheck.setChecked(MainActivity.PriorityRadioEngine.isAutoDuckEnabled(prefs));
-        layout.addView(autoDuckCheck);
-
-        int curCeil = prefs.getInt("mixer_radio_ceiling_pct", 40);
-        final TextView ceilLbl = new TextView(this);
-        ceilLbl.setText("\nRadio Baseline Ceiling: " + curCeil + "% (Default 40%)");
-        layout.addView(ceilLbl);
-        final SeekBar ceilBar = new SeekBar(this);
-        ceilBar.setMax(90);
-        ceilBar.setProgress(Math.max(0, Math.min(90, curCeil - 10)));
-        ceilBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar s, int p, boolean u) { ceilLbl.setText("\nRadio Baseline Ceiling: " + (p + 10) + "% (Default 40%)"); }
-            @Override public void onStartTrackingTouch(SeekBar s) {}
-            @Override public void onStopTrackingTouch(SeekBar s) {}
-        });
-        layout.addView(ceilBar);
-
-        int curDuck = prefs.getInt("mixer_radio_duck_pct", 5);
-        final TextView duckLbl = new TextView(this);
-        duckLbl.setText("\nRadio Ducked Level: " + curDuck + "% (Default 5%)");
-        layout.addView(duckLbl);
-        final SeekBar duckBar = new SeekBar(this);
-        duckBar.setMax(25);
-        duckBar.setProgress(Math.max(0, Math.min(25, curDuck)));
-        duckBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar s, int p, boolean u) { duckLbl.setText("\nRadio Ducked Level: " + p + "% (Default 5%)"); }
-            @Override public void onStartTrackingTouch(SeekBar s) {}
-            @Override public void onStopTrackingTouch(SeekBar s) {}
-        });
-        layout.addView(duckBar);
-
-        int curAgc = prefs.getInt("mixer_scanner_agc_db", 8);
-        final TextView agcLbl = new TextView(this);
-        agcLbl.setText("\nScanner AGC Boost: +" + curAgc + " dB (Default +8 dB)");
-        layout.addView(agcLbl);
-        final SeekBar agcBar = new SeekBar(this);
-        agcBar.setMax(15);
-        agcBar.setProgress(Math.max(0, Math.min(15, curAgc)));
-        agcBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar s, int p, boolean u) { agcLbl.setText("\nScanner AGC Boost: +" + p + " dB (Default +8 dB)"); }
-            @Override public void onStartTrackingTouch(SeekBar s) {}
-            @Override public void onStopTrackingTouch(SeekBar s) {}
-        });
-        layout.addView(agcBar);
-
-        int curHold = prefs.getInt("mixer_duck_hold_ms", 2500);
-        final TextView holdLbl = new TextView(this);
-        holdLbl.setText(String.format(Locale.US, "\nDuck Hold Time: %.1fs (Default 2.5s)", curHold / 1000f));
-        layout.addView(holdLbl);
-        final SeekBar holdBar = new SeekBar(this);
-        holdBar.setMax(40);
-        holdBar.setProgress(Math.max(0, Math.min(40, (curHold - 1000) / 100)));
-        holdBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar s, int p, boolean u) {
-                holdLbl.setText(String.format(Locale.US, "\nDuck Hold Time: %.1fs (Default 2.5s)", (1000 + p * 100) / 1000f));
-            }
-            @Override public void onStartTrackingTouch(SeekBar s) {}
-            @Override public void onStopTrackingTouch(SeekBar s) {}
-        });
-        layout.addView(holdBar);
-
-        new AlertDialog.Builder(this)
-                .setTitle("Priority Audio Mixer & Auto-Duck")
-                .setView(layout)
-                .setPositiveButton("Save", (d, w) -> {
-                    prefs.edit()
-                            .putBoolean("mixer_auto_duck_on", autoDuckCheck.isChecked())
-                            .putInt("mixer_radio_ceiling_pct", ceilBar.getProgress() + 10)
-                            .putInt("mixer_radio_duck_pct", duckBar.getProgress())
-                            .putInt("mixer_scanner_agc_db", agcBar.getProgress())
-                            .putInt("mixer_duck_hold_ms", 1000 + holdBar.getProgress() * 100)
-                            .apply();
-                    MainActivity.PriorityRadioEngine.updateSettingsLive(prefs);
-                    Toast.makeText(PlayerActivity.this, "Audio Mixer Settings Saved!", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -837,12 +748,11 @@ public class PlayerActivity extends Activity {
         String[] items = new String[]{
                 "+ Add New Station",
                 "Edit Selected (" + (curName != null && !curName.isEmpty() ? curName : "None") + ")",
-                "Priority Audio Mixer & Auto-Duck Settings",
                 "Save Stations JSON to Downloads (proscan_radio_stations.json)",
                 "Load Stations JSON from Downloads"
         };
         new AlertDialog.Builder(this)
-                .setTitle("Radio Station & Mixer Manager")
+                .setTitle("Radio Station Manager")
                 .setItems(items, (d, which) -> {
                     if (which == 0) {
                         openAddOrEditStationDialog(-1, "", "");
@@ -853,12 +763,10 @@ public class PlayerActivity extends Activity {
                             openAddOrEditStationDialog(-1, "", "");
                         }
                     } else if (which == 2) {
-                        showNativeAudioMixerDialog();
-                    } else if (which == 3) {
                         if (playerWeb != null) {
                             playerWeb.evaluateJavascript("if(window.PlayerBridge)window.PlayerBridge.saveStationsJson(JSON.stringify(window.__radioStations), true);", null);
                         }
-                    } else if (which == 4) {
+                    } else if (which == 3) {
                         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                         intent.addCategory(Intent.CATEGORY_OPENABLE);
                         intent.setType("*/*");
@@ -914,7 +822,6 @@ public class PlayerActivity extends Activity {
         js.append("    '.scanner-display{height:345px!important;transition:height 0.22s ease!important;}.top-controls-container{height:34px!important;}.buttons-box{gap:8px!important;padding:9px!important;}#mech-bay{height:216px!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] #mech-bay{display:none!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] .scanner-display{height:565px!important;}' +\n");
-
         js.append("    '@media (orientation: landscape) and (max-height: 540px){' +\n");
         js.append("      '#device-wrapper{width:96vw!important;max-width:96vw!important;height:94dvh!important;max-height:94dvh!important;}' +\n");
         js.append("      '#custom-scanner-ui{display:grid!important;grid-template-columns:1.08fr 1fr!important;grid-template-rows:auto 1fr!important;gap:5px 12px!important;padding:10px 14px!important;height:100%!important;overflow:hidden!important;}' +\n");
@@ -928,58 +835,31 @@ public class PlayerActivity extends Activity {
         js.append("      '#btn-play, #btn-stop{font-size:12px!important;}' +\n");
         js.append("      '.filter-row-archive, .radio-crud-bar{height:27px!important;gap:5px!important;}' +\n");
         js.append("    '}' +\n");
-
         js.append("    '#playlist-box{overflow-y:scroll!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior:contain!important;}' +\n");
         js.append("    '.rec-row{padding:4.5px 4px!important;font-size:10px!important;touch-action:pan-y!important;}' +\n");
         js.append("    '.rec-row.playing, .rec-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
         js.append("    '.rec-row.selected:not(.playing){outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(0,0,0,0.16)!important;color:var(--log-text)!important;font-weight:800!important;}' +\n");
-
         js.append("    '.radio-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;padding:8px 6px!important;width:100%!important;}' +\n");
         js.append("    '.radio-tile{min-height:66px!important;padding:8px 10px!important;border:1.5px solid var(--log-cell-border)!important;border-radius:8px!important;background:rgba(0,0,0,0.14)!important;font-family:\"JetBrains Mono\",monospace!important;font-size:12px!important;font-weight:800!important;color:var(--log-text)!important;display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important;cursor:pointer!important;touch-action:pan-y!important;word-break:break-word!important;line-height:1.25!important;box-shadow:inset 0 1px 3px rgba(0,0,0,0.35)!important;transition:transform 0.1s ease,background 0.15s ease!important;}' +\n");
         js.append("    '.radio-tile:active{transform:scale(0.97)!important;}' +\n");
         js.append("    '.radio-tile.playing, .radio-tile.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:900!important;border-color:var(--log-text)!important;box-shadow:0 0 10px rgba(0,0,0,0.5)!important;outline:none!important;}' +\n");
         js.append("    '.radio-tile.selected:not(.playing){outline:2px dashed var(--log-text,#38bdf8)!important;outline-offset:-2px!important;background:rgba(0,0,0,0.28)!important;color:var(--log-text)!important;font-weight:900!important;}' +\n");
-
         js.append("    '.disp-top-row{display:grid!important;grid-template-columns:auto 1fr auto!important;align-items:center!important;gap:6px!important;width:100%!important;}' +\n");
         js.append("    '#top-header-center{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;min-width:0!important;overflow:hidden!important;}' +\n");
         js.append("    '#deck-mode-hud{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;font-size:9.5px!important;}' +\n");
         js.append("    '#rec-count-hud{font-family:\"JetBrains Mono\",monospace!important;font-size:9px!important;font-weight:900!important;color:var(--log-header-text)!important;padding:0 5px!important;border:1px solid var(--log-cell-border)!important;border-radius:4px!important;white-space:nowrap!important;flex-shrink:0!important;}' +\n");
-
         js.append("    '.player-nav-row{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:6px!important;height:35px!important;}' +\n");
         js.append("    '.player-nav-row.radio-mode-nav{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important;}' +\n");
         js.append("    '.player-nav-row .btn{font-size:11px!important;font-weight:900!important;padding:2px 3px!important;letter-spacing:0.2px!important;}' +\n");
-
         js.append("    '.btn-row-4{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;height:44px!important;}' +\n");
         js.append("    '#btn-play, #btn-stop{font-size:14px!important;font-weight:900!important;letter-spacing:0.9px!important;}' +\n");
         js.append("    '#btn-prev, #btn-next{display:none!important;}' +\n");
-
         js.append("    '.filter-row-archive{display:grid!important;grid-template-columns:1fr 84px!important;gap:6px!important;height:34px!important;}' +\n");
         js.append("    '#search-box{width:100%!important;height:100%!important;font-size:11px!important;}' +\n");
         js.append("    '#btn-filter-unread{font-size:10.5px!important;font-weight:900!important;padding:2px 4px!important;letter-spacing:0.3px!important;}' +\n");
-
         js.append("    '.radio-crud-bar{display:none;grid-template-columns:2fr 1fr 1fr 1fr!important;gap:6px!important;height:34px!important;}' +\n");
         js.append("    '.radio-crud-bar .btn{font-size:10.5px!important;font-weight:900!important;padding:2px!important;}' +\n");
-
         js.append("    '#date-select, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
-
-        js.append("    '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:124px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
-        js.append("    '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
-        js.append("    '.sm-mode.active{display:flex;}' +\n");
-        js.append("    '.sm-lbl{font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;color:#38bdf8;letter-spacing:0.3px;margin-right:3px;flex-shrink:0;}' +\n");
-        js.append("    '.sm-bar-wrap{display:flex;align-items:center;gap:2px;flex:1;height:11px;justify-content:space-between;}' +\n");
-        js.append("    '.sm-seg{flex:1;height:100%;border-radius:1px;background:#1e293b;transition:background 0.04s linear;}' +\n");
-        js.append("    '.sm-vu-wrap{width:100%;height:100%;background:linear-gradient(90deg,#fef9c3 0%,#fde047 68%,#f59e0b 100%);border-radius:3px;position:relative;overflow:hidden;border:1px solid #000;box-shadow:inset 0 1px 3px rgba(0,0,0,0.45);}' +\n");
-        js.append("    '.sm-vu-wrap::after{content:\"\";position:absolute;left:4px;right:4px;bottom:1px;height:5px;border-bottom:1.5px solid #0f172a;background:repeating-linear-gradient(90deg,#0f172a 0px,#0f172a 2px,transparent 2px,transparent 8px);opacity:0.9;z-index:1;pointer-events:none;}' +\n");
-        js.append("    '.sm-vu-scale{position:absolute;top:1px;left:4px;right:4px;font-family:monospace;font-size:6.5px;font-weight:900;color:#0f172a;display:flex;justify-content:space-between;line-height:1;z-index:2;pointer-events:none;}' +\n");
-        js.append("    '#sm-vu-needle{position:absolute;top:0;bottom:0;left:3px;width:2.5px;background:#dc2626;border-radius:1px;box-shadow:0 0 4px rgba(220,38,38,0.9),1px 0 2px rgba(0,0,0,0.6);transition:left 0.14s ease-out;z-index:3;}' +\n");
-        js.append("    '.sm-spec-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:2px;width:100%;height:15px;padding-top:1px;}' +\n");
-        js.append("    '.sm-spec-bar{flex:1;height:2px;background:linear-gradient(180deg,#ef4444 0%,#facc15 35%,#22c55e 100%);border-radius:1px 1px 0 0;transition:height 0.04s linear;}' +\n");
-        js.append("    '#sm-scope-canvas{width:100%;height:16px;display:block;}' +\n");
-        js.append("    '.sm-dig-wrap{display:flex;align-items:center;justify-content:space-between;width:100%;gap:4px;font-family:\"JetBrains Mono\",monospace;}' +\n");
-        js.append("    '#sm-dig-txt{font-size:8.5px;font-weight:900;color:#39ff14;min-width:46px;text-align:left;letter-spacing:-0.3px;}' +\n");
-        js.append("    '.sm-peak-track{flex:1;height:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;overflow:hidden;position:relative;}' +\n");
-        js.append("    '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.14s ease-out;}' +\n");
-
         js.append("    '#deck-vinyl{background:radial-gradient(circle at 46% 54%,#1e2229 0%,#0c0e12 85%)!important;}' +\n");
         js.append("    '.tt-platter{position:absolute!important;left:90px!important;top:38px!important;width:140px!important;height:140px!important;box-shadow:0 8px 20px rgba(0,0,0,0.95),0 0 0 3px #18181b!important;}' +\n");
         js.append("    '.tt-record{width:128px!important;height:128px!important;}' +\n");
@@ -1007,7 +887,6 @@ public class PlayerActivity extends Activity {
         js.append("    '#player-wake-pill{display:inline-flex;align-items:center;gap:3px;cursor:pointer;padding:1px 6px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:6px;touch-action:manipulation;}' +\n");
         js.append("    '#player-wake-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
         js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}' +\n");
-
         js.append("    '#btn-player-lamp{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-right:8px;cursor:pointer;touch-action:manipulation;}' +\n");
         js.append("    '#btn-player-lamp .lamp-cap{width:22px;height:16px;border-radius:5px;background:linear-gradient(180deg,#eab308,#a16207);border:1px solid #422006;box-shadow:0 2px 3px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;}' +\n");
         js.append("    '#btn-player-lamp .lamp-cap::after{content:\"\";width:8px;height:3px;border-radius:1.5px;background:rgba(254,249,195,0.92);box-shadow:0 0 4px rgba(254,249,195,0.5);}' +\n");
@@ -1021,7 +900,6 @@ public class PlayerActivity extends Activity {
         js.append("    '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
         js.append("    '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("  document.head.appendChild(st);\n");
-
         js.append("  if (typeof decks !== 'undefined' && !decks.some(function(d){ return d.id === 'lite'; })) {\n");
         js.append("    decks.push({ id: 'lite', btn: 'DECK: LITE', hud: 'ARCHIVE // LITE LOG VIEW' });\n");
         js.append("  }\n");
@@ -1249,23 +1127,11 @@ public class PlayerActivity extends Activity {
         js.append("    if (window.PlayerBridge && window.PlayerBridge.getClarityFilterState) {\n");
         js.append("      syncDspLabel(window.PlayerBridge.getClarityFilterState());\n");
         js.append("    } else { dspBtn.innerText = 'DSP: OFF'; }\n");
-        js.append("    var pDspTimer = null, pDspLong = false;\n");
-        js.append("    dspBtn.addEventListener('pointerdown', function() {\n");
-        js.append("      clearTimeout(pDspTimer); pDspLong = false;\n");
-        js.append("      pDspTimer = setTimeout(function() {\n");
-        js.append("        pDspTimer = null; pDspLong = true;\n");
-        js.append("        if (navigator.vibrate) navigator.vibrate(35);\n");
-        js.append("        if (window.PlayerBridge && window.PlayerBridge.openMixerDialog) window.PlayerBridge.openMixerDialog();\n");
-        js.append("      }, 480);\n");
-        js.append("    });\n");
-        js.append("    dspBtn.addEventListener('pointerup', function() {\n");
-        js.append("      var wasTap = pDspTimer !== null; clearTimeout(pDspTimer); pDspTimer = null;\n");
-        js.append("      if (wasTap && !pDspLong) {\n");
-        js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
-        js.append("        if (window.PlayerBridge && window.PlayerBridge.toggleClarityFilter) {\n");
-        js.append("          var state = window.PlayerBridge.toggleClarityFilter();\n");
-        js.append("          syncDspLabel(state);\n");
-        js.append("        }\n");
+        js.append("    dspBtn.addEventListener('click', function() {\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.toggleClarityFilter) {\n");
+        js.append("        var state = window.PlayerBridge.toggleClarityFilter();\n");
+        js.append("        syncDspLabel(state);\n");
         js.append("      }\n");
         js.append("    });\n");
         js.append("    origTopRow.appendChild(dspBtn);\n");
@@ -1685,7 +1551,6 @@ public class PlayerActivity extends Activity {
         js.append("      if (dw) dw.classList.remove('fading-out');\n");
         js.append("    }, skipAnim ? 0 : 150);\n");
         js.append("  };\n");
-
         js.append("  window.selectIndexOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= filteredRecs.length) return;\n");
         js.append("    curIdx = idx;\n");
@@ -1905,7 +1770,6 @@ public class PlayerActivity extends Activity {
         MainActivity.PriorityRadioEngine.stopStation();
         releasePlaybackLocks();
     }
-
     private void startLiveStreamEnergyTap(final String resolvedUrl, final int reqId) {
         liveStreamTapExecutor.execute(() -> {
             HttpURLConnection conn = null;
@@ -2105,7 +1969,8 @@ public class PlayerActivity extends Activity {
                 () -> {
                     if (reqId != currentStreamReqId) return;
                     int sessionId = MainActivity.PriorityRadioEngine.getAudioSessionId();
-                    if (sessionId != 0) setupEqualizer(sessionId);
+                    // Only attach Visualizer (NOT Equalizer) so Radio volume is 100% identical on Radio screen and Scanner screen!
+                    if (sessionId != 0) setupVisualizer(sessionId);
                     startLiveStreamEnergyTap(streamUrl, reqId);
                     if (playerWeb != null) {
                         playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
@@ -2258,18 +2123,13 @@ public class PlayerActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void openMixerDialog() {
-            mainHandler.post(() -> showNativeAudioMixerDialog());
-        }
-
-        @JavascriptInterface
         public void attachActiveRadioSession() {
             mainHandler.post(() -> {
                 if (MainActivity.PriorityRadioEngine.isRadioPlaying()) {
                     isLiveRadioStream = true;
                     activeLiveRadioUrl = MainActivity.PriorityRadioEngine.getActiveStationUrl();
                     int sid = MainActivity.PriorityRadioEngine.getAudioSessionId();
-                    if (sid != 0) setupEqualizer(sid);
+                    if (sid != 0) setupVisualizer(sid);
                     final int reqId = ++currentStreamReqId;
                     startLiveStreamEnergyTap(activeLiveRadioUrl, reqId);
                     mainHandler.post(progressTicker);
