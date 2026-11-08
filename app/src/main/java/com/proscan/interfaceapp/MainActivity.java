@@ -357,6 +357,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
+
     private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
@@ -1164,12 +1165,121 @@ public class MainActivity extends Activity implements SensorEventListener {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 600);
     }
-    js.append("      var smCarrierLvl = 0, smAudioLvl = 0, smAdaptiveMax = 14.0, smPhase = 0;\n");
+
+    private void injectEnhancements() {
+        if (webView == null) return;
+        String sharedRawPref = prefs != null ? prefs.getString("shared_web_storage", "") : "";
+        String safeShared = JSONObject.quote(sharedRawPref != null ? sharedRawPref : "");
+        String wakePref = userWakeLockEnabled ? "true" : "false";
+
+        StringBuilder js = new StringBuilder();
+        js.append("(function() {\n");
+        js.append("  try {\n");
+        js.append("    if (!document.getElementById('proscan-native-enhancements-css')) {\n");
+        js.append("      var st = document.createElement('style');\n");
+        js.append("      st.id = 'proscan-native-enhancements-css';\n");
+        js.append("      st.textContent = `\n");
+        js.append("        .scanner-nav-6 { display: grid !important; grid-template-columns: repeat(6, 1fr) !important; gap: 5px !important; width: 100% !important; }\n");
+        js.append("        .scanner-nav-6 .btn { min-width: 0 !important; padding: 6px 2px !important; font-size: 10px !important; white-space: nowrap !important; }\n");
+        js.append("        #scanner-bat-hud { position: absolute; top: 6px; left: 8px; z-index: 30; display: inline-flex; align-items: center; gap: 4px; font-family: monospace; font-size: 10px; font-weight: 700; color: #38bdf8; pointer-events: none; text-shadow: 0 0 4px rgba(56,189,248,0.5); }\n");
+        js.append("        #scanner-bat-hud.disconnected { opacity: 0 !important; }\n");
+        js.append("        .bat-icon-box { width: 16px; height: 8px; border: 1px solid currentColor; border-radius: 2px; padding: 1px; display: inline-flex; align-items: center; position: relative; }\n");
+        js.append("        .bat-icon-box::after { content: ''; position: absolute; right: -3px; top: 2px; width: 2px; height: 4px; background: currentColor; border-radius: 0 1px 1px 0; }\n");
+        js.append("        .bat-icon-fill { height: 100%; background: currentColor; width: 80%; border-radius: 1px; }\n");
+        js.append("        #proscan-sig-meter-box { position: absolute; bottom: 5px; right: 8px; z-index: 28; display: flex; align-items: center; gap: 4px; background: rgba(2,6,23,0.78); border: 1px solid rgba(100,116,139,0.45); border-radius: 4px; padding: 2px 5px; cursor: pointer; user-select: none; }\n");
+        js.append("        #proscan-sig-meter-box.disconnected { opacity: 0 !important; pointer-events: none !important; }\n");
+        js.append("        #sm-led-bars { display: flex; align-items: flex-end; gap: 2px; height: 14px; }\n");
+        js.append("        #sm-led-bars .sm-seg { width: 4px; border-radius: 1px; background: #1e293b; }\n");
+        js.append("        #sm-vu-wrap { display: none; position: relative; width: 64px; height: 14px; background: linear-gradient(90deg, #0f172a 0%, #1e293b 75%, #450a0a 100%); border: 1px solid #334155; border-radius: 3px; overflow: hidden; }\n");
+        js.append("        #sm-vu-needle { position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: #facc15; box-shadow: 0 0 4px #facc15; transition: left 60ms linear; }\n");
+        js.append("        #sm-spec-bars { display: none; align-items: flex-end; gap: 2px; height: 15px; width: 62px; }\n");
+        js.append("        #sm-spec-bars .sm-spec-bar { flex: 1; height: 2px; background: linear-gradient(180deg, #facc15 0%, #22c55e 45%, #06b6d4 100%); border-radius: 1px; }\n");
+        js.append("        #sm-scope-canvas { display: none; width: 64px; height: 15px; background: #020617; border-radius: 2px; }\n");
+        js.append("        #sm-dig-wrap { display: none; flex-direction: column; width: 66px; gap: 1px; }\n");
+        js.append("        #sm-dig-txt { font-family: monospace; font-size: 9px; font-weight: 700; color: #64748b; line-height: 1; text-align: right; }\n");
+        js.append("        #sm-peak-track { width: 100%; height: 3px; background: #1e293b; border-radius: 1px; overflow: hidden; }\n");
+        js.append("        #sm-peak-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #22c55e, #facc15, #ef4444); }\n");
+        js.append("        #btn-voice-toggle, #btn-lamp-toggle, #btn-hardware-exit { background: transparent; border: none; color: inherit; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; padding: 2px 4px; }\n");
+        js.append("        #voice-switch-track { width: 14px; height: 24px; border-radius: 7px; background: #1e293b; border: 1px solid #475569; position: relative; transition: background 0.2s; }\n");
+        js.append("        #voice-switch-thumb { width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; position: absolute; left: 1px; bottom: 2px; transition: transform 0.2s, background 0.2s; }\n");
+        js.append("        #btn-voice-toggle.active #voice-switch-track { background: rgba(14,165,233,0.3); border-color: #38bdf8; }\n");
+        js.append("        #btn-voice-toggle.active #voice-switch-thumb { transform: translateY(-9px); background: #38bdf8; box-shadow: 0 0 6px #38bdf8; }\n");
+        js.append("        #voice-led { width: 8px; height: 8px; border-radius: 50%; background: #1e293b; border: 1px solid #334155; }\n");
+        js.append("        #btn-voice-toggle.active #voice-led { background: #38bdf8; box-shadow: 0 0 8px #38bdf8; }\n");
+        js.append("        .lamp-cap { width: 12px; height: 12px; border-radius: 50%; background: radial-gradient(circle, #fde047 0%, #ca8a04 100%); box-shadow: 0 0 6px rgba(250,204,21,0.5); border: 1px solid #fef08a; }\n");
+        js.append("        .exit-cap { width: 12px; height: 12px; border-radius: 50%; background: radial-gradient(circle, #f87171 0%, #991b1b 100%); box-shadow: 0 0 6px rgba(239,68,68,0.55); border: 1px solid #fecaca; }\n");
+        js.append("        html[data-scanner-lite='true'] .keypad-section, html[data-scanner-lite='true'] .knobs-row, html[data-scanner-lite='true'] . rotary-row { display: none !important; }\n");
+        js.append("        html.tv-off, html.tv-off body { background: #000 !important; }\n");
+        js.append("        .tv-shutting-down { transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.55s ease !important; transform: scaleY(0.008) scaleX(0.02) !important; opacity: 0 !important; filter: brightness(8) !important; }\n");
+        js.append("      `;\n");
+        js.append("      document.head.appendChild(st);\n");
+        js.append("    }\n");
+
+        /* Hook RX state notifications to native PriorityRadioEngine Auto-Duck */
+        js.append("    window.__bgTickSquelchAndLog = function() {\n");
+        js.append("      var rxEl = document.getElementById('rx-led');\n");
+        js.append("      var isRxNow = Boolean(rxEl && rxEl.classList.contains('active'));\n");
+        js.append("      if (window.__lastNotifiedRxState !== isRxNow) {\n");
+        js.append("        window.__lastNotifiedRxState = isRxNow;\n");
+        js.append("        if (window.AndroidApp && typeof window.AndroidApp.notifyScannerRx === 'function') {\n");
+        js.append("          window.AndroidApp.notifyScannerRx(isRxNow, Boolean(window.__voiceReadoutEnabled));\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("    };\n");
+        js.append("    window.__bgTickSquelchAndLog();\n");
+
+        /* Multi-Mode Live Scanner Signal Meter (LED / VU / SPEC / SCOPE / dB) */
+        js.append("    var dispForMeter = document.querySelector('.scanner-display');\n");
+        js.append("    if (dispForMeter && !document.getElementById('proscan-sig-meter-box')) {\n");
+        js.append("      window.__sigMeterStyle = parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0;\n");
+        js.append("      var mBox = document.createElement('div');\n");
+        js.append("      mBox.id = 'proscan-sig-meter-box';\n");
+        js.append("      mBox.title = 'Tap to cycle Signal Meter style';\n");
+        js.append("      var ledHtml = '<div id=\"sm-led-bars\">';\n");
+        js.append("      for (var s = 0; s < 12; s++) {\n");
+        js.append("        var sh = 4 + Math.round((s / 11) * 10);\n");
+        js.append("        ledHtml += '<span class=\"sm-seg\" style=\"height:' + sh + 'px\"></span>';\n");
+        js.append("      }\n");
+        js.append("      ledHtml += '</div>';\n");
+        js.append("      var vuHtml = '<div id=\"sm-vu-wrap\"><div id=\"sm-vu-needle\"></div></div>';\n");
+        js.append("      var specHtml = '<div id=\"sm-spec-bars\">';\n");
+        js.append("      for (var sp = 0; sp < 10; sp++) specHtml += '<span class=\"sm-spec-bar\"></span>';\n");
+        js.append("      specHtml += '</div>';\n");
+        js.append("      var scopeHtml = '<canvas id=\"sm-scope-canvas\" width=\"64\" height=\"15\"></canvas>';\n");
+        js.append("      var digHtml = '<div id=\"sm-dig-wrap\"><div id=\"sm-dig-txt\">S0 -98dB</div><div id=\"sm-peak-track\"><div id=\"sm-peak-fill\"></div></div></div>';\n");
+        js.append("      mBox.innerHTML = ledHtml + vuHtml + specHtml + scopeHtml + digHtml;\n");
+        js.append("      dispForMeter.appendChild(mBox);\n");
+        js.append("      window.__applySigMeterStyle = function(idx, showHud) {\n");
+        js.append("        window.__sigMeterStyle = ((idx % 5) + 5) % 5;\n");
+        js.append("        localStorage.setItem('proscan_sig_meter_style_v1', String(window.__sigMeterStyle));\n");
+        js.append("        var elLed = document.getElementById('sm-led-bars');\n");
+        js.append("        var elVu = document.getElementById('sm-vu-wrap');\n");
+        js.append("        var elSpec = document.getElementById('sm-spec-bars');\n");
+        js.append("        var elScope = document.getElementById('sm-scope-canvas');\n");
+        js.append("        var elDig = document.getElementById('sm-dig-wrap');\n");
+        js.append("        if (elLed) elLed.style.display = window.__sigMeterStyle === 0 ? 'flex' : 'none';\n");
+        js.append("        if (elVu) elVu.style.display = window.__sigMeterStyle === 1 ? 'block' : 'none';\n");
+        js.append("        if (elSpec) elSpec.style.display = window.__sigMeterStyle === 2 ? 'flex' : 'none';\n");
+        js.append("        if (elScope) elScope.style.display = window.__sigMeterStyle === 3 ? 'block' : 'none';\n");
+        js.append("        if (elDig) elDig.style.display = window.__sigMeterStyle === 4 ? 'flex' : 'none';\n");
+        js.append("        var names = ['LED BARS', 'VU NEEDLE', 'SPECTRUM', 'WAVE SCOPE', 'DIGITAL dB'];\n");
+        js.append("        if (showHud && typeof showDisplayHud === 'function') {\n");
+        js.append("          showDisplayHud('METER: ' + names[window.__sigMeterStyle], 1200);\n");
+        js.append("        }\n");
+        js.append("      };\n");
+        js.append("      window.__applySigMeterStyle(window.__sigMeterStyle, false);\n");
+        js.append("      mBox.addEventListener('click', function(ev) {\n");
+        js.append("        ev.stopPropagation();\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(15);\n");
+        js.append("        window.__applySigMeterStyle((window.__sigMeterStyle || 0) + 1, true);\n");
+        js.append("      });\n");
+        js.append("      var smCarrierLvl = 0, smAudioLvl = 0, smAdaptiveMax = 14.0, smPhase = 0;\n");
         js.append("      function renderLiveScannerSignalMeter() {\n");
         js.append("        requestAnimationFrame(renderLiveScannerSignalMeter);\n");
         js.append("        var rawAud = 0;\n");
         js.append("        var rxLedEl = document.getElementById('rx-led');\n");
         js.append("        var isRxVoiceActive = Boolean(rxLedEl && rxLedEl.classList.contains('active'));\n");
+        js.append("        if (window.__bgTickSquelchAndLog) window.__bgTickSquelchAndLog();\n");
         js.append("        var activeAn = window.analyser || (typeof analyser !== 'undefined' ? analyser : null);\n");
         js.append("        if (isRxVoiceActive && typeof isConnected !== 'undefined' && isConnected && activeAn && typeof dataArray !== 'undefined' && dataArray) {\n");
         js.append("          try {\n");
@@ -1326,6 +1436,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("    if (dispBox) {\n");
         js.append("      var clkEl = document.getElementById('display-clock-hud');\n");
         js.append("      var batEl = document.getElementById('scanner-bat-hud');\n");
+        js.append("      var mtrBoxEl = document.getElementById('proscan-sig-meter-box');\n");
         js.append("      if (!batEl) {\n");
         js.append("        batEl = document.createElement('div');\n");
         js.append("        batEl.id = 'scanner-bat-hud';\n");
@@ -1333,8 +1444,9 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        dispBox.appendChild(batEl);\n");
         js.append("      }\n");
         js.append("      if (clkEl && batEl) {\n");
-        js.append("        if (clkEl.classList.contains('disconnected')) batEl.classList.add('disconnected');\n");
-        js.append("        else batEl.classList.remove('disconnected');\n");
+        js.append("        var isDisc = clkEl.classList.contains('disconnected');\n");
+        js.append("        batEl.classList.toggle('disconnected', isDisc);\n");
+        js.append("        if (mtrBoxEl) mtrBoxEl.classList.toggle('disconnected', isDisc);\n");
         js.append("      }\n");
         js.append("      if (window.AndroidApp && typeof window.AndroidApp.getBatteryStatus === 'function') {\n");
         js.append("        var bStr = window.AndroidApp.getBatteryStatus() || '';\n");
@@ -1725,7 +1837,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          exHoldTimer = null; exLongFired = true;\n");
         js.append("          var anyOn = (typeof isDisplayOn !== 'undefined' && isDisplayOn) || (typeof isConnected !== 'undefined' && isConnected);\n");
         js.append("          if (!anyOn) {\n");
-        js.append("            // Currently OFF -> Long-Press powers ON both DISPLAY and AUDIO!\n");
         js.append("            if (navigator.vibrate) navigator.vibrate(40);\n");
         js.append("            if (typeof isDisplayOn !== 'undefined' && !isDisplayOn && typeof toggleDisplay === 'function') {\n");
         js.append("              toggleDisplay();\n");
@@ -1734,7 +1845,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("              window.__setScannerAudioState(true);\n");
         js.append("            }\n");
         js.append("          } else {\n");
-        js.append("            // Currently ON -> Long-Press turns off AUDIO & DISPLAY, blanks screen to pure black with CRT animation, and Exits App!\n");
         js.append("            if (navigator.vibrate) navigator.vibrate([45, 60, 55]);\n");
         js.append("            if (window.__setScannerAudioState) window.__setScannerAudioState(false);\n");
         js.append("            isDisplayOn = false;\n");
