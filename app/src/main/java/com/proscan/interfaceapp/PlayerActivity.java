@@ -12,6 +12,10 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Color;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
@@ -79,13 +83,19 @@ import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class PlayerActivity extends Activity {
+public class PlayerActivity extends Activity implements SensorEventListener {
 
     private static final int REQ_LOAD_RADIO_JSON = 902;
     private static final String GDRIVE_ROOT_FOLDER_ID = "1gToQyY6YPOk_3muiQSY5WLy7jTSvXbTv";
     private WebView playerWeb;
     private SharedPreferences prefs;
     private AudioManager audioManager;
+    private SensorManager sensorManager;
+    private Sensor tiltSensor;
+    private float smoothTiltX = 0f;
+    private float smoothTiltY = 0f;
+    private long lastTiltPushMs = 0L;
+
     private AudioFocusRequest audioFocusRequest = null;
     private PowerManager.WakeLock cpuWakeLock = null;
     private WifiManager.WifiLock wifiLock = null;
@@ -118,6 +128,29 @@ public class PlayerActivity extends Activity {
 
     private final AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
     };
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (event == null || event.values == null || event.values.length < 2 || playerWeb == null) return;
+        long now = System.currentTimeMillis();
+        if (now - lastTiltPushMs < 45) return;
+        lastTiltPushMs = now;
+        float rawX = Math.max(-7f, Math.min(7f, event.values[0])) / 7f;
+        float rawY = Math.max(-7f, Math.min(7f, event.values[1] - 4.5f)) / 7f;
+        smoothTiltX += (rawX - smoothTiltX) * 0.22f;
+        smoothTiltY += (rawY - smoothTiltY) * 0.22f;
+        int bx = Math.round(-smoothTiltX * 8f);
+        int by = Math.round(smoothTiltY * 8f);
+        playerWeb.evaluateJavascript(
+                "try{var r=document.documentElement.style;" +
+                "r.setProperty('--tilt-x','" + bx + "px');" +
+                "r.setProperty('--tilt-y','" + by + "px');}catch(e){}",
+                null
+        );
+    }
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
     private void triggerAlexaWebhook(final boolean turnOn) {
         final String offUrl = prefs.getString("alexa_lamp_off_url", "").trim();
@@ -507,6 +540,16 @@ public class PlayerActivity extends Activity {
             }
         } catch (Exception ignored) {}
 
+        try {
+            sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+            if (sensorManager != null) {
+                tiltSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY);
+                if (tiltSensor == null) {
+                    tiltSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+                }
+            }
+        } catch (Exception ignored) {}
+
         prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
         wakeLockOn = prefs.getBoolean("wake_lock_on", true);
         clarityFilterEnabled = prefs.getBoolean("clarity_filter_on", false);
@@ -524,9 +567,9 @@ public class PlayerActivity extends Activity {
                     tts.setLanguage(Locale.UK);
                     tts.setSpeechRate(1.05f);
                     tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                        @Override public void onStart(String utteranceId) { MainActivity.PriorityRadioEngine.notifyTtsSpeaking(prefs, true); }
-                        @Override public void onDone(String utteranceId) { MainActivity.PriorityRadioEngine.notifyTtsSpeaking(prefs, false); }
-                        @Override public void onError(String utteranceId) { MainActivity.PriorityRadioEngine.notifyTtsSpeaking(prefs, false); }
+                        @Override public void onStart(String utteranceId) { MainActivity.PriorityRadioEngine.onTtsSpeechStateChanged(prefs, true); }
+                        @Override public void onDone(String utteranceId) { MainActivity.PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false); }
+                        @Override public void onError(String utteranceId) { MainActivity.PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false); }
                     });
                     ttsReady = true;
                 }
@@ -785,6 +828,7 @@ public class PlayerActivity extends Activity {
         boolean openInRadio = "radio".equalsIgnoreCase(initialStartMode);
         String activeBgRadioUrl = JSONObject.quote(MainActivity.PriorityRadioEngine.getActiveStationUrl());
         boolean isBgRadioPlaying = MainActivity.PriorityRadioEngine.isRadioPlaying();
+        int initialRadioVolPct = MainActivity.PriorityRadioEngine.getRadioVolumePct(prefs);
 
         StringBuilder js = new StringBuilder();
         js.append("(function(){\n");
@@ -811,14 +855,16 @@ public class PlayerActivity extends Activity {
 
         js.append("  var st = document.createElement('style');\n");
         js.append("  st.textContent = '' +\n");
+        js.append("    'html{--tilt-x:0px;--tilt-y:0px;}' +\n");
         js.append("    '@keyframes smoothFadeIn{0%{opacity:0;}100%{opacity:1;}}' +\n");
         js.append("    '@keyframes crtWhiteBeamCollapse{0%{opacity:0;transform:translate(-50%,-50%) scale(1,35);border-radius:0;}16%{opacity:1;transform:translate(-50%,-50%) scale(1,1.4);border-radius:2px;}46%{opacity:1;transform:translate(-50%,-50%) scale(0.92,0.65);border-radius:999px;}76%{opacity:1;transform:translate(-50%,-50%) scale(0.014,1.35);border-radius:50%;}92%{opacity:0.9;transform:translate(-50%,-50%) scale(0.006,0.6);border-radius:50%;}100%{opacity:0;transform:translate(-50%,-50%) scale(0,0);border-radius:50%;}}' +\n");
-        js.append("    'html.tv-shutting-down .scanner-display{background:#000!important;box-shadow:inset 0 0 24px #000!important;}' +\n");
-        js.append("    'html.tv-shutting-down .scanner-display > *{opacity:0!important;transition:opacity 0.15s ease!important;}' +\n");
+        js.append("    'html.tv-shutting-down .scanner-display{background:#000000!important;border-color:#0a0a0a!important;box-shadow:inset 0 0 24px #000000!important;transition:none!important;}' +\n");
+        js.append("    'html.tv-shutting-down .scanner-display > *{opacity:0!important;visibility:hidden!important;transition:none!important;animation:none!important;}' +\n");
         js.append("    'html.tv-shutting-down .scanner-display::after{content:\"\"!important;position:absolute!important;left:50%!important;top:50%!important;width:96%!important;height:3px!important;background:#fff!important;box-shadow:0 0 8px #fff,0 0 18px rgba(255,255,255,0.95),0 0 32px rgba(200,230,255,0.75)!important;z-index:99!important;pointer-events:none!important;animation:crtWhiteBeamCollapse 0.48s cubic-bezier(0.4,0,0.2,1) forwards!important;}' +\n");
         js.append("    '#device-wrapper{width:95%!important;max-height:94dvh!important;animation:smoothFadeIn 0.25s ease-out forwards;transition:opacity 0.2s ease!important;}' +\n");
         js.append("    '#device-wrapper.fading-out{opacity:0!important;}' +\n");
         js.append("    '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;}' +\n");
+        js.append("    '#custom-scanner-ui::after{background:radial-gradient(circle at calc(50% + var(--tilt-x,0px) * 5) calc(22% + var(--tilt-y,0px) * 5),rgba(255,255,255,0.09) 0%,transparent 62%)!important;transition:background 0.08s linear!important;}' +\n");
         js.append("    '.scanner-display{height:345px!important;transition:height 0.22s ease!important;}.top-controls-container{height:34px!important;}.buttons-box{gap:8px!important;padding:9px!important;}#mech-bay{height:216px!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] #mech-bay{display:none!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] .scanner-display{height:565px!important;}' +\n");
@@ -991,6 +1037,7 @@ public class PlayerActivity extends Activity {
         js.append("    });\n");
         js.append("  }\n");
 
+        /* Middle Status Bar Right: LAMP + PWR (Double-Tap = System Bars, Long-Press = Power ON/OFF & CRT Switch-Off) */
         js.append("  var contHud = document.getElementById('cont-status-hud');\n");
         js.append("  if (contHud && !document.getElementById('btn-player-exit')) {\n");
         js.append("    var rWrap = document.createElement('div');\n");
@@ -1028,10 +1075,10 @@ public class PlayerActivity extends Activity {
 
         js.append("    var exBtn = document.createElement('button');\n");
         js.append("    exBtn.id = 'btn-player-exit'; exBtn.type = 'button';\n");
-        js.append("    exBtn.title = 'Tap: System Bars | Hold: Switch Off & Exit App';\n");
-        js.append("    exBtn.innerHTML = '<div class=\"exit-cap\"></div><span style=\"font-size:6.5px;font-weight:900;color:var(--toggle-color);letter-spacing:0.5px;\">EXIT</span>';\n");
+        js.append("    exBtn.title = 'Hold: Switch Off & Exit App | Double-Tap: System Bars';\n");
+        js.append("    exBtn.innerHTML = '<div class=\"exit-cap\"></div><span style=\"font-size:6.5px;font-weight:900;color:var(--toggle-color);letter-spacing:0.5px;\">PWR</span>';\n");
         js.append("    rWrap.appendChild(exBtn);\n");
-        js.append("    var exHoldTimer = null, exLongFired = false;\n");
+        js.append("    var exHoldTimer = null, exLongFired = false, lastPwrTapMs = 0;\n");
         js.append("    exBtn.addEventListener('pointerdown', function() {\n");
         js.append("      clearTimeout(exHoldTimer); exLongFired = false;\n");
         js.append("      exHoldTimer = setTimeout(function() {\n");
@@ -1043,13 +1090,47 @@ public class PlayerActivity extends Activity {
         js.append("      }, 550);\n");
         js.append("    });\n");
         js.append("    exBtn.addEventListener('pointerup', function() {\n");
-        js.append("      var wasTap = exHoldTimer !== null; clearTimeout(exHoldTimer); exHoldTimer = null;\n");
-        js.append("      if (wasTap && !exLongFired) {\n");
-        js.append("        if (window.PlayerBridge && window.PlayerBridge.showSystemBars) window.PlayerBridge.showSystemBars();\n");
+        js.append("      var wasShort = exHoldTimer !== null; clearTimeout(exHoldTimer); exHoldTimer = null;\n");
+        js.append("      if (wasShort && !exLongFired) {\n");
+        js.append("        var now = Date.now();\n");
+        js.append("        if (now - lastPwrTapMs < 380) {\n");
+        js.append("          lastPwrTapMs = 0;\n");
+        js.append("          if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("          if (window.PlayerBridge && window.PlayerBridge.showSystemBars) window.PlayerBridge.showSystemBars();\n");
+        js.append("        } else {\n");
+        js.append("          lastPwrTapMs = now;\n");
+        js.append("        }\n");
         js.append("      }\n");
         js.append("    });\n");
         js.append("    exBtn.addEventListener('pointerleave', function() { clearTimeout(exHoldTimer); exHoldTimer = null; });\n");
         js.append("    exBtn.addEventListener('pointercancel', function() { clearTimeout(exHoldTimer); exHoldTimer = null; });\n");
+        js.append("  }\n");
+
+        /* Independent Radio Volume Slider in #seek-slider when in Broadcast Radio Mode */
+        js.append("  window.__radioVolPct = ").append(initialRadioVolPct).append(";\n");
+        js.append("  var skSlider = document.getElementById('seek-slider');\n");
+        js.append("  if (skSlider && !skSlider.__radioVolHooked) {\n");
+        js.append("    skSlider.__radioVolHooked = true;\n");
+        js.append("    skSlider.addEventListener('input', function() {\n");
+        js.append("      if (window.__isBroadcastRadioMode) {\n");
+        js.append("        var v = parseInt(this.value, 10) || 0;\n");
+        js.append("        window.__radioVolPct = v;\n");
+        js.append("        document.getElementById('time-cur').innerText = 'VOL';\n");
+        js.append("        document.getElementById('time-tot').innerText = v + '%';\n");
+        js.append("        if (window.PlayerBridge && window.PlayerBridge.setRadioVolumePct) {\n");
+        js.append("          window.PlayerBridge.setRadioVolumePct(v);\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("    });\n");
+        js.append("    skSlider.addEventListener('change', function() {\n");
+        js.append("      if (window.__isBroadcastRadioMode) {\n");
+        js.append("        var v = parseInt(this.value, 10) || 0;\n");
+        js.append("        window.__radioVolPct = v;\n");
+        js.append("        if (window.PlayerBridge && window.PlayerBridge.setRadioVolumePct) {\n");
+        js.append("          window.PlayerBridge.setRadioVolumePct(v);\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("    });\n");
         js.append("  }\n");
 
         js.append("  window.__stopAllRadioAndNativeAudio = function() {\n");
@@ -1139,7 +1220,6 @@ public class PlayerActivity extends Activity {
         js.append("    var oldTtsBtn = document.getElementById('btn-mode-tts');\n");
         js.append("    if (oldTtsBtn) oldTtsBtn.remove();\n");
         js.append("  }\n");
-
         js.append("  window.__archiveFilterMode = 0;\n");
         js.append("  var fRow = document.getElementById('date-select').parentNode;\n");
         js.append("  if (fRow && !document.getElementById('radio-crud-row')) {\n");
@@ -1284,6 +1364,7 @@ public class PlayerActivity extends Activity {
 
         js.append("  window.__seenOnPrevVisit = JSON.parse(localStorage.getItem('proscan_seen_visit_ids_v1') || '{}');\n");
         js.append("  window.__playedDriveIds = JSON.parse(localStorage.getItem('proscan_played_recs_v1') || '{}');\n");
+
         js.append("  var mb = document.getElementById('mech-bay');\n");
         js.append("  if (mb && !document.getElementById('deck-global-badge')) {\n");
         js.append("    var bdg = document.createElement('div'); bdg.id = 'deck-global-badge'; bdg.className = 'deck-track-badge';\n");
@@ -1343,8 +1424,8 @@ public class PlayerActivity extends Activity {
         js.append("    window.__audioLevel = level || 0;\n");
         js.append("    if (!window.__isBroadcastRadioMode && typeof window.onNativeTimeUpdate === 'function') window.onNativeTimeUpdate(sec, totSec);\n");
         js.append("    if (window.__isBroadcastRadioMode) {\n");
-        js.append("      document.getElementById('time-cur').innerText = fmtSec(sec);\n");
-        js.append("      document.getElementById('time-tot').innerText = 'LIVE';\n");
+        js.append("      document.getElementById('time-cur').innerText = 'VOL';\n");
+        js.append("      document.getElementById('time-tot').innerText = (window.__radioVolPct !== undefined ? window.__radioVolPct : 50) + '%';\n");
         js.append("    }\n");
         js.append("    var arm = document.querySelector('.tt-tonearm');\n");
         js.append("    if (arm) arm.style.transform = 'rotate(' + (20 + window.__audioProgress * 18).toFixed(2) + 'deg)';\n");
@@ -1383,7 +1464,6 @@ public class PlayerActivity extends Activity {
         js.append("      }\n");
         js.append("    });\n");
         js.append("  };\n");
-
         js.append("  var oldCanvas = document.getElementById('hack-canvas');\n");
         js.append("  if (oldCanvas) {\n");
         js.append("    var hCanvas = oldCanvas.cloneNode(true);\n");
@@ -1494,6 +1574,7 @@ public class PlayerActivity extends Activity {
         js.append("      var cRowEl = document.getElementById('radio-crud-row');\n");
         js.append("      var cModeBtn = document.getElementById('btn-mode-cont');\n");
         js.append("      var dspBtnEl = document.getElementById('btn-dsp-filter');\n");
+        js.append("      var skBar = document.getElementById('seek-slider');\n");
         js.append("      if (window.__isBroadcastRadioMode) {\n");
         js.append("        if (navRowEl) navRowEl.classList.add('radio-mode-nav');\n");
         js.append("        if (swBtn) swBtn.innerText = 'ARCHIVE';\n");
@@ -1503,6 +1584,12 @@ public class PlayerActivity extends Activity {
         js.append("        if (cRowEl) cRowEl.style.setProperty('display', 'grid', 'important');\n");
         js.append("        if (cModeBtn) cModeBtn.style.display = 'none';\n");
         js.append("        if (dspBtnEl) dspBtnEl.style.display = 'none';\n");
+        js.append("        if (skBar) {\n");
+        js.append("          skBar.min = 0; skBar.max = 100;\n");
+        js.append("          skBar.value = window.__radioVolPct !== undefined ? window.__radioVolPct : 50;\n");
+        js.append("        }\n");
+        js.append("        document.getElementById('time-cur').innerText = 'VOL';\n");
+        js.append("        document.getElementById('time-tot').innerText = (window.__radioVolPct !== undefined ? window.__radioVolPct : 50) + '%';\n");
         js.append("        if (").append(isBgRadioPlaying).append(" && window.__activeRadioUrl) {\n");
         js.append("          var activeIdx = window.__radioStations.findIndex(function(s){ return s.url === window.__activeRadioUrl; });\n");
         js.append("          if (activeIdx !== -1) window.__radioIdx = activeIdx;\n");
@@ -1531,6 +1618,7 @@ public class PlayerActivity extends Activity {
         js.append("        if (cRowEl) cRowEl.style.setProperty('display', 'none', 'important');\n");
         js.append("        if (cModeBtn) cModeBtn.style.display = 'flex';\n");
         js.append("        if (dspBtnEl) dspBtnEl.style.display = 'flex';\n");
+        js.append("        if (skBar) skBar.value = 0;\n");
         js.append("        window.__activePlayingFileId = '';\n");
         js.append("        window.renderPlaylist();\n");
         js.append("        if (curIdx >= 0 && curIdx < filteredRecs.length) {\n");
@@ -1551,6 +1639,7 @@ public class PlayerActivity extends Activity {
         js.append("      if (dw) dw.classList.remove('fading-out');\n");
         js.append("    }, skipAnim ? 0 : 150);\n");
         js.append("  };\n");
+
         js.append("  window.selectIndexOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= filteredRecs.length) return;\n");
         js.append("    curIdx = idx;\n");
@@ -1969,7 +2058,6 @@ public class PlayerActivity extends Activity {
                 () -> {
                     if (reqId != currentStreamReqId) return;
                     int sessionId = MainActivity.PriorityRadioEngine.getAudioSessionId();
-                    // Only attach Visualizer (NOT Equalizer) so Radio volume is 100% identical on Radio screen and Scanner screen!
                     if (sessionId != 0) setupVisualizer(sessionId);
                     startLiveStreamEnergyTap(streamUrl, reqId);
                     if (playerWeb != null) {
@@ -2123,6 +2211,16 @@ public class PlayerActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void setRadioVolumePct(final int pct) {
+            MainActivity.PriorityRadioEngine.setRadioVolumePct(prefs, pct);
+        }
+
+        @JavascriptInterface
+        public int getRadioVolumePct() {
+            return MainActivity.PriorityRadioEngine.getRadioVolumePct(prefs);
+        }
+
+        @JavascriptInterface
         public void attachActiveRadioSession() {
             mainHandler.post(() -> {
                 if (MainActivity.PriorityRadioEngine.isRadioPlaying()) {
@@ -2268,7 +2366,7 @@ public class PlayerActivity extends Activity {
                     }
                     lastSpokenCaption = chKey;
                     lastSpokenCaptionMs = now;
-                    MainActivity.PriorityRadioEngine.notifyTtsSpeaking(prefs, true);
+                    MainActivity.PriorityRadioEngine.onTtsSpeechStateChanged(prefs, true);
                     if (Build.VERSION.SDK_INT >= 21) {
                         Bundle params = new Bundle();
                         params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.45f);
@@ -2500,7 +2598,20 @@ public class PlayerActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        try {
+            if (sensorManager != null && tiltSensor != null) {
+                sensorManager.registerListener(this, tiltSensor, SensorManager.SENSOR_DELAY_GAME);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    @Override
     protected void onPause() {
+        try {
+            if (sensorManager != null) sensorManager.unregisterListener(this);
+        } catch (Exception ignored) {}
         super.onPause();
         if (playerWeb != null) {
             playerWeb.evaluateJavascript("if(window.markCurrentListAsVisited)window.markCurrentListAsVisited();", null);
@@ -2509,6 +2620,7 @@ public class PlayerActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        try { if (sensorManager != null) sensorManager.unregisterListener(this); } catch (Exception ignored) {}
         try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
         try {
             if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
