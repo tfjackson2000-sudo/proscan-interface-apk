@@ -133,16 +133,20 @@ public class PlayerActivity extends Activity implements SensorEventListener {
     public void onSensorChanged(SensorEvent event) {
         if (event == null || event.values == null || event.values.length < 2 || playerWeb == null) return;
         long now = System.currentTimeMillis();
-        if (now - lastTiltPushMs < 45) return;
+        if (now - lastTiltPushMs < 35) return;
         lastTiltPushMs = now;
         float rawX = Math.max(-7f, Math.min(7f, event.values[0])) / 7f;
         float rawY = Math.max(-7f, Math.min(7f, event.values[1] - 4.5f)) / 7f;
-        smoothTiltX += (rawX - smoothTiltX) * 0.22f;
-        smoothTiltY += (rawY - smoothTiltY) * 0.22f;
-        int bx = Math.round(-smoothTiltX * 8f);
-        int by = Math.round(smoothTiltY * 8f);
+        smoothTiltX += (rawX - smoothTiltX) * 0.28f;
+        smoothTiltY += (rawY - smoothTiltY) * 0.28f;
+        int deg = Math.round(125f - smoothTiltX * 38f + smoothTiltY * 22f);
+        int posPct = Math.round(38f + smoothTiltX * 28f - smoothTiltY * 20f);
+        int bx = Math.round(-smoothTiltX * 14f);
+        int by = Math.round(smoothTiltY * 14f);
         playerWeb.evaluateJavascript(
                 "try{var r=document.documentElement.style;" +
+                "r.setProperty('--gloss-deg','" + deg + "deg');" +
+                "r.setProperty('--gloss-pos','" + posPct + "%');" +
                 "r.setProperty('--tilt-x','" + bx + "px');" +
                 "r.setProperty('--tilt-y','" + by + "px');}catch(e){}",
                 null
@@ -166,7 +170,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
             targetUrl = bedroomLampOn ? onUrl : offUrl;
             actionLabel = bedroomLampOn ? "Bedroom Lights: ON" : "Bedroom Lights: OFF";
         } else {
-            bedroomLampOn = false;
+            bedroomLampOn = !bedroomLampOn;
             targetUrl = !offUrl.isEmpty() ? offUrl : onUrl;
             actionLabel = "Bedroom Lights: Triggered";
         }
@@ -339,7 +343,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
             speechEqualizer = null;
         }
     }
-
     private synchronized void acquirePlaybackLocks() {
         try {
             if (audioManager != null) {
@@ -844,6 +847,8 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("        if (typeof skinIds !== 'undefined') document.documentElement.setAttribute('data-skin', skinIds[sIdx % skinIds.length]);\n");
         js.append("        if (typeof dispIds !== 'undefined') document.documentElement.setAttribute('data-display', dispIds[dIdx % dispIds.length]);\n");
         js.append("        if (typeof bgIds !== 'undefined') document.documentElement.setAttribute('data-bg', bgIds[bIdx % bgIds.length]);\n");
+        js.append("        var dTex = localStorage.getItem('proscan_disp_tex');\n");
+        js.append("        if (dTex) document.documentElement.setAttribute('data-disp-tex', dTex);\n");
         js.append("      }\n");
         js.append("    }\n");
         js.append("    var nativeSt = ").append(safeStations).append(";\n");
@@ -855,7 +860,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
 
         js.append("  var st = document.createElement('style');\n");
         js.append("  st.textContent = '' +\n");
-        js.append("    'html{--tilt-x:0px;--tilt-y:0px;}' +\n");
+        js.append("    'html{--gloss-deg:125deg;--gloss-pos:38%;--tilt-x:0px;--tilt-y:0px;}' +\n");
         js.append("    '@keyframes smoothFadeIn{0%{opacity:0;}100%{opacity:1;}}' +\n");
         js.append("    '@keyframes crtWhiteBeamCollapse{0%{opacity:0;transform:translate(-50%,-50%) scale(1,35);border-radius:0;}16%{opacity:1;transform:translate(-50%,-50%) scale(1,1.4);border-radius:2px;}46%{opacity:1;transform:translate(-50%,-50%) scale(0.92,0.65);border-radius:999px;}76%{opacity:1;transform:translate(-50%,-50%) scale(0.014,1.35);border-radius:50%;}92%{opacity:0.9;transform:translate(-50%,-50%) scale(0.006,0.6);border-radius:50%;}100%{opacity:0;transform:translate(-50%,-50%) scale(0,0);border-radius:50%;}}' +\n");
         js.append("    'html.tv-shutting-down .scanner-display{background:#000000!important;border-color:#0a0a0a!important;box-shadow:inset 0 0 24px #000000!important;transition:none!important;}' +\n");
@@ -863,16 +868,31 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    'html.tv-shutting-down .scanner-display::after{content:\"\"!important;position:absolute!important;left:50%!important;top:50%!important;width:96%!important;height:3px!important;background:#fff!important;box-shadow:0 0 8px #fff,0 0 18px rgba(255,255,255,0.95),0 0 32px rgba(200,230,255,0.75)!important;z-index:99!important;pointer-events:none!important;animation:crtWhiteBeamCollapse 0.48s cubic-bezier(0.4,0,0.2,1) forwards!important;}' +\n");
         js.append("    '#device-wrapper{width:95%!important;max-height:94dvh!important;animation:smoothFadeIn 0.25s ease-out forwards;transition:opacity 0.2s ease!important;}' +\n");
         js.append("    '#device-wrapper.fading-out{opacity:0!important;}' +\n");
-        js.append("    '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;}' +\n");
-        js.append("    '#custom-scanner-ui::after{background:radial-gradient(circle at calc(50% + var(--tilt-x,0px) * 5) calc(22% + var(--tilt-y,0px) * 5),rgba(255,255,255,0.09) 0%,transparent 62%)!important;transition:background 0.08s linear!important;}' +\n");
-        js.append("    '.scanner-display{height:345px!important;transition:height 0.22s ease!important;}.top-controls-container{height:34px!important;}.buttons-box{gap:8px!important;padding:9px!important;}#mech-bay{height:216px!important;}' +\n");
+        js.append("    '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;position:relative!important;}' +\n");
+        /* Matching Tilt-Reactive Dynamic Lighting on All 24 Skins */
+        js.append("    '#custom-scanner-ui::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:25!important;border-radius:inherit!important;background:radial-gradient(circle at calc(50% + var(--tilt-x,0px) * 4.5) calc(24% + var(--tilt-y,0px) * 4.5),rgba(255,255,255,0.16) 0%,rgba(255,255,255,0.05) 34%,transparent 65%)!important;}' +\n");
+        /* Matching Gloss Glass Reflection ONLY when Gloss Display Texture is active */
+        js.append("    'html[data-disp-tex=\"glass\"] .scanner-display::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:18!important;opacity:1!important;background:linear-gradient(var(--gloss-deg,125deg),rgba(255,255,255,0.22) 0%,rgba(255,255,255,0.08) calc(var(--gloss-pos,38%) - 4%),rgba(255,255,255,0.26) var(--gloss-pos,38%),rgba(255,255,255,0.03) calc(var(--gloss-pos,38%) + 2%),transparent calc(var(--gloss-pos,38%) + 12%),transparent 100%),radial-gradient(circle at center,transparent 60%,rgba(0,0,0,0.32) 100%)!important;}' +\n");
+        /* Matching 3D Bevelled Skins (whiteline, tron, neongreen, amber) */
+        js.append("    'html[data-skin=\"whiteline\"]{--ui-bg:radial-gradient(circle at 50% 12%,#26292e 0%,#121417 65%,#070809 100%)!important;--btn-bg:linear-gradient(180deg,#2e3238 0%,#181a1e 55%,#0d0e11 100%)!important;--btn-color:#ffffff!important;--btn-active-color:#38bdf8!important;--btn-border:1px solid rgba(255,255,255,0.75)!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #94a3b8,0 4px 6px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.45)!important;--btn-shadow-active:0 0 0 #94a3b8,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
+        js.append("    'html[data-skin=\"tron\"]{--ui-bg:radial-gradient(circle at 50% 12%,#0c2e36 0%,#06161a 65%,#02080a 100%)!important;--btn-bg:linear-gradient(180deg,#103c47 0%,#071f26 55%,#031014 100%)!important;--btn-color:#00ffff!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #00ffff!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #008b8b,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(180,255,255,0.45)!important;--btn-shadow-active:0 0 0 #008b8b,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
+        js.append("    'html[data-skin=\"neongreen\"]{--ui-bg:radial-gradient(circle at 50% 12%,#11330d 0%,#081906 65%,#030a02 100%)!important;--btn-bg:linear-gradient(180deg,#184212 0%,#0b2108 55%,#051104 100%)!important;--btn-color:#39ff14!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #39ff14!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #1b8a08,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(190,255,180,0.45)!important;--btn-shadow-active:0 0 0 #1b8a08,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
+        js.append("    'html[data-skin=\"amber\"]{--ui-bg:radial-gradient(circle at 50% 12%,#332406 0%,#1a1203 65%,#0a0701 100%)!important;--btn-bg:linear-gradient(180deg,#422f08 0%,#211704 55%,#120c02 100%)!important;--btn-color:#ffb000!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #ffb000!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #996900,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,230,170,0.45)!important;--btn-shadow-active:0 0 0 #996900,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
+
+        /* Identical Symmetrical Top Controls Bar & Larger Square Glowing Buttons (WAKE, VOICE | RX, S-METER, LOG | LAMP, PWR) */
+        js.append("    '.scanner-display{height:345px!important;position:relative!important;overflow:hidden!important;transition:height 0.22s ease!important;}' +\n");
+        js.append("    '.top-controls-container{height:40px!important;display:grid!important;grid-template-columns:1fr auto 1fr!important;align-items:center!important;width:100%!important;}' +\n");
+        js.append("    '.top-leds-left{justify-self:start!important;display:inline-flex!important;gap:8px!important;align-items:center!important;}' +\n");
+        js.append("    '.top-center-slot{justify-self:center!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:8px!important;}' +\n");
+        js.append("    '.top-leds-right{justify-self:end!important;display:inline-flex!important;gap:8px!important;align-items:center!important;}' +\n");
+        js.append("    '.buttons-box{gap:8px!important;padding:9px!important;}#mech-bay{height:216px!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] #mech-bay{display:none!important;}' +\n");
         js.append("    'html[data-deck=\"lite\"] .scanner-display{height:565px!important;}' +\n");
         js.append("    '@media (orientation: landscape) and (max-height: 540px){' +\n");
         js.append("      '#device-wrapper{width:96vw!important;max-width:96vw!important;height:94dvh!important;max-height:94dvh!important;}' +\n");
         js.append("      '#custom-scanner-ui{display:grid!important;grid-template-columns:1.08fr 1fr!important;grid-template-rows:auto 1fr!important;gap:5px 12px!important;padding:10px 14px!important;height:100%!important;overflow:hidden!important;}' +\n");
         js.append("      '.scanner-display, html[data-deck=\"lite\"] .scanner-display{grid-column:1!important;grid-row:1 / span 2!important;height:100%!important;min-height:0!important;}' +\n");
-        js.append("      '.top-controls-container{grid-column:2!important;grid-row:1!important;height:30px!important;}' +\n");
+        js.append("      '.top-controls-container{grid-column:2!important;grid-row:1!important;height:34px!important;}' +\n");
         js.append("      '.buttons-box{grid-column:2!important;grid-row:2!important;height:100%!important;min-height:0!important;padding:6px!important;gap:5px!important;justify-content:space-between!important;}' +\n");
         js.append("      '.player-nav-row{height:27px!important;gap:4px!important;}' +\n");
         js.append("      '.player-nav-row .btn{font-size:9.5px!important;}' +\n");
@@ -906,6 +926,45 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    '.radio-crud-bar{display:none;grid-template-columns:2fr 1fr 1fr 1fr!important;gap:6px!important;height:34px!important;}' +\n");
         js.append("    '.radio-crud-bar .btn{font-size:10.5px!important;font-weight:900!important;padding:2px!important;}' +\n");
         js.append("    '#date-select, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
+
+        /* Larger Illuminated Square Top Hardware Buttons: WAKE, VOICE, LAMP, and PWR (Identical to Scanner) */
+        js.append("    '#btn-player-wake, #btn-player-voice, #btn-player-lamp, #btn-player-exit{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:2px!important;background:transparent!important;border:none!important;padding:0!important;margin:0 1px!important;cursor:pointer!important;touch-action:manipulation!important;box-shadow:none!important;}' +\n");
+        js.append("    '.sq-hw-cap{width:28px!important;height:22px!important;border-radius:5px!important;background:linear-gradient(180deg,#262a30 0%,#14171a 100%)!important;border:1.5px solid #090a0c!important;box-shadow:0 2px 4px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.12)!important;display:flex!important;align-items:center!important;justify-content:center!important;transition:all 0.2s ease!important;position:relative!important;}' +\n");
+        js.append("    '.sq-hw-cap::after{content:\"\"!important;width:12px!important;height:4px!important;border-radius:2px!important;background:#334155!important;box-shadow:inset 0 1px 2px rgba(0,0,0,0.8)!important;transition:all 0.2s ease!important;}' +\n");
+        js.append("    '.sq-hw-lbl{font-family:\"JetBrains Mono\",monospace!important;font-size:7px!important;font-weight:900!important;letter-spacing:0.4px!important;color:var(--toggle-color,#94a3b8)!important;line-height:1!important;}' +\n");
+        js.append("    '#btn-player-wake:active .sq-hw-cap, #btn-player-voice:active .sq-hw-cap, #btn-player-lamp:active .sq-hw-cap, #btn-player-exit:active .sq-hw-cap{transform:translateY(1.5px)!important;}' +\n");
+        js.append("    '#btn-player-wake.active .sq-hw-cap{background:linear-gradient(180deg,#10b981 0%,#047857 100%)!important;border-color:#6ee7b7!important;box-shadow:0 0 10px rgba(16,185,129,0.85),0 0 18px rgba(16,185,129,0.45),inset 0 1px 2px rgba(255,255,255,0.65)!important;}' +\n");
+        js.append("    '#btn-player-wake.active .sq-hw-cap::after{background:#ecfdf5!important;box-shadow:0 0 6px #ffffff!important;}' +\n");
+        js.append("    '#btn-player-voice.active .sq-hw-cap{background:linear-gradient(180deg,#0ea5e9 0%,#0369a1 100%)!important;border-color:#7dd3fc!important;box-shadow:0 0 10px rgba(14,165,233,0.85),0 0 18px rgba(14,165,233,0.45),inset 0 1px 2px rgba(255,255,255,0.65)!important;}' +\n");
+        js.append("    '#btn-player-voice.active .sq-hw-cap::after{background:#f0f9ff!important;box-shadow:0 0 6px #ffffff!important;}' +\n");
+        js.append("    '#btn-player-lamp.active .sq-hw-cap{background:linear-gradient(180deg,#facc15 0%,#ca8a04 100%)!important;border-color:#fef08a!important;box-shadow:0 0 11px rgba(250,204,21,0.9),0 0 20px rgba(250,204,21,0.5),inset 0 1px 2px rgba(255,255,255,0.75)!important;}' +\n");
+        js.append("    '#btn-player-lamp.active .sq-hw-cap::after{background:#fefce8!important;box-shadow:0 0 7px #ffffff!important;}' +\n");
+        js.append("    '#btn-player-exit.active .sq-hw-cap{background:linear-gradient(180deg,#ef4444 0%,#b91c1c 100%)!important;border-color:#fca5a5!important;box-shadow:0 0 10px rgba(239,68,68,0.85),0 0 18px rgba(239,68,68,0.45),inset 0 1px 2px rgba(255,255,255,0.6)!important;}' +\n");
+        js.append("    '#btn-player-exit.active .sq-hw-cap::after{background:#fef2f2!important;box-shadow:0 0 6px #ffffff!important;}' +\n");
+
+        /* Center RX / S-Meter / LOG Indicators (Identical to Scanner) */
+        js.append("    '.player-led-col{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;}' +\n");
+        js.append("    '.player-round-led{width:10px;height:10px;border-radius:50%;background:#1a1a1a;border:2px solid #000;box-shadow:inset 1px 1px 3px rgba(0,0,0,0.8),0 1px 1px rgba(255,255,255,0.1);transition:all 0.15s ease;}' +\n");
+        js.append("    '#player-rx-led.active{background:#22c55e!important;border-color:#86efac!important;box-shadow:0 0 8px #22c55e,0 0 14px rgba(34,197,94,0.8),inset 1px 1px 2px #fff!important;}' +\n");
+        js.append("    '#player-log-led.active{background:#f59e0b!important;border-color:#fde047!important;box-shadow:0 0 8px #f59e0b,0 0 14px rgba(245,158,11,0.8),inset 1px 1px 2px #fff!important;}' +\n");
+        js.append("    '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:118px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
+        js.append("    '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
+        js.append("    '.sm-mode.active{display:flex;}' +\n");
+        js.append("    '.sm-lbl{font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;color:#38bdf8;letter-spacing:0.3px;margin-right:3px;flex-shrink:0;}' +\n");
+        js.append("    '.sm-bar-wrap{display:flex;align-items:center;gap:2px;flex:1;height:11px;justify-content:space-between;}' +\n");
+        js.append("    '.sm-seg{flex:1;height:100%;border-radius:1px;background:#1e293b;transition:background 0.04s linear;}' +\n");
+        js.append("    '.sm-vu-wrap{width:100%;height:100%;background:linear-gradient(90deg,#fef9c3 0%,#fde047 68%,#f59e0b 100%);border-radius:3px;position:relative;overflow:hidden;border:1px solid #000;box-shadow:inset 0 1px 3px rgba(0,0,0,0.45);}' +\n");
+        js.append("    '.sm-vu-wrap::after{content:\"\";position:absolute;left:4px;right:4px;bottom:1px;height:5px;border-bottom:1.5px solid #0f172a;background:repeating-linear-gradient(90deg,#0f172a 0px,#0f172a 2px,transparent 2px,transparent 8px);opacity:0.9;z-index:1;pointer-events:none;}' +\n");
+        js.append("    '.sm-vu-scale{position:absolute;top:1px;left:4px;right:4px;font-family:monospace;font-size:6.5px;font-weight:900;color:#0f172a;display:flex;justify-content:space-between;line-height:1;z-index:2;pointer-events:none;}' +\n");
+        js.append("    '#sm-vu-needle{position:absolute;top:0;bottom:0;left:3px;width:2.5px;background:#dc2626;border-radius:1px;box-shadow:0 0 4px rgba(220,38,38,0.9),1px 0 2px rgba(0,0,0,0.6);transition:left 0.08s ease-out;z-index:3;}' +\n");
+        js.append("    '.sm-spec-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:2px;width:100%;height:15px;padding-top:1px;}' +\n");
+        js.append("    '.sm-spec-bar{flex:1;height:2px;background:linear-gradient(180deg,#ef4444 0%,#facc15 35%,#22c55e 100%);border-radius:1px 1px 0 0;transition:height 0.04s linear;}' +\n");
+        js.append("    '#sm-scope-canvas{width:100%;height:16px;display:block;}' +\n");
+        js.append("    '.sm-dig-wrap{display:flex;align-items:center;justify-content:space-between;width:100%;gap:4px;font-family:\"JetBrains Mono\",monospace;}' +\n");
+        js.append("    '#sm-dig-txt{font-size:8.5px;font-weight:900;color:#39ff14;min-width:46px;text-align:left;letter-spacing:-0.3px;}' +\n");
+        js.append("    '.sm-peak-track{flex:1;height:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;overflow:hidden;position:relative;}' +\n");
+        js.append("    '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.08s ease-out;}' +\n");
+
         js.append("    '#deck-vinyl{background:radial-gradient(circle at 46% 54%,#1e2229 0%,#0c0e12 85%)!important;}' +\n");
         js.append("    '.tt-platter{position:absolute!important;left:90px!important;top:38px!important;width:140px!important;height:140px!important;box-shadow:0 8px 20px rgba(0,0,0,0.95),0 0 0 3px #18181b!important;}' +\n");
         js.append("    '.tt-record{width:128px!important;height:128px!important;}' +\n");
@@ -930,22 +989,12 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    '#cd-laser-sled{position:absolute;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle,#ff2222 20%,rgba(255,0,0,0.7) 55%,transparent 100%);box-shadow:0 0 10px #ff0000;z-index:2;pointer-events:none;transition:transform 0.1s linear;}' +\n");
         js.append("    '#reactive-vu-strip{position:absolute;bottom:5px;left:50%;transform:translateX(-50%);display:flex;gap:3px;z-index:12;background:rgba(0,0,0,0.78);padding:3px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);}' +\n");
         js.append("    '.rvu-seg{width:6px;height:5px;border-radius:1px;background:#1e293b;}' +\n");
-        js.append("    '#player-wake-pill{display:inline-flex;align-items:center;gap:3px;cursor:pointer;padding:1px 6px;border-radius:999px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.14);margin-right:6px;touch-action:manipulation;}' +\n");
-        js.append("    '#player-wake-dot{width:7px;height:7px;border-radius:50%;background:#334155;transition:all 0.25s ease;}' +\n");
-        js.append("    '#player-wake-pill.active #player-wake-dot{background:#10b981;box-shadow:0 0 6px #10b981;}' +\n");
-        js.append("    '#btn-player-lamp{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-right:8px;cursor:pointer;touch-action:manipulation;}' +\n");
-        js.append("    '#btn-player-lamp .lamp-cap{width:22px;height:16px;border-radius:5px;background:linear-gradient(180deg,#eab308,#a16207);border:1px solid #422006;box-shadow:0 2px 3px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;}' +\n");
-        js.append("    '#btn-player-lamp .lamp-cap::after{content:\"\";width:8px;height:3px;border-radius:1.5px;background:rgba(254,249,195,0.92);box-shadow:0 0 4px rgba(254,249,195,0.5);}' +\n");
-        js.append("    '#btn-player-lamp:active .lamp-cap{transform:translateY(1px);filter:brightness(1.25);}' +\n");
-        js.append("    '#btn-player-exit{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:transparent;border:none;padding:0;margin-left:2px;cursor:pointer;touch-action:manipulation;}' +\n");
-        js.append("    '#btn-player-exit .exit-cap{width:22px;height:16px;border-radius:5px;background:linear-gradient(180deg,#b91c1c,#7f1d1d);border:1px solid #450a0a;box-shadow:0 2px 3px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.32);display:flex;align-items:center;justify-content:center;}' +\n");
-        js.append("    '#btn-player-exit .exit-cap::after{content:\"\";width:8px;height:3px;border-radius:1.5px;background:rgba(255,220,220,0.88);}' +\n");
-        js.append("    '#btn-player-exit:active .exit-cap{transform:translateY(1px);filter:brightness(1.2);}' +\n");
         js.append("    '#player-bat-hud{display:inline-flex;align-items:center;gap:3px;font-family:\"JetBrains Mono\",monospace;font-size:10px;font-weight:800;color:var(--log-text);}' +\n");
         js.append("    '.bat-icon-box{display:inline-block;width:15px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;margin-right:3px;}' +\n");
         js.append("    '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
         js.append("    '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
         js.append("  document.head.appendChild(st);\n");
+
         js.append("  if (typeof decks !== 'undefined' && !decks.some(function(d){ return d.id === 'lite'; })) {\n");
         js.append("    decks.push({ id: 'lite', btn: 'DECK: LITE', hud: 'ARCHIVE // LITE LOG VIEW' });\n");
         js.append("  }\n");
@@ -984,6 +1033,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    newCycBtn.addEventListener('pointercancel', function() { clearTimeout(dHoldTimer); dHoldTimer = null; });\n");
         js.append("  }\n");
 
+        /* Display Top Header: Clock (Left), Mode + Rec Count (Center), Battery (Right) */
         js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  var modeHudEl = document.getElementById('deck-mode-hud');\n");
@@ -996,6 +1046,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    var centerWrap = document.createElement('div');\n");
         js.append("    centerWrap.id = 'top-header-center';\n");
         js.append("    if (modeHudEl) centerWrap.appendChild(modeHudEl);\n");
+        js.append("    if (recHud) centerWrap.appendChild(recHud);\n");
         js.append("    topBar.appendChild(centerWrap);\n");
         js.append("    topBar.appendChild(pBat);\n");
         js.append("    function updatePlayerBattery() {\n");
@@ -1014,19 +1065,56 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    setInterval(updatePlayerBattery, 10000);\n");
         js.append("  }\n");
 
-        js.append("  if (recHud && !document.getElementById('player-wake-pill')) {\n");
-        js.append("    var wWrap = document.createElement('div');\n");
-        js.append("    wWrap.style.cssText = 'display:flex;align-items:center;padding-left:2px;';\n");
-        js.append("    var wPill = document.createElement('button');\n");
-        js.append("    wPill.id = 'player-wake-pill'; wPill.type = 'button';\n");
-        js.append("    wPill.className = ").append(wakePref ? "'active'" : "''").append(";\n");
-        js.append("    wPill.innerHTML = '<span id=\"player-wake-dot\"></span><span style=\"font-size:7px;font-weight:900;color:var(--toggle-color);\">WAKE</span>';\n");
+        /* Build Symmetrical Hardware Top Bar Identical to Scanner: [WAKE] [VOICE] — [RX] [S-METER] [LOG] — [LAMP] [PWR] */
+        js.append("  var topCtrlBar = document.querySelector('.top-controls-container');\n");
+        js.append("  if (topCtrlBar && !document.getElementById('btn-player-wake')) {\n");
+        js.append("    topCtrlBar.innerHTML = '' +\n");
+        js.append("      '<div class=\"top-leds-left\">' +\n");
+        js.append("        '<button id=\"btn-player-wake\" type=\"button\" class=\"' + (").append(wakePref).append(" ? 'active' : '') + '\"><div class=\"sq-hw-cap\"></div><span class=\"sq-hw-lbl\">WAKE</span></button>' +\n");
+        js.append("        '<button id=\"btn-player-voice\" type=\"button\"><div class=\"sq-hw-cap\"></div><span class=\"sq-hw-lbl\">VOICE</span></button>' +\n");
+        js.append("      '</div>' +\n");
+        js.append("      '<div class=\"top-center-slot\">' +\n");
+        js.append("        '<div class=\"player-led-col\"><div id=\"player-rx-led\" class=\"player-round-led\"></div><span class=\"sq-hw-lbl\">RX</span></div>' +\n");
+        js.append("        '<div id=\"sig-meter-host\" title=\"Tap to cycle Signal Meter style\">' +\n");
+        js.append("          '<div class=\"sm-mode\" id=\"sm-mode-0\"><span class=\"sm-lbl\">S</span><div class=\"sm-bar-wrap\" id=\"sm-led-bars\"></div></div>' +\n");
+        js.append("          '<div class=\"sm-mode\" id=\"sm-mode-1\"><div class=\"sm-vu-wrap\"><div class=\"sm-vu-scale\"><span>S1</span><span>3</span><span>5</span><span>7</span><span>9</span><span style=\"color:#dc2626;\">+30</span></div><div id=\"sm-vu-needle\"></div></div></div>' +\n");
+        js.append("          '<div class=\"sm-mode\" id=\"sm-mode-2\"><span class=\"sm-lbl\">EQ</span><div class=\"sm-spec-wrap\" id=\"sm-spec-bars\"></div></div>' +\n");
+        js.append("          '<div class=\"sm-mode\" id=\"sm-mode-3\"><canvas id=\"sm-scope-canvas\" width=\"114\" height=\"16\"></canvas></div>' +\n");
+        js.append("          '<div class=\"sm-mode\" id=\"sm-mode-4\"><div class=\"sm-dig-wrap\"><span id=\"sm-dig-txt\">S0 -98dB</span><div class=\"sm-peak-track\"><div id=\"sm-peak-fill\"></div></div></div></div>' +\n");
+        js.append("        '</div>' +\n");
+        js.append("        '<div class=\"player-led-col\"><div id=\"player-log-led\" class=\"player-round-led\"></div><span class=\"sq-hw-lbl\">LOG</span></div>' +\n");
+        js.append("      '</div>' +\n");
+        js.append("      '<div class=\"top-leds-right\">' +\n");
+        js.append("        '<button id=\"btn-player-lamp\" type=\"button\" title=\"Tap: Bedroom Lights | Hold: Setup Alexa Routine URL\"><div class=\"sq-hw-cap\"></div><span class=\"sq-hw-lbl\">LAMP</span></button>' +\n");
+        js.append("        '<button id=\"btn-player-exit\" type=\"button\" class=\"active\" title=\"Hold: Switch Off & Exit App | Double-Tap: System Bars\"><div class=\"sq-hw-cap\"></div><span class=\"sq-hw-lbl\">PWR</span></button>' +\n");
+        js.append("      '</div>';\n");
 
-        js.append("    recHud.parentNode.insertBefore(wWrap, recHud);\n");
-        js.append("    wWrap.appendChild(wPill);\n");
-        js.append("    var hdrCenter = document.getElementById('top-header-center');\n");
-        js.append("    if (hdrCenter) hdrCenter.appendChild(recHud);\n");
+        js.append("    var ledBarsWrap = document.getElementById('sm-led-bars');\n");
+        js.append("    var specBarsWrap = document.getElementById('sm-spec-bars');\n");
+        js.append("    if (ledBarsWrap) { var sh = ''; for (var s=0; s<12; s++) sh += '<div class=\"sm-seg\"></div>'; ledBarsWrap.innerHTML = sh; }\n");
+        js.append("    if (specBarsWrap) { var sph = ''; for (var sp=0; sp<10; sp++) sph += '<div class=\"sm-spec-bar\"></div>'; specBarsWrap.innerHTML = sph; }\n");
+
+        js.append("    window.__sigMeterStyle = parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0;\n");
+        js.append("    window.__applyPlayerSigMeterStyle = function(idx) {\n");
+        js.append("      window.__sigMeterStyle = ((idx % 5) + 5) % 5;\n");
+        js.append("      localStorage.setItem('proscan_sig_meter_style_v1', String(window.__sigMeterStyle));\n");
+        js.append("      for (var m = 0; m < 5; m++) {\n");
+        js.append("        var el = document.getElementById('sm-mode-' + m);\n");
+        js.append("        if (el) el.classList.toggle('active', m === window.__sigMeterStyle);\n");
+        js.append("      }\n");
+        js.append("    };\n");
+        js.append("    window.__applyPlayerSigMeterStyle(window.__sigMeterStyle);\n");
+        js.append("    var mHost = document.getElementById('sig-meter-host');\n");
+        js.append("    if (mHost) {\n");
+        js.append("      mHost.addEventListener('click', function() {\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("        window.__applyPlayerSigMeterStyle((window.__sigMeterStyle || 0) + 1);\n");
+        js.append("      });\n");
+        js.append("    }\n");
+
+        /* WAKE Button Handler */
         js.append("    window.__playerWakeActive = ").append(wakePref).append(";\n");
+        js.append("    var wPill = document.getElementById('btn-player-wake');\n");
         js.append("    wPill.addEventListener('click', function() {\n");
         js.append("      window.__playerWakeActive = !window.__playerWakeActive;\n");
         js.append("      wPill.classList.toggle('active', window.__playerWakeActive);\n");
@@ -1035,21 +1123,21 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("        window.PlayerBridge.setWakeLock(window.__playerWakeActive);\n");
         js.append("      }\n");
         js.append("    });\n");
-        js.append("  }\n");
 
-        /* Middle Status Bar Right: LAMP + PWR (Double-Tap = System Bars, Long-Press = Power ON/OFF & CRT Switch-Off) */
-        js.append("  var contHud = document.getElementById('cont-status-hud');\n");
-        js.append("  if (contHud && !document.getElementById('btn-player-exit')) {\n");
-        js.append("    var rWrap = document.createElement('div');\n");
-        js.append("    rWrap.style.cssText = 'justify-self:end;display:flex;align-items:center;padding-right:2px;';\n");
-        js.append("    contHud.parentNode.insertBefore(rWrap, contHud);\n");
-        js.append("    rWrap.appendChild(contHud);\n");
+        /* VOICE Button Handler (Announces Track/Station Names via TTS when ON) */
+        js.append("    var vBtn = document.getElementById('btn-player-voice');\n");
+        js.append("    vBtn.classList.toggle('active', Boolean(typeof isTts !== 'undefined' && isTts));\n");
+        js.append("    vBtn.addEventListener('click', function() {\n");
+        js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("      if (typeof isTts !== 'undefined') isTts = !isTts; else window.isTts = true;\n");
+        js.append("      vBtn.classList.toggle('active', Boolean(isTts));\n");
+        js.append("      if (isTts && window.PlayerBridge && window.PlayerBridge.speakCaption) {\n");
+        js.append("        window.PlayerBridge.speakCaption('Voice readout on');\n");
+        js.append("      }\n");
+        js.append("    });\n");
 
-        js.append("    var lampBtn = document.createElement('button');\n");
-        js.append("    lampBtn.id = 'btn-player-lamp'; lampBtn.type = 'button';\n");
-        js.append("    lampBtn.title = 'Tap: Bedroom Lights | Hold: Setup Alexa Routine URL';\n");
-        js.append("    lampBtn.innerHTML = '<div class=\"lamp-cap\"></div><span style=\"font-size:6.5px;font-weight:900;color:var(--toggle-color);letter-spacing:0.5px;\">LAMP</span>';\n");
-        js.append("    rWrap.appendChild(lampBtn);\n");
+        /* LAMP Button Handler */
+        js.append("    var lampBtn = document.getElementById('btn-player-lamp');\n");
         js.append("    window.__playerLampState = false;\n");
         js.append("    var lpTimer = null, lpLong = false;\n");
         js.append("    lampBtn.addEventListener('pointerdown', function() {\n");
@@ -1065,6 +1153,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("      if (wasTap && !lpLong) {\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
         js.append("        window.__playerLampState = !window.__playerLampState;\n");
+        js.append("        lampBtn.classList.toggle('active', window.__playerLampState);\n");
         js.append("        if (window.PlayerBridge && window.PlayerBridge.triggerBedroomLamp) {\n");
         js.append("          window.PlayerBridge.triggerBedroomLamp(window.__playerLampState);\n");
         js.append("        }\n");
@@ -1073,16 +1162,14 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    lampBtn.addEventListener('pointerleave', function() { clearTimeout(lpTimer); lpTimer = null; });\n");
         js.append("    lampBtn.addEventListener('pointercancel', function() { clearTimeout(lpTimer); lpTimer = null; });\n");
 
-        js.append("    var exBtn = document.createElement('button');\n");
-        js.append("    exBtn.id = 'btn-player-exit'; exBtn.type = 'button';\n");
-        js.append("    exBtn.title = 'Hold: Switch Off & Exit App | Double-Tap: System Bars';\n");
-        js.append("    exBtn.innerHTML = '<div class=\"exit-cap\"></div><span style=\"font-size:6.5px;font-weight:900;color:var(--toggle-color);letter-spacing:0.5px;\">PWR</span>';\n");
-        js.append("    rWrap.appendChild(exBtn);\n");
+        /* PWR Button Handler */
+        js.append("    var exBtn = document.getElementById('btn-player-exit');\n");
         js.append("    var exHoldTimer = null, exLongFired = false, lastPwrTapMs = 0;\n");
         js.append("    exBtn.addEventListener('pointerdown', function() {\n");
         js.append("      clearTimeout(exHoldTimer); exLongFired = false;\n");
         js.append("      exHoldTimer = setTimeout(function() {\n");
         js.append("        exHoldTimer = null; exLongFired = true;\n");
+        js.append("        exBtn.classList.remove('active');\n");
         js.append("        if (navigator.vibrate) navigator.vibrate([45, 60, 55]);\n");
         js.append("        if (window.__stopAllRadioAndNativeAudio) window.__stopAllRadioAndNativeAudio();\n");
         js.append("        document.documentElement.classList.add('tv-shutting-down');\n");
@@ -1105,6 +1192,85 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    exBtn.addEventListener('pointerleave', function() { clearTimeout(exHoldTimer); exHoldTimer = null; });\n");
         js.append("    exBtn.addEventListener('pointercancel', function() { clearTimeout(exHoldTimer); exHoldTimer = null; });\n");
         js.append("  }\n");
+        /* Live Top S-Meter & RX/LOG LED Animator (Reacts to Both Broadcast Radio & Archive Tracks!) */
+        js.append("  var smCarrierLvl = 0, smAudioLvl = 0, smPhase = 0;\n");
+        js.append("  function renderPlayerTopSignalMeter() {\n");
+        js.append("    requestAnimationFrame(renderPlayerTopSignalMeter);\n");
+        js.append("    var rxLed = document.getElementById('player-rx-led');\n");
+        js.append("    if (rxLed) rxLed.classList.toggle('active', Boolean(isPlayingNow && window.__audioLevel > 0.025));\n");
+        js.append("    var rawAud = isPlayingNow ? Math.max(0, Math.min(0.98, window.__audioLevel || 0)) : 0;\n");
+        js.append("    var targetCarrier = isPlayingNow ? Math.min(0.94, 0.78 + rawAud * 0.16 + Math.sin(smPhase * 0.4) * 0.015) : 0;\n");
+        js.append("    smCarrierLvl += (targetCarrier - smCarrierLvl) * (targetCarrier > smCarrierLvl ? 0.18 : 0.10);\n");
+        js.append("    if (smCarrierLvl < 0.01) smCarrierLvl = 0;\n");
+        js.append("    smAudioLvl += (rawAud - smAudioLvl) * (rawAud > smAudioLvl ? 0.42 : 0.22);\n");
+        js.append("    if (smAudioLvl < 0.015) smAudioLvl = 0;\n");
+        js.append("    var stIdx = window.__sigMeterStyle || 0;\n");
+        js.append("    if (stIdx === 0) {\n");
+        js.append("      var activeSegs = smCarrierLvl < 0.03 ? 0 : Math.min(12, Math.ceil(smCarrierLvl * 12));\n");
+        js.append("      var segs = document.querySelectorAll('#sm-led-bars .sm-seg');\n");
+        js.append("      for (var k = 0; k < segs.length; k++) {\n");
+        js.append("        if (k < activeSegs) {\n");
+        js.append("          var col = k >= 9 ? '#ef4444' : (k >= 6 ? '#facc15' : '#22c55e');\n");
+        js.append("          segs[k].style.background = col;\n");
+        js.append("          segs[k].style.boxShadow = '0 0 4px ' + col;\n");
+        js.append("        } else {\n");
+        js.append("          segs[k].style.background = '#1e293b';\n");
+        js.append("          segs[k].style.boxShadow = 'none';\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("    } else if (stIdx === 1) {\n");
+        js.append("      var ndl = document.getElementById('sm-vu-needle');\n");
+        js.append("      if (ndl) {\n");
+        js.append("        var pct = Math.min(100, Math.max(0, (smCarrierLvl * 0.65 + smAudioLvl * 0.35) * 100));\n");
+        js.append("        ndl.style.left = 'calc(3px + ' + (pct * 0.92).toFixed(1) + '%)';\n");
+        js.append("      }\n");
+        js.append("    } else if (stIdx === 2) {\n");
+        js.append("      var bars = document.querySelectorAll('#sm-spec-bars .sm-spec-bar');\n");
+        js.append("      for (var b = 0; b < bars.length; b++) {\n");
+        js.append("        var h = 2;\n");
+        js.append("        if (smAudioLvl >= 0.03) {\n");
+        js.append("          var bell = Math.sin(((b + 1) / 11) * Math.PI);\n");
+        js.append("          var wv = 0.55 + 0.45 * Math.sin(b * 0.8 + smPhase) * Math.cos(b * 0.4 - smPhase * 0.7);\n");
+        js.append("          h = Math.max(2, Math.min(15, Math.round(bell * wv * smAudioLvl * 18)));\n");
+        js.append("        }\n");
+        js.append("        bars[b].style.height = h + 'px';\n");
+        js.append("      }\n");
+        js.append("    } else if (stIdx === 3) {\n");
+        js.append("      var cv = document.getElementById('sm-scope-canvas');\n");
+        js.append("      if (cv) {\n");
+        js.append("        var c = cv.getContext('2d');\n");
+        js.append("        var W = cv.width, H = cv.height;\n");
+        js.append("        c.clearRect(0, 0, W, H);\n");
+        js.append("        c.strokeStyle = smAudioLvl >= 0.03 ? '#39ff14' : '#334155';\n");
+        js.append("        c.lineWidth = 1.4;\n");
+        js.append("        c.beginPath();\n");
+        js.append("        for (var x = 0; x < W; x += 2) {\n");
+        js.append("          var env = Math.sin((x / W) * Math.PI);\n");
+        js.append("          var y = (H / 2) + Math.sin(x * 0.14 + smPhase) * Math.cos(x * 0.06 - smPhase * 0.5) * env * (smAudioLvl * (H * 0.48));\n");
+        js.append("          if (x === 0) c.moveTo(x, y); else c.lineTo(x, y);\n");
+        js.append("        }\n");
+        js.append("        c.stroke();\n");
+        js.append("      }\n");
+        js.append("    } else if (stIdx === 4) {\n");
+        js.append("      var dTxt = document.getElementById('sm-dig-txt');\n");
+        js.append("      var pFill = document.getElementById('sm-peak-fill');\n");
+        js.append("      if (dTxt) {\n");
+        js.append("        if (smCarrierLvl < 0.03) {\n");
+        js.append("          dTxt.innerText = 'S0 -98dB';\n");
+        js.append("          dTxt.style.color = '#64748b';\n");
+        js.append("        } else {\n");
+        js.append("          var sUnit = Math.min(9, Math.max(1, Math.round(smCarrierLvl * 10)));\n");
+        js.append("          var dbVal = -92 + Math.round(smCarrierLvl * 58);\n");
+        js.append("          var plusStr = smCarrierLvl > 0.80 ? ('S9+' + Math.round((smCarrierLvl - 0.78) * 140)) : ('S' + sUnit + ' ' + dbVal + 'dB');\n");
+        js.append("          dTxt.innerText = plusStr;\n");
+        js.append("          dTxt.style.color = smCarrierLvl > 0.76 ? '#facc15' : '#39ff14';\n");
+        js.append("        }\n");
+        js.append("      }\n");
+        js.append("      if (pFill) pFill.style.width = Math.min(100, Math.round(smCarrierLvl * 100)) + '%';\n");
+        js.append("    }\n");
+        js.append("    smPhase += isPlayingNow ? (0.14 + smAudioLvl * 0.28) : 0.02;\n");
+        js.append("  }\n");
+        js.append("  renderPlayerTopSignalMeter();\n");
 
         /* Independent Radio Volume Slider in #seek-slider when in Broadcast Radio Mode */
         js.append("  window.__radioVolPct = ").append(initialRadioVolPct).append(";\n");
@@ -1220,6 +1386,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    var oldTtsBtn = document.getElementById('btn-mode-tts');\n");
         js.append("    if (oldTtsBtn) oldTtsBtn.remove();\n");
         js.append("  }\n");
+
         js.append("  window.__archiveFilterMode = 0;\n");
         js.append("  var fRow = document.getElementById('date-select').parentNode;\n");
         js.append("  if (fRow && !document.getElementById('radio-crud-row')) {\n");
@@ -1464,6 +1631,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("      }\n");
         js.append("    });\n");
         js.append("  };\n");
+
         js.append("  var oldCanvas = document.getElementById('hack-canvas');\n");
         js.append("  if (oldCanvas) {\n");
         js.append("    var hCanvas = oldCanvas.cloneNode(true);\n");
@@ -1662,6 +1830,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    } catch(e) {}\n");
         js.append("  };\n");
 
+        js.append("  var prevRecCountForLogLed = -1;\n");
         js.append("  window.renderPlaylist = function() {\n");
         js.append("    var box = document.getElementById('playlist-box');\n");
         js.append("    var prevScroll = box.scrollTop;\n");
@@ -1689,6 +1858,12 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("      });\n");
         js.append("      return;\n");
         js.append("    }\n");
+
+        js.append("    if (prevRecCountForLogLed !== -1 && allRecs.length > prevRecCountForLogLed) {\n");
+        js.append("      var lLed = document.getElementById('player-log-led');\n");
+        js.append("      if (lLed) { lLed.classList.add('active'); setTimeout(function(){ lLed.classList.remove('active'); }, 1800); }\n");
+        js.append("    }\n");
+        js.append("    prevRecCountForLogLed = allRecs.length;\n");
 
         js.append("    var q = (document.getElementById('search-box').value || '').trim().toLowerCase();\n");
         js.append("    var fMode = window.__archiveFilterMode || 0;\n");
@@ -1859,6 +2034,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         MainActivity.PriorityRadioEngine.stopStation();
         releasePlaybackLocks();
     }
+
     private void startLiveStreamEnergyTap(final String resolvedUrl, final int reqId) {
         liveStreamTapExecutor.execute(() -> {
             HttpURLConnection conn = null;
@@ -2361,7 +2537,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
                     int commaIdx = clean.indexOf(',');
                     String chKey = (commaIdx != -1 ? clean.substring(commaIdx + 1) : clean).trim().toLowerCase(Locale.ROOT);
                     long now = System.currentTimeMillis();
-                    if (chKey.equals(lastSpokenCaption) && (now - lastSpokenCaptionMs < 30000L)) {
+                    if (!clean.equalsIgnoreCase("Voice readout on") && chKey.equals(lastSpokenCaption) && (now - lastSpokenCaptionMs < 30000L)) {
                         return;
                     }
                     lastSpokenCaption = chKey;
