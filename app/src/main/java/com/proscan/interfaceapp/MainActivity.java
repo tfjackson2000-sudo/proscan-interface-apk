@@ -115,22 +115,18 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
         };
 
-        // Self-healing watchdog: runs every 500ms while radio is playing so back-to-back transmissions or dropped TTS callbacks NEVER leave the radio stuck muted!
         private static final Runnable duckWatchdogRunnable = new Runnable() {
             @Override
             public void run() {
                 synchronized (PriorityRadioEngine.class) {
                     if (radioPlayer != null && isPlaying) {
                         long now = System.currentTimeMillis();
-                        // If RX was marked active but no RX heartbeat arrived in the last 1,500ms, auto-clear stuck RX state
                         if (isScannerRxActive && (now - lastRxHeartbeatMs > 1500L)) {
                             isScannerRxActive = false;
                         }
-                        // If TTS was marked speaking for > 7,000ms (or dropped its onDone callback), auto-clear stuck TTS state
                         if (isTtsSpeaking && (now - lastTtsStartMs > 7000L)) {
                             isTtsSpeaking = false;
                         }
-                        // If nothing is active and no restore timer is currently pending, ensure volume is restored after 2.5s
                         if (!isScannerRxActive && !isTtsSpeaking && !isWaitingForPendingTts && !restoreScheduled) {
                             applyCurrentVolumeLocked(cachedPrefs);
                         }
@@ -1080,7 +1076,6 @@ public class MainActivity extends Activity implements SensorEventListener {
                 result = TextToSpeech.ERROR;
             }
 
-            // Safety check: if Android TTS finishes or drops the utterance without firing onDone, clear isTtsSpeaking!
             mainHandler.postDelayed(() -> {
                 if (uttId.equals(activeTtsUtteranceId) && (tts == null || !tts.isSpeaking())) {
                     PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
@@ -1248,10 +1243,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        '#device-wrapper{width:95%!important;max-height:94dvh!important;transition:opacity 0.18s ease!important;}' +\n");
         js.append("        '#device-wrapper.flipping-out{opacity:0!important;}' +\n");
         js.append("        '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;position:relative!important;}' +\n");
-        /* Visible Tilt-Reactive Specular Lighting Across All 24 Skins */
         js.append("        '#custom-scanner-ui::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:25!important;border-radius:inherit!important;background:radial-gradient(circle at calc(50% + var(--tilt-x,0px) * 4.5) calc(24% + var(--tilt-y,0px) * 4.5),rgba(255,255,255,0.16) 0%,rgba(255,255,255,0.05) 34%,transparent 65%)!important;}' +\n");
         js.append("        '.scanner-display{height:325px!important;position:relative!important;overflow:hidden!important;transition:height 0.22s ease!important;}' +\n");
-        /* Gloss Reflection ONLY when Gloss Display Texture (data-disp-tex=\"glass\") is active! */
         js.append("        'html[data-disp-tex=\"glass\"] .scanner-display::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:18!important;opacity:1!important;background:linear-gradient(var(--gloss-deg,125deg),rgba(255,255,255,0.22) 0%,rgba(255,255,255,0.08) calc(var(--gloss-pos,38%) - 4%),rgba(255,255,255,0.26) var(--gloss-pos,38%),rgba(255,255,255,0.03) calc(var(--gloss-pos,38%) + 2%),transparent calc(var(--gloss-pos,38%) + 12%),transparent 100%),radial-gradient(circle at center,transparent 60%,rgba(0,0,0,0.32) 100%)!important;}' +\n");
         js.append("        '.top-controls-container{height:40px!important;display:grid!important;grid-template-columns:1fr auto 1fr!important;align-items:center!important;}' +\n");
         js.append("        '.top-leds-left{justify-self:start!important;gap:8px!important;align-items:center!important;}' +\n");
@@ -1266,12 +1259,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        '.essential-controls .scroll-btn{font-size:9px!important;}' +\n");
         js.append("        '.numpad{grid-auto-rows:34px!important;gap:6px!important;}' +\n");
         js.append("        '.numpad .btn{font-size:15.5px!important;font-weight:900!important;}' +\n");
-
-        /* Pure Black Screen Before/With CRT Switch-Off Animation */
         js.append("        'html.tv-off .scanner-display, .scanner-display.tv-shutting-down{background:#000000!important;border-color:#0a0a0a!important;box-shadow:inset 0 0 24px #000000!important;filter:brightness(1)!important;transition:none!important;}' +\n");
         js.append("        'html.tv-off .scanner-display #custom-imgd, html.tv-off .scanner-display #custom-imgf, html.tv-off .scanner-display .log-wrapper, html.tv-off .scanner-display #display-clock-hud, html.tv-off .scanner-display #scanner-bat-hud, html.tv-off .scanner-display #display-font-hud, .scanner-display.tv-shutting-down #custom-imgd, .scanner-display.tv-shutting-down #custom-imgf, .scanner-display.tv-shutting-down .log-wrapper, .scanner-display.tv-shutting-down #display-clock-hud, .scanner-display.tv-shutting-down #scanner-bat-hud, .scanner-display.tv-shutting-down #display-font-hud{opacity:0!important;visibility:hidden!important;animation:none!important;transition:none!important;}' +\n");
-
-        /* 3D Bevelled Buttons on WIRE, TRON, NEON & TERM Skins */
         js.append("        'html[data-skin=\"whiteline\"]{--ui-bg:radial-gradient(circle at 50% 12%,#26292e 0%,#121417 65%,#070809 100%)!important;--btn-bg:linear-gradient(180deg,#2e3238 0%,#181a1e 55%,#0d0e11 100%)!important;--btn-color:#ffffff!important;--btn-active-color:#38bdf8!important;--btn-border:1px solid rgba(255,255,255,0.75)!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #94a3b8,0 4px 6px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.45)!important;--btn-shadow-active:0 0 0 #94a3b8,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
         js.append("        'html[data-skin=\"whiteline\"] .btn:active{background:linear-gradient(180deg,#181a1e 0%,#0d0e11 100%)!important;color:#38bdf8!important;}' +\n");
         js.append("        'html[data-skin=\"tron\"]{--ui-bg:radial-gradient(circle at 50% 12%,#0c2e36 0%,#06161a 65%,#02080a 100%)!important;--btn-bg:linear-gradient(180deg,#103c47 0%,#071f26 55%,#031014 100%)!important;--btn-color:#00ffff!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #00ffff!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #008b8b,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(180,255,255,0.45)!important;--btn-shadow-active:0 0 0 #008b8b,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
@@ -1280,8 +1269,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        'html[data-skin=\"neongreen\"] .btn:active{background:linear-gradient(180deg,#0b2108 0%,#051104 100%)!important;color:#ffffff!important;box-shadow:0 0 12px rgba(57,255,20,0.5),inset 0 2px 5px rgba(0,0,0,0.9)!important;}' +\n");
         js.append("        'html[data-skin=\"amber\"]{--ui-bg:radial-gradient(circle at 50% 12%,#332406 0%,#1a1203 65%,#0a0701 100%)!important;--btn-bg:linear-gradient(180deg,#422f08 0%,#211704 55%,#120c02 100%)!important;--btn-color:#ffb000!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #ffb000!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #996900,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,230,170,0.45)!important;--btn-shadow-active:0 0 0 #996900,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
         js.append("        'html[data-skin=\"amber\"] .btn:active{background:linear-gradient(180deg,#211704 0%,#120c02 100%)!important;color:#ffffff!important;box-shadow:0 0 12px rgba(255,176,0,0.5),inset 0 2px 5px rgba(0,0,0,0.9)!important;}' +\n");
-
-        /* SCANNER LITE MODE (Larger 420px Display & Big Controls) */
         js.append("        'html[data-scanner-lite=\"true\"] .scanner-display{height:420px!important;}' +\n");
         js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(4),' +\n");
         js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(5),' +\n");
@@ -1297,8 +1284,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        'html[data-scanner-lite=\"true\"] .numpad .btn{font-size:16.5px!important;font-weight:900!important;}' +\n");
         js.append("        'html[data-scanner-lite=\"true\"] .top-right-group{height:38px!important;}' +\n");
         js.append("        'html[data-scanner-lite=\"true\"] .top-right-group .btn{font-size:12px!important;}' +\n");
-
-        /* MOBILE LANDSCAPE SPLIT-SCREEN COCKPIT LAYOUT */
         js.append("        '@media (orientation: landscape) and (max-height: 540px){' +\n");
         js.append("          '#device-wrapper{width:96vw!important;max-width:96vw!important;height:94dvh!important;max-height:94dvh!important;}' +\n");
         js.append("          '#custom-scanner-ui{display:grid!important;grid-template-columns:1.08fr 1fr!important;grid-template-rows:auto 1fr!important;gap:6px 12px!important;padding:10px 14px!important;height:100%!important;overflow:hidden!important;}' +\n");
@@ -1316,7 +1301,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          '.essential-controls .scroll-btn, .essential-controls .split-btn-group .btn, html[data-scanner-lite=\"true\"] .essential-controls .scroll-btn{font-size:7.5px!important;}' +\n");
         js.append("          '.numpad .btn, html[data-scanner-lite=\"true\"] .numpad .btn{font-size:13px!important;}' +\n");
         js.append("        '}' +\n");
-
         js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:8px!important;gap:8px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
         js.append("        '.scanner-display .log-container{display:flex!important;flex-direction:column!important;overflow:hidden!important;}' +\n");
         js.append("        '#mini-log-table{display:flex!important;flex-direction:column!important;height:100%!important;width:100%!important;}' +\n");
@@ -1334,28 +1318,20 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        '#mini-log-table th:nth-child(3),#mini-log-table td:nth-child(3){width:13%!important;}' +\n");
         js.append("        '#mini-log-table th:nth-child(4),#mini-log-table td:nth-child(4){width:14%!important;}' +\n");
         js.append("        '#mini-log-table th:nth-child(5),#mini-log-table td:nth-child(5){width:34%!important;}' +\n");
-
-        /* Larger Illuminated Square Top Hardware Buttons: WAKE, VOICE, LAMP, and PWR (Glow when ON, Unlit Matte when OFF) */
         js.append("        '#btn-wake-toggle, #btn-voice-toggle, #btn-lamp-toggle, #btn-hardware-exit{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:2px!important;background:transparent!important;border:none!important;padding:0!important;margin:0 1px!important;cursor:pointer!important;touch-action:manipulation!important;box-shadow:none!important;}' +\n");
         js.append("        '#btn-wake-toggle > *:not(.sq-hw-cap):not(.sq-hw-lbl), #btn-voice-toggle > *:not(.sq-hw-cap):not(.sq-hw-lbl){display:none!important;}' +\n");
         js.append("        '.sq-hw-cap{width:28px!important;height:22px!important;border-radius:5px!important;background:linear-gradient(180deg,#262a30 0%,#14171a 100%)!important;border:1.5px solid #090a0c!important;box-shadow:0 2px 4px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.12)!important;display:flex!important;align-items:center!important;justify-content:center!important;transition:all 0.2s ease!important;position:relative!important;}' +\n");
         js.append("        '.sq-hw-cap::after{content:\"\"!important;width:12px!important;height:4px!important;border-radius:2px!important;background:#334155!important;box-shadow:inset 0 1px 2px rgba(0,0,0,0.8)!important;transition:all 0.2s ease!important;}' +\n");
         js.append("        '.sq-hw-lbl{font-family:\"JetBrains Mono\",monospace!important;font-size:7px!important;font-weight:900!important;letter-spacing:0.4px!important;color:var(--toggle-color,#94a3b8)!important;line-height:1!important;}' +\n");
         js.append("        '#btn-wake-toggle:active .sq-hw-cap, #btn-voice-toggle:active .sq-hw-cap, #btn-lamp-toggle:active .sq-hw-cap, #btn-hardware-exit:active .sq-hw-cap{transform:translateY(1.5px)!important;}' +\n");
-        /* WAKE Glowing Emerald Green when ON */
         js.append("        '#btn-wake-toggle.active .sq-hw-cap{background:linear-gradient(180deg,#10b981 0%,#047857 100%)!important;border-color:#6ee7b7!important;box-shadow:0 0 10px rgba(16,185,129,0.85),0 0 18px rgba(16,185,129,0.45),inset 0 1px 2px rgba(255,255,255,0.65)!important;}' +\n");
         js.append("        '#btn-wake-toggle.active .sq-hw-cap::after{background:#ecfdf5!important;box-shadow:0 0 6px #ffffff!important;}' +\n");
-        /* VOICE Glowing Cyan-Blue when ON */
         js.append("        '#btn-voice-toggle.active .sq-hw-cap{background:linear-gradient(180deg,#0ea5e9 0%,#0369a1 100%)!important;border-color:#7dd3fc!important;box-shadow:0 0 10px rgba(14,165,233,0.85),0 0 18px rgba(14,165,233,0.45),inset 0 1px 2px rgba(255,255,255,0.65)!important;}' +\n");
         js.append("        '#btn-voice-toggle.active .sq-hw-cap::after{background:#f0f9ff!important;box-shadow:0 0 6px #ffffff!important;}' +\n");
-        /* LAMP Glowing Warm Amber Gold when ON */
         js.append("        '#btn-lamp-toggle.active .sq-hw-cap{background:linear-gradient(180deg,#facc15 0%,#ca8a04 100%)!important;border-color:#fef08a!important;box-shadow:0 0 11px rgba(250,204,21,0.9),0 0 20px rgba(250,204,21,0.5),inset 0 1px 2px rgba(255,255,255,0.75)!important;}' +\n");
         js.append("        '#btn-lamp-toggle.active .sq-hw-cap::after{background:#fefce8!important;box-shadow:0 0 7px #ffffff!important;}' +\n");
-        /* PWR Glowing Crimson Red when Scanner Display/Audio is ON, Unlit Dark when OFF */
         js.append("        '#btn-hardware-exit.active .sq-hw-cap{background:linear-gradient(180deg,#ef4444 0%,#b91c1c 100%)!important;border-color:#fca5a5!important;box-shadow:0 0 10px rgba(239,68,68,0.85),0 0 18px rgba(239,68,68,0.45),inset 0 1px 2px rgba(255,255,255,0.6)!important;}' +\n");
         js.append("        '#btn-hardware-exit.active .sq-hw-cap::after{background:#fef2f2!important;box-shadow:0 0 6px #ffffff!important;}' +\n");
-
-        /* Signal Meter in #brand-logo-slot */
         js.append("        '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:118px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
         js.append("        '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
         js.append("        '.sm-mode.active{display:flex;}' +\n");
@@ -1373,7 +1349,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        '#sm-dig-txt{font-size:8.5px;font-weight:900;color:#39ff14;min-width:46px;text-align:left;letter-spacing:-0.3px;}' +\n");
         js.append("        '.sm-peak-track{flex:1;height:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;overflow:hidden;position:relative;}' +\n");
         js.append("        '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.14s ease-out;}' +\n");
-
         js.append("        '#display-clock-hud{position:absolute!important;top:6px!important;left:10px!important;right:auto!important;z-index:3!important;}' +\n");
         js.append("        '#scanner-bat-hud{position:absolute!important;top:6px!important;right:9px!important;left:auto!important;z-index:3!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10px!important;font-weight:700!important;letter-spacing:0.8px!important;color:var(--log-text)!important;opacity:0.88;pointer-events:none;display:inline-flex!important;align-items:center!important;line-height:1;transition:opacity 0.3s ease,color 0.3s ease;}' +\n");
         js.append("        '#scanner-bat-hud *{font-family:inherit!important;font-size:inherit!important;font-weight:inherit!important;letter-spacing:inherit!important;line-height:inherit!important;}' +\n");
@@ -1387,9 +1362,39 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Non-Stalling History Log.txt Polling + Direct Timestamp-Based Squelch & Auto-Duck (Never Gets Stuck on Back-to-Back Hits!) */
+        /* Zero-Drop Persistent Accumulating Log Engine + Multi-Stage Post-RX Burst Poller */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
+        js.append("      window.__persistedLogRows = [];\n");
+        js.append("      window.__persistedLogKeys = new Set();\n");
+        js.append("      window.__freqHitCounts = {};\n");
+
+        js.append("      function parseSingleProscanLine(rawLine, lineNumberKey) {\n");
+        js.append("        var line = (rawLine || '').trim();\n");
+        js.append("        if (!line || line.toLowerCase().indexOf('frequency') !== -1 || line.toLowerCase().indexOf('start date') !== -1) return null;\n");
+        js.append("        var p = line.indexOf('\\t') !== -1 ? line.split('\\t') : line.split(',');\n");
+        js.append("        if (p.length < 3) return null;\n");
+        js.append("        var fq = (p[0] || '').trim();\n");
+        js.append("        if (!fq || fq === '---') return null;\n");
+        js.append("        var tn = (p[1] || '').trim();\n");
+        js.append("        var du = '---', tr = '---', dtIdx = -1, duIdx = -1;\n");
+        js.append("        for (var j = 1; j < p.length; j++) {\n");
+        js.append("          var v = p[j].trim();\n");
+        js.append("          if (duIdx === -1 && /^\\d{1,2}:\\d{2}(:\\d{2})?$/.test(v) && j >= 2 && dtIdx !== -1) {\n");
+        js.append("            du = v; duIdx = j;\n");
+        js.append("          } else if (dtIdx === -1 && (/\\d{1,4}[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,4}\\s+\\d{1,2}:\\d{2}/.test(v) || /^\\d{1,2}:\\d{2}:\\d{2}$/.test(v))) {\n");
+        js.append("            tr = v; dtIdx = j;\n");
+        js.append("          }\n");
+        js.append("        }\n");
+        js.append("        var nameStartIdx = Math.max(dtIdx, duIdx) + 1;\n");
+        js.append("        if (nameStartIdx <= 1 || nameStartIdx >= p.length) nameStartIdx = p.length - 1;\n");
+        js.append("        var nm = p.slice(nameStartIdx).join(', ').trim() || fq;\n");
+        js.append("        var tp = tr.split(/\\s+/);\n");
+        js.append("        var tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
+        js.append("        if (du.indexOf('00:') === 0) du = du.slice(3);\n");
+        js.append("        return { key: lineNumberKey + '|' + tr + '|' + fq + '|' + nm, tm: tm, fq: fq, tn: tn, du: du, nm: nm };\n");
+        js.append("      }\n");
+
         js.append("      window.updateMiniLog = function() {\n");
         js.append("        if (typeof isDisplayOn !== 'undefined' && !isDisplayOn && (typeof isConnected === 'undefined' || !isConnected)) return;\n");
         js.append("        fetch('History Log.txt?_t=' + Date.now(), { cache: 'no-store', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } })\n");
@@ -1397,41 +1402,51 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          .then(function(text) {\n");
         js.append("            isLogFetchInFlight = false;\n");
         js.append("            if (!text || text.toLowerCase().indexOf('<html') !== -1) return;\n");
-        js.append("            var dataLines = text.trim().split('\\n').filter(function(l) { return l.indexOf(',') !== -1 && l.toLowerCase().indexOf('frequency') === -1; });\n");
-        js.append("            if (!dataLines.length) return;\n");
-        js.append("            var counts = {}, hits = new Array(dataLines.length);\n");
-        js.append("            for (var k = 0; k < dataLines.length; k++) {\n");
-        js.append("              var fc = dataLines[k].indexOf(','), fk = fc > 0 ? dataLines[k].slice(0, fc).trim() : '';\n");
-        js.append("              if (fk && fk !== '---') { counts[fk] = (counts[fk] || 0) + 1; hits[k] = counts[fk]; } else hits[k] = 1;\n");
-        js.append("            }\n");
-        js.append("            var html = '', added = 0, newRow = false;\n");
-        js.append("            for (var i = dataLines.length - 1; i >= 0 && added < 25; i--) {\n");
-        js.append("              var p = dataLines[i].split(',');\n");
-        js.append("              if (p.length >= 5) {\n");
-        js.append("                var fq = (p[0] || '---').trim(), tn = (p[1] || '').trim(), nm = (p[p.length - 1] || '---').trim(), du = '---', tr = '---';\n");
-        js.append("                for (var j = 0; j < p.length; j++) {\n");
-        js.append("                  var v = p[j].trim();\n");
-        js.append("                  if (/^\\d{2}:\\d{2}:\\d{2}$/.test(v)) du = v;\n");
-        js.append("                  else if (/^\\d{1,4}[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,4}\\s+\\d{1,2}:\\d{2}(:\\d{2})?$/.test(v)) tr = v;\n");
-        js.append("                }\n");
-        js.append("                var tp = tr.split(' '), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
-        js.append("                if (du.indexOf('00:') === 0) du = du.slice(3);\n");
-        js.append("                var id = tm + '|' + fq + '|' + nm;\n");
-        js.append("                var isN = !knownLogLines.has(id);\n");
-        js.append("                if (isN) { knownLogLines.add(id); newRow = true; }\n");
-        js.append("                if (knownLogLines.size > 150) knownLogLines.delete(knownLogLines.values().next().value);\n");
-        js.append("                var h = hits[i] || 1;\n");
-        js.append("                if (fq !== '---' && fq !== '') {\n");
-        js.append("                  html += '<tr class=\"' + ((isN && !isFirstLoad) ? 'new-log-row' : '') + '\"><td title=\"' + tm + '\">' + tm + '</td><td title=\"' + fq + '\">' + fq + '</td><td title=\"' + tn + '\">' + tn + '</td><td title=\"' + du + '\">' + du + '</td><td title=\"(Hit #' + h + ') ' + nm + '\" data-hit-count=\"' + h + '\"><span class=\"freq-hit-badge\" style=\"display:none\">×' + h + '</span>' + nm + '</td></tr>';\n");
-        js.append("                  added++;\n");
-        js.append("                }\n");
+        js.append("            var rawLines = text.replace(/\\r/g, '').split('\\n');\n");
+        js.append("            var validLines = [];\n");
+        js.append("            for (var idx = 0; idx < rawLines.length; idx++) {\n");
+        js.append("              var rl = rawLines[idx].trim();\n");
+        js.append("              if (rl && (rl.indexOf(',') !== -1 || rl.indexOf('\\t') !== -1) && rl.toLowerCase().indexOf('frequency') === -1) {\n");
+        js.append("                validLines.push({ lineIdx: idx, text: rl });\n");
         js.append("              }\n");
         js.append("            }\n");
-        js.append("            if (html && isDisplayOn) {\n");
+        js.append("            if (!validLines.length) return;\n");
+        js.append("            var counts = {};\n");
+        js.append("            for (var k = 0; k < validLines.length; k++) {\n");
+        js.append("              var sLine = validLines[k].text;\n");
+        js.append("              var sep = sLine.indexOf('\\t') !== -1 ? '\\t' : ',';\n");
+        js.append("              var fk = sLine.slice(0, sLine.indexOf(sep)).trim();\n");
+        js.append("              if (fk && fk !== '---') counts[fk] = (counts[fk] || 0) + 1;\n");
+        js.append("            }\n");
+        js.append("            window.__freqHitCounts = counts;\n");
+        js.append("            var startScan = Math.max(0, validLines.length - 40);\n");
+        js.append("            var newRowDetected = false;\n");
+        js.append("            for (var m = startScan; m < validLines.length; m++) {\n");
+        js.append("              var parsed = parseSingleProscanLine(validLines[m].text, validLines[m].lineIdx);\n");
+        js.append("              if (parsed && !window.__persistedLogKeys.has(parsed.key)) {\n");
+        js.append("                window.__persistedLogKeys.add(parsed.key);\n");
+        js.append("                parsed.isNew = !isFirstLoad;\n");
+        js.append("                window.__persistedLogRows.unshift(parsed);\n");
+        js.append("                newRowDetected = true;\n");
+        js.append("              }\n");
+        js.append("              if (window.__persistedLogRows.length > 40) {\n");
+        js.append("                window.__persistedLogRows.pop();\n");
+        js.append("              }\n");
+        js.append("            }\n");
+        js.append("            if (window.__persistedLogRows.length > 0 && isDisplayOn) {\n");
+        js.append("              var html = '';\n");
+        js.append("              var limit = Math.min(28, window.__persistedLogRows.length);\n");
+        js.append("              for (var r = 0; r < limit; r++) {\n");
+        js.append("                var it = window.__persistedLogRows[r];\n");
+        js.append("                var h = window.__freqHitCounts[it.fq] || 1;\n");
+        js.append("                var rowCls = (r === 0 && it.isNew) ? 'new-log-row' : '';\n");
+        js.append("                html += '<tr class=\"' + rowCls + '\"><td title=\"' + it.tm + '\">' + it.tm + '</td><td title=\"' + it.fq + '\">' + it.fq + '</td><td title=\"' + it.tn + '\">' + it.tn + '</td><td title=\"' + it.du + '\">' + it.du + '</td><td title=\"(Hit #' + h + ') ' + it.nm + '\" data-hit-count=\"' + h + '\"><span class=\"freq-hit-badge\" style=\"display:none\">×' + h + '</span>' + it.nm + '</td></tr>';\n");
+        js.append("                it.isNew = false;\n");
+        js.append("              }\n");
         js.append("              var tb = document.getElementById('mini-log-data');\n");
         js.append("              if (tb && tb.innerHTML !== html) tb.innerHTML = html;\n");
         js.append("            }\n");
-        js.append("            if (newRow && !isFirstLoad) {\n");
+        js.append("            if (newRowDetected && !isFirstLoad) {\n");
         js.append("              if (typeof triggerLogLight === 'function') triggerLogLight();\n");
         js.append("            }\n");
         js.append("            isFirstLoad = false;\n");
@@ -1439,13 +1454,12 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          .catch(function() { isLogFetchInFlight = false; });\n");
         js.append("      };\n");
 
-        /* Direct Timestamp-Driven Squelch & Auto-Duck: No reliance on setTimeout to clear RX state! */
         js.append("      window.detectAudio = function() {};\n");
         js.append("      window.__lastLogPollMs = 0;\n");
         js.append("      window.__lastActiveRxPushMs = 0;\n");
         js.append("      window.__bgTickSquelchAndLog = function() {\n");
         js.append("        var nowWall = Date.now();\n");
-        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1600)) {\n");
+        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1000)) {\n");
         js.append("          window.__lastLogPollMs = nowWall;\n");
         js.append("          window.updateMiniLog();\n");
         js.append("        }\n");
@@ -1497,8 +1511,9 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("                window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
         js.append("              }\n");
         js.append("              if (isDisplayOn || isConnected) {\n");
-        js.append("                clearTimeout(rxPostLogTimeout);\n");
-        js.append("                rxPostLogTimeout = setTimeout(window.updateMiniLog, 300);\n");
+        js.append("                setTimeout(window.updateMiniLog, 150);\n");
+        js.append("                setTimeout(window.updateMiniLog, 650);\n");
+        js.append("                setTimeout(window.updateMiniLog, 1400);\n");
         js.append("              }\n");
         js.append("            }\n");
         js.append("          }\n");
@@ -1524,7 +1539,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        '<div class=\"sm-mode\" id=\"sm-mode-4\"><div class=\"sm-dig-wrap\"><span id=\"sm-dig-txt\">S0 -98dB</span><div class=\"sm-peak-track\"><div id=\"sm-peak-fill\"></div></div></div></div>' +\n");
         js.append("      '</div>';\n");
 
-        /* Move RX LED to the Left of S-Meter and LOG LED to the Right of S-Meter for 100% Symmetry */
         js.append("      var rxEl = document.getElementById('rx-led');\n");
         js.append("      var logEl = document.getElementById('log-led');\n");
         js.append("      var mHost = document.getElementById('sig-meter-host');\n");
