@@ -1362,12 +1362,13 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Zero-Drop Persistent Accumulating Log Engine + Multi-Stage Post-RX Burst Poller */
+        /* Zero-Drop Persistent Accumulating Log Engine + Full Log FX Animation Preservation */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
         js.append("      window.__persistedLogRows = [];\n");
         js.append("      window.__persistedLogKeys = new Set();\n");
         js.append("      window.__freqHitCounts = {};\n");
+        js.append("      window.__lastRenderedLogDataSig = '';\n");
 
         js.append("      function parseSingleProscanLine(rawLine, lineNumberKey) {\n");
         js.append("        var line = (rawLine || '').trim();\n");
@@ -1392,7 +1393,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        var tp = tr.split(/\\s+/);\n");
         js.append("        var tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
         js.append("        if (du.indexOf('00:') === 0) du = du.slice(3);\n");
-        js.append("        return { key: lineNumberKey + '|' + tr + '|' + fq + '|' + nm, tm: tm, fq: fq, tn: tn, du: du, nm: nm };\n");
+        js.append("        return { key: lineNumberKey + '|' + tr + '|' + fq + '|' + nm, tm: tm, fq: fq, tn: tn, du: du, nm: nm, newUntilMs: 0 };\n");
         js.append("      }\n");
 
         js.append("      window.updateMiniLog = function() {\n");
@@ -1421,11 +1422,12 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("            window.__freqHitCounts = counts;\n");
         js.append("            var startScan = Math.max(0, validLines.length - 40);\n");
         js.append("            var newRowDetected = false;\n");
+        js.append("            var nowMs = Date.now();\n");
         js.append("            for (var m = startScan; m < validLines.length; m++) {\n");
         js.append("              var parsed = parseSingleProscanLine(validLines[m].text, validLines[m].lineIdx);\n");
         js.append("              if (parsed && !window.__persistedLogKeys.has(parsed.key)) {\n");
         js.append("                window.__persistedLogKeys.add(parsed.key);\n");
-        js.append("                parsed.isNew = !isFirstLoad;\n");
+        js.append("                parsed.newUntilMs = isFirstLoad ? 0 : (nowMs + 2800);\n");
         js.append("                window.__persistedLogRows.unshift(parsed);\n");
         js.append("                newRowDetected = true;\n");
         js.append("              }\n");
@@ -1434,17 +1436,21 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("              }\n");
         js.append("            }\n");
         js.append("            if (window.__persistedLogRows.length > 0 && isDisplayOn) {\n");
-        js.append("              var html = '';\n");
+        js.append("              var html = '', dataSig = '';\n");
         js.append("              var limit = Math.min(28, window.__persistedLogRows.length);\n");
         js.append("              for (var r = 0; r < limit; r++) {\n");
         js.append("                var it = window.__persistedLogRows[r];\n");
         js.append("                var h = window.__freqHitCounts[it.fq] || 1;\n");
-        js.append("                var rowCls = (r === 0 && it.isNew) ? 'new-log-row' : '';\n");
+        js.append("                var isStillNew = (it.newUntilMs > nowMs);\n");
+        js.append("                var rowCls = isStillNew ? 'new-log-row' : '';\n");
+        js.append("                dataSig += it.key + '#' + h + ';';\n");
         js.append("                html += '<tr class=\"' + rowCls + '\"><td title=\"' + it.tm + '\">' + it.tm + '</td><td title=\"' + it.fq + '\">' + it.fq + '</td><td title=\"' + it.tn + '\">' + it.tn + '</td><td title=\"' + it.du + '\">' + it.du + '</td><td title=\"(Hit #' + h + ') ' + it.nm + '\" data-hit-count=\"' + h + '\"><span class=\"freq-hit-badge\" style=\"display:none\">×' + h + '</span>' + it.nm + '</td></tr>';\n");
-        js.append("                it.isNew = false;\n");
         js.append("              }\n");
         js.append("              var tb = document.getElementById('mini-log-data');\n");
-        js.append("              if (tb && tb.innerHTML !== html) tb.innerHTML = html;\n");
+        js.append("              if (tb && (newRowDetected || window.__lastRenderedLogDataSig !== dataSig || !tb.children.length)) {\n");
+        js.append("                window.__lastRenderedLogDataSig = dataSig;\n");
+        js.append("                tb.innerHTML = html;\n");
+        js.append("              }\n");
         js.append("            }\n");
         js.append("            if (newRowDetected && !isFirstLoad) {\n");
         js.append("              if (typeof triggerLogLight === 'function') triggerLogLight();\n");
@@ -1454,6 +1460,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          .catch(function() { isLogFetchInFlight = false; });\n");
         js.append("      };\n");
 
+        /* Direct Timestamp-Driven Squelch + 3-Stage Post-RX Burst Polling (150ms, 650ms, 1400ms) */
         js.append("      window.detectAudio = function() {};\n");
         js.append("      window.__lastLogPollMs = 0;\n");
         js.append("      window.__lastActiveRxPushMs = 0;\n");
@@ -1521,7 +1528,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      };\n");
         js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
         js.append("    }\n");
-
         /* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
@@ -1568,6 +1574,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         js.append("      if (mHost) mHost.addEventListener('click', window.handleBrandCornerTap);\n");
         js.append("      window.__applySigMeterStyle(window.__sigMeterStyle, false);\n");
+
         js.append("      var smCarrierLvl = 0, smAudioLvl = 0, smAdaptiveMax = 14.0, smPhase = 0;\n");
         js.append("      function renderLiveScannerSignalMeter() {\n");
         js.append("        requestAnimationFrame(renderLiveScannerSignalMeter);\n");
@@ -1679,7 +1686,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      renderLiveScannerSignalMeter();\n");
         js.append("    }\n");
 
-        /* Glitch-Free LITE Button: Uses clean click + contextmenu so resizing the display never triggers toggleDisplay() */
         js.append("    var oldGuideBtn = document.getElementById('btn-manual-open');\n");
         js.append("    if (oldGuideBtn) {\n");
         js.append("      var freshLiteBtn = document.createElement('button');\n");
@@ -1787,7 +1793,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("    window.requestScreenWake = function() { if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(true); };\n");
         js.append("    window.releaseScreenWake = function() { if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(false); };\n");
 
-        /* Upgrade #btn-wake-toggle to Larger Square Glowing Button */
         js.append("    var wBtn = document.getElementById('btn-wake-toggle');\n");
         js.append("    if (wBtn) {\n");
         js.append("      if (!wBtn.querySelector('.sq-hw-cap')) {\n");
@@ -1835,7 +1840,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
 
-        /* Second Row: Clean 6-Button Grid [ LOG IN ] [ ARCHIVE ] [ RADIO ] [ MTR ] [ LITE ] [ DSP ] */
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
@@ -1875,7 +1879,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        setTimeout(function() { if (window.AndroidApp) window.AndroidApp.openBroadcastRadio(); }, 160);\n");
         js.append("      });\n");
 
-        /* Clean Scanner Web Audio DSP (Zero Graph Disconnects) */
         js.append("      window.__scannerDspOn = localStorage.getItem('proscan_scanner_dsp_v1') !== 'false';\n");
         js.append("      window.__applyScannerDspRouting = function() {\n");
         js.append("        if (!window.audioContext || !window.source || !window.analyser) return;\n");
@@ -1929,7 +1932,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      rowParent.appendChild(dspBtn);\n");
         js.append("    }\n");
 
-        /* Top LEDs Left: WAKE and VOICE (Larger Square Glowing Buttons) */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
         js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = '';\n");
@@ -2022,7 +2024,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      });\n");
         js.append("    }\n");
 
-        /* AUDIO Toggle: Native Button Font Color (No Cyan Text!) */
         js.append("    var oldAudioBtn = document.getElementById('btn-audio-toggle');\n");
         js.append("    if (oldAudioBtn && !oldAudioBtn.__vlcUnifiedHooked) {\n");
         js.append("      var aBtn = oldAudioBtn.cloneNode(true); aBtn.__vlcUnifiedHooked = true;\n");
@@ -2089,7 +2090,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      aBtn.addEventListener('pointercancel', function() { clearTimeout(aTimer); aTimer = null; });\n");
         js.append("    }\n");
 
-        /* Top LEDs Right: LAMP and PWR (Larger Square Glowing Buttons) */
         js.append("    var ledsRight = document.querySelector('.top-leds-right');\n");
         js.append("    if (ledsRight && !document.getElementById('btn-hardware-exit')) {\n");
         js.append("      var lampBtn = document.createElement('button');\n");
