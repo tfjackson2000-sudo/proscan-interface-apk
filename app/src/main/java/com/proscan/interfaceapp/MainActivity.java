@@ -77,22 +77,19 @@ public class MainActivity extends Activity implements SensorEventListener {
     private static final int REQ_LOAD_JSON = 901;
 
     /**
-     * Ultra-Simple, Rock-Solid Commercial Radio & Auto-Duck Engine:
-     * - Independent Radio Volume (0% to 100%, default 50%) controlled directly from the Radio Player slider.
-     * - Simple Auto-Duck ON/OFF (toggled by Long-Pressing AUDIO on the Scanner).
-     * - When Auto-Duck is ON:
-     *   1) Radio volume immediately drops to 0.0f (mute) the instant a scanner transmission starts or TTS speaks.
-     *   2) Radio volume only cuts back in 2.5 seconds (2500ms) AFTER both the scanner transmission AND any TTS readout have finished.
+     * Zero-Latency Commercial Radio & Auto-Duck Engine:
+     * - Mutes radio IMMEDIATELY and synchronously on the calling bridge thread the microsecond a scanner transmission starts.
+     * - Restores radio volume 2.5 seconds (2500ms) AFTER both scanner transmission AND any TTS readout finish.
      */
     public static final class PriorityRadioEngine {
         private static MediaPlayer radioPlayer = null;
         private static String activeStationUrl = "";
         private static String activeStationName = "";
         private static int activeSessionId = 0;
-        private static boolean isPlaying = false;
-        private static boolean isScannerRxActive = false;
-        private static boolean isTtsSpeaking = false;
-        private static boolean isWaitingForPendingTts = false;
+        private static volatile boolean isPlaying = false;
+        private static volatile boolean isScannerRxActive = false;
+        private static volatile boolean isTtsSpeaking = false;
+        private static volatile boolean isWaitingForPendingTts = false;
         private static final Handler handler = new Handler(Looper.getMainLooper());
         private static final ExecutorService radioExecutor = Executors.newSingleThreadExecutor();
 
@@ -132,12 +129,10 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (cachedPrefs != null) {
                 cachedPrefs.edit().putBoolean("simple_auto_duck_on", next).apply();
             }
-            handler.post(() -> {
-                synchronized (PriorityRadioEngine.class) {
-                    handler.removeCallbacks(restoreVolumeRunnable);
-                    applyCurrentVolumeLocked(cachedPrefs);
-                }
-            });
+            synchronized (PriorityRadioEngine.class) {
+                handler.removeCallbacks(restoreVolumeRunnable);
+                applyCurrentVolumeLocked(cachedPrefs);
+            }
             return next;
         }
 
@@ -152,11 +147,9 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (cachedPrefs != null) {
                 cachedPrefs.edit().putInt("radio_independent_vol_pct", clamped).apply();
             }
-            handler.post(() -> {
-                synchronized (PriorityRadioEngine.class) {
-                    applyCurrentVolumeLocked(cachedPrefs);
-                }
-            });
+            synchronized (PriorityRadioEngine.class) {
+                applyCurrentVolumeLocked(cachedPrefs);
+            }
         }
 
         public static float getUserRadioVolumeScalar(SharedPreferences prefs) {
@@ -182,27 +175,26 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         public static void onScannerRxStateChanged(final SharedPreferences prefs, final boolean rxActive, final boolean voiceReadoutEnabled) {
             if (prefs != null) cachedPrefs = prefs;
-            handler.post(() -> {
-                synchronized (PriorityRadioEngine.class) {
-                    if (rxActive) {
-                        isScannerRxActive = true;
-                        handler.removeCallbacks(restoreVolumeRunnable);
+            synchronized (PriorityRadioEngine.class) {
+                if (rxActive) {
+                    // ZERO-LATENCY MUTE: Drop volume immediately on the calling thread without waiting for main Looper!
+                    isScannerRxActive = true;
+                    handler.removeCallbacks(restoreVolumeRunnable);
+                    handler.removeCallbacks(clearPendingTtsWaitRunnable);
+                    applyCurrentVolumeLocked(cachedPrefs);
+                } else if (isScannerRxActive) {
+                    isScannerRxActive = false;
+                    handler.removeCallbacks(restoreVolumeRunnable);
+                    if (voiceReadoutEnabled) {
+                        isWaitingForPendingTts = true;
                         handler.removeCallbacks(clearPendingTtsWaitRunnable);
-                        applyCurrentVolumeLocked(cachedPrefs);
-                    } else if (isScannerRxActive) {
-                        isScannerRxActive = false;
-                        handler.removeCallbacks(restoreVolumeRunnable);
-                        if (voiceReadoutEnabled) {
-                            isWaitingForPendingTts = true;
-                            handler.removeCallbacks(clearPendingTtsWaitRunnable);
-                            handler.postDelayed(clearPendingTtsWaitRunnable, 1400);
-                        } else {
-                            isWaitingForPendingTts = false;
-                            scheduleRestoreAfter2500msLocked();
-                        }
+                        handler.postDelayed(clearPendingTtsWaitRunnable, 1400);
+                    } else {
+                        isWaitingForPendingTts = false;
+                        scheduleRestoreAfter2500msLocked();
                     }
                 }
-            });
+            }
         }
 
         public static void notifyScannerRx(final SharedPreferences prefs, final boolean rxActive, final boolean voiceReadoutEnabled) {
@@ -215,23 +207,20 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         public static void onTtsSpeechStateChanged(final SharedPreferences prefs, final boolean speaking) {
             if (prefs != null) cachedPrefs = prefs;
-            handler.post(() -> {
-                synchronized (PriorityRadioEngine.class) {
-                    handler.removeCallbacks(clearPendingTtsWaitRunnable);
-                    isWaitingForPendingTts = false;
-                    if (speaking) {
-                        isTtsSpeaking = true;
-                        handler.removeCallbacks(restoreVolumeRunnable);
-                        applyCurrentVolumeLocked(cachedPrefs);
-                    } else if (isTtsSpeaking) {
-                        isTtsSpeaking = false;
-                        scheduleRestoreAfter2500msLocked();
-                    }
+            synchronized (PriorityRadioEngine.class) {
+                handler.removeCallbacks(clearPendingTtsWaitRunnable);
+                isWaitingForPendingTts = false;
+                if (speaking) {
+                    isTtsSpeaking = true;
+                    handler.removeCallbacks(restoreVolumeRunnable);
+                    applyCurrentVolumeLocked(cachedPrefs);
+                } else if (isTtsSpeaking) {
+                    isTtsSpeaking = false;
+                    scheduleRestoreAfter2500msLocked();
                 }
-            });
+            }
         }
 
-        // Backwards-compatible alias so PlayerActivity.java compiles whether it calls notifyTtsSpeaking or onTtsSpeechStateChanged
         public static void notifyTtsSpeaking(final SharedPreferences prefs, final boolean speaking) {
             onTtsSpeechStateChanged(prefs, speaking);
         }
@@ -357,8 +346,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-
-    private WebView webView;
+private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
     private SensorManager sensorManager;
@@ -388,16 +376,16 @@ public class MainActivity extends Activity implements SensorEventListener {
     public void onSensorChanged(SensorEvent event) {
         if (event == null || event.values == null || event.values.length < 2 || webView == null) return;
         long now = System.currentTimeMillis();
-        if (now - lastTiltPushMs < 45) return;
+        if (now - lastTiltPushMs < 35) return;
         lastTiltPushMs = now;
         float rawX = Math.max(-7f, Math.min(7f, event.values[0])) / 7f;
         float rawY = Math.max(-7f, Math.min(7f, event.values[1] - 4.5f)) / 7f;
-        smoothTiltX += (rawX - smoothTiltX) * 0.22f;
-        smoothTiltY += (rawY - smoothTiltY) * 0.22f;
-        int deg = Math.round(125f - smoothTiltX * 28f + smoothTiltY * 14f);
-        int posPct = Math.round(34f + smoothTiltX * 18f - smoothTiltY * 12f);
-        int bx = Math.round(-smoothTiltX * 8f);
-        int by = Math.round(smoothTiltY * 8f);
+        smoothTiltX += (rawX - smoothTiltX) * 0.28f;
+        smoothTiltY += (rawY - smoothTiltY) * 0.28f;
+        int deg = Math.round(125f - smoothTiltX * 38f + smoothTiltY * 22f);
+        int posPct = Math.round(38f + smoothTiltX * 28f - smoothTiltY * 20f);
+        int bx = Math.round(-smoothTiltX * 14f);
+        int by = Math.round(smoothTiltY * 14f);
         webView.evaluateJavascript(
                 "try{var r=document.documentElement.style;" +
                 "r.setProperty('--gloss-deg','" + deg + "deg');" +
@@ -477,7 +465,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             targetUrl = bedroomLampOn ? onUrl : offUrl;
             actionLabel = bedroomLampOn ? "BEDROOM LIGHTS: ON" : "BEDROOM LIGHTS: OFF";
         } else {
-            bedroomLampOn = false;
+            bedroomLampOn = !bedroomLampOn;
             targetUrl = !offUrl.isEmpty() ? offUrl : onUrl;
             actionLabel = "BEDROOM LIGHTS: TRIGGERED";
         }
@@ -645,11 +633,16 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
     };
 
+    private int injectorTickCount = 0;
+
+    // Fast 120ms native heartbeat so squelch/auto-duck detection NEVER lags even when Chromium throttles JS timers!
     private final Runnable periodicInjector = new Runnable() {
         @Override
         public void run() {
             if (webView != null) {
-                injectEnhancements();
+                if ((injectorTickCount++ % 5) == 0) {
+                    injectEnhancements();
+                }
                 if (scannerAudioConnected || PriorityRadioEngine.isRadioPlaying()) {
                     webView.evaluateJavascript(
                             "try{if(window.__bgTickSquelchAndLog)window.__bgTickSquelchAndLog();}catch(e){}",
@@ -657,7 +650,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                     );
                 }
             }
-            mainHandler.postDelayed(this, 600);
+            mainHandler.postDelayed(this, 120);
         }
     };
 
@@ -952,11 +945,11 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         @JavascriptInterface
         public void setScannerAudioConnected(final boolean connected) {
+            if (!connected) {
+                PriorityRadioEngine.onScannerRxStateChanged(prefs, false, false);
+            }
             mainHandler.post(() -> {
                 scannerAudioConnected = connected;
-                if (!connected) {
-                    PriorityRadioEngine.onScannerRxStateChanged(prefs, false, false);
-                }
                 setBgServiceRunning(connected || bgAudioModeEnabled);
             });
         }
@@ -984,13 +977,15 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         @JavascriptInterface
         public void notifyScannerRx(final boolean rxActive, final boolean voiceReadoutEnabled) {
+            // Executes immediately on the calling JS bridge thread for 0ms radio mute!
             PriorityRadioEngine.onScannerRxStateChanged(prefs, rxActive, voiceReadoutEnabled);
         }
 
         @JavascriptInterface
         public void speakChannel(final String text) {
+            if (text == null || text.trim().isEmpty()) return;
+            PriorityRadioEngine.onTtsSpeechStateChanged(prefs, true);
             mainHandler.post(() -> {
-                if (text == null || text.trim().isEmpty()) return;
                 final String cleanText = text.trim();
 
                 long now = System.currentTimeMillis();
@@ -1002,8 +997,6 @@ public class MainActivity extends Activity implements SensorEventListener {
                 }
                 lastSpokenText = cleanText;
                 lastSpokenTimestamp = now;
-
-                PriorityRadioEngine.onTtsSpeechStateChanged(prefs, true);
 
                 if (tts == null || !ttsReady) {
                     initTTS();
@@ -1163,123 +1156,827 @@ public class MainActivity extends Activity implements SensorEventListener {
         });
 
         mainHandler.removeCallbacks(periodicInjector);
-        mainHandler.postDelayed(periodicInjector, 600);
+        mainHandler.postDelayed(periodicInjector, 200);
+    }
+private WebView webView;
+    private SharedPreferences prefs;
+    private AudioManager audioManager;
+    private SensorManager sensorManager;
+    private Sensor tiltSensor;
+    private float smoothTiltX = 0f;
+    private float smoothTiltY = 0f;
+    private long lastTiltPushMs = 0L;
+
+    private AudioFocusRequest scannerAudioFocusReq = null;
+    private PowerManager.WakeLock scannerCpuLock = null;
+    private WifiManager.WifiLock scannerWifiLock = null;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    private boolean userWakeLockEnabled = false;
+    private boolean scannerAudioConnected = false;
+    private boolean bgAudioModeEnabled = false;
+    private boolean bedroomLampOn = false;
+    private String activeServerUrl = "";
+    private TextToSpeech tts = null;
+    private volatile boolean ttsReady = false;
+
+    private String lastSpokenText = "";
+    private long lastSpokenTimestamp = 0;
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (event == null || event.values == null || event.values.length < 2 || webView == null) return;
+        long now = System.currentTimeMillis();
+        if (now - lastTiltPushMs < 35) return;
+        lastTiltPushMs = now;
+        float rawX = Math.max(-7f, Math.min(7f, event.values[0])) / 7f;
+        float rawY = Math.max(-7f, Math.min(7f, event.values[1] - 4.5f)) / 7f;
+        smoothTiltX += (rawX - smoothTiltX) * 0.28f;
+        smoothTiltY += (rawY - smoothTiltY) * 0.28f;
+        int deg = Math.round(125f - smoothTiltX * 38f + smoothTiltY * 22f);
+        int posPct = Math.round(38f + smoothTiltX * 28f - smoothTiltY * 20f);
+        int bx = Math.round(-smoothTiltX * 14f);
+        int by = Math.round(smoothTiltY * 14f);
+        webView.evaluateJavascript(
+                "try{var r=document.documentElement.style;" +
+                "r.setProperty('--gloss-deg','" + deg + "deg');" +
+                "r.setProperty('--gloss-pos','" + posPct + "%');" +
+                "r.setProperty('--tilt-x','" + bx + "px');" +
+                "r.setProperty('--tilt-y','" + by + "px');}catch(e){}",
+                null
+        );
     }
 
-    private void injectEnhancements() {
-        if (webView == null) return;
-        String sharedRawPref = prefs != null ? prefs.getString("shared_web_storage", "") : "";
-        String safeShared = JSONObject.quote(sharedRawPref != null ? sharedRawPref : "");
-        String wakePref = userWakeLockEnabled ? "true" : "false";
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
-        StringBuilder js = new StringBuilder();
-        js.append("(function() {\n");
-        js.append("  try {\n");
-        js.append("    if (!document.getElementById('proscan-native-enhancements-css')) {\n");
-        js.append("      var st = document.createElement('style');\n");
-        js.append("      st.id = 'proscan-native-enhancements-css';\n");
-        js.append("      st.textContent = `\n");
-        js.append("        .scanner-nav-6 { display: grid !important; grid-template-columns: repeat(6, 1fr) !important; gap: 5px !important; width: 100% !important; }\n");
-        js.append("        .scanner-nav-6 .btn { min-width: 0 !important; padding: 6px 2px !important; font-size: 10px !important; white-space: nowrap !important; }\n");
-        js.append("        #scanner-bat-hud { position: absolute; top: 6px; left: 8px; z-index: 30; display: inline-flex; align-items: center; gap: 4px; font-family: monospace; font-size: 10px; font-weight: 700; color: #38bdf8; pointer-events: none; text-shadow: 0 0 4px rgba(56,189,248,0.5); }\n");
-        js.append("        #scanner-bat-hud.disconnected { opacity: 0 !important; }\n");
-        js.append("        .bat-icon-box { width: 16px; height: 8px; border: 1px solid currentColor; border-radius: 2px; padding: 1px; display: inline-flex; align-items: center; position: relative; }\n");
-        js.append("        .bat-icon-box::after { content: ''; position: absolute; right: -3px; top: 2px; width: 2px; height: 4px; background: currentColor; border-radius: 0 1px 1px 0; }\n");
-        js.append("        .bat-icon-fill { height: 100%; background: currentColor; width: 80%; border-radius: 1px; }\n");
-        js.append("        #proscan-sig-meter-box { position: absolute; bottom: 5px; right: 8px; z-index: 28; display: flex; align-items: center; gap: 4px; background: rgba(2,6,23,0.78); border: 1px solid rgba(100,116,139,0.45); border-radius: 4px; padding: 2px 5px; cursor: pointer; user-select: none; }\n");
-        js.append("        #proscan-sig-meter-box.disconnected { opacity: 0 !important; pointer-events: none !important; }\n");
-        js.append("        #sm-led-bars { display: flex; align-items: flex-end; gap: 2px; height: 14px; }\n");
-        js.append("        #sm-led-bars .sm-seg { width: 4px; border-radius: 1px; background: #1e293b; }\n");
-        js.append("        #sm-vu-wrap { display: none; position: relative; width: 64px; height: 14px; background: linear-gradient(90deg, #0f172a 0%, #1e293b 75%, #450a0a 100%); border: 1px solid #334155; border-radius: 3px; overflow: hidden; }\n");
-        js.append("        #sm-vu-needle { position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: #facc15; box-shadow: 0 0 4px #facc15; transition: left 60ms linear; }\n");
-        js.append("        #sm-spec-bars { display: none; align-items: flex-end; gap: 2px; height: 15px; width: 62px; }\n");
-        js.append("        #sm-spec-bars .sm-spec-bar { flex: 1; height: 2px; background: linear-gradient(180deg, #facc15 0%, #22c55e 45%, #06b6d4 100%); border-radius: 1px; }\n");
-        js.append("        #sm-scope-canvas { display: none; width: 64px; height: 15px; background: #020617; border-radius: 2px; }\n");
-        js.append("        #sm-dig-wrap { display: none; flex-direction: column; width: 66px; gap: 1px; }\n");
-        js.append("        #sm-dig-txt { font-family: monospace; font-size: 9px; font-weight: 700; color: #64748b; line-height: 1; text-align: right; }\n");
-        js.append("        #sm-peak-track { width: 100%; height: 3px; background: #1e293b; border-radius: 1px; overflow: hidden; }\n");
-        js.append("        #sm-peak-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #22c55e, #facc15, #ef4444); }\n");
-        js.append("        #btn-voice-toggle, #btn-lamp-toggle, #btn-hardware-exit { background: transparent; border: none; color: inherit; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; padding: 2px 4px; }\n");
-        js.append("        #voice-switch-track { width: 14px; height: 24px; border-radius: 7px; background: #1e293b; border: 1px solid #475569; position: relative; transition: background 0.2s; }\n");
-        js.append("        #voice-switch-thumb { width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; position: absolute; left: 1px; bottom: 2px; transition: transform 0.2s, background 0.2s; }\n");
-        js.append("        #btn-voice-toggle.active #voice-switch-track { background: rgba(14,165,233,0.3); border-color: #38bdf8; }\n");
-        js.append("        #btn-voice-toggle.active #voice-switch-thumb { transform: translateY(-9px); background: #38bdf8; box-shadow: 0 0 6px #38bdf8; }\n");
-        js.append("        #voice-led { width: 8px; height: 8px; border-radius: 50%; background: #1e293b; border: 1px solid #334155; }\n");
-        js.append("        #btn-voice-toggle.active #voice-led { background: #38bdf8; box-shadow: 0 0 8px #38bdf8; }\n");
-        js.append("        .lamp-cap { width: 12px; height: 12px; border-radius: 50%; background: radial-gradient(circle, #fde047 0%, #ca8a04 100%); box-shadow: 0 0 6px rgba(250,204,21,0.5); border: 1px solid #fef08a; }\n");
-        js.append("        .exit-cap { width: 12px; height: 12px; border-radius: 50%; background: radial-gradient(circle, #f87171 0%, #991b1b 100%); box-shadow: 0 0 6px rgba(239,68,68,0.55); border: 1px solid #fecaca; }\n");
-        js.append("        html[data-scanner-lite='true'] .keypad-section, html[data-scanner-lite='true'] .knobs-row, html[data-scanner-lite='true'] . rotary-row { display: none !important; }\n");
-        js.append("        html.tv-off, html.tv-off body { background: #000 !important; }\n");
-        js.append("        .tv-shutting-down { transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.55s ease !important; transform: scaleY(0.008) scaleX(0.02) !important; opacity: 0 !important; filter: brightness(8) !important; }\n");
-        js.append("      `;\n");
-        js.append("      document.head.appendChild(st);\n");
-        js.append("    }\n");
+    private synchronized void acquireScannerWakeAndWifiLocks() {
+        try {
+            if (audioManager != null) {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    if (scannerAudioFocusReq == null) {
+                        scannerAudioFocusReq = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                                .setAudioAttributes(new AudioAttributes.Builder()
+                                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                        .build())
+                                .setAcceptsDelayedFocusGain(true)
+                                .setWillPauseWhenDucked(false)
+                                .setOnAudioFocusChangeListener(fc -> {}, mainHandler)
+                                .build();
+                    }
+                    audioManager.requestAudioFocus(scannerAudioFocusReq);
+                } else {
+                    audioManager.requestAudioFocus(fc -> {}, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+                }
+            }
+            if (scannerCpuLock == null) {
+                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (pm != null) {
+                    scannerCpuLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "proscan:main_scanner_cpu");
+                    scannerCpuLock.setReferenceCounted(false);
+                }
+            }
+            if (scannerCpuLock != null && !scannerCpuLock.isHeld()) {
+                scannerCpuLock.acquire();
+            }
+            if (scannerWifiLock == null) {
+                WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                if (wm != null) {
+                    int mode = Build.VERSION.SDK_INT >= 29 ? WifiManager.WIFI_MODE_FULL_LOW_LATENCY : WifiManager.WIFI_MODE_FULL_HIGH_PERF;
+                    scannerWifiLock = wm.createWifiLock(mode, "proscan:main_scanner_wifi");
+                    scannerWifiLock.setReferenceCounted(false);
+                }
+            }
+            if (scannerWifiLock != null && !scannerWifiLock.isHeld()) {
+                scannerWifiLock.acquire();
+            }
+        } catch (Exception ignored) {}
+    }
 
-        /* Hook RX state notifications to native PriorityRadioEngine Auto-Duck */
-        js.append("    window.__bgTickSquelchAndLog = function() {\n");
-        js.append("      var rxEl = document.getElementById('rx-led');\n");
-        js.append("      var isRxNow = Boolean(rxEl && rxEl.classList.contains('active'));\n");
-        js.append("      if (window.__lastNotifiedRxState !== isRxNow) {\n");
-        js.append("        window.__lastNotifiedRxState = isRxNow;\n");
-        js.append("        if (window.AndroidApp && typeof window.AndroidApp.notifyScannerRx === 'function') {\n");
-        js.append("          window.AndroidApp.notifyScannerRx(isRxNow, Boolean(window.__voiceReadoutEnabled));\n");
-        js.append("        }\n");
-        js.append("      }\n");
-        js.append("    };\n");
-        js.append("    window.__bgTickSquelchAndLog();\n");
+    private synchronized void releaseScannerWakeAndWifiLocks() {
+        if (PriorityRadioEngine.isRadioPlaying()) return;
+        try {
+            if (scannerCpuLock != null && scannerCpuLock.isHeld()) scannerCpuLock.release();
+            if (scannerWifiLock != null && scannerWifiLock.isHeld()) scannerWifiLock.release();
+        } catch (Exception ignored) {}
+    }
 
-        /* Multi-Mode Live Scanner Signal Meter (LED / VU / SPEC / SCOPE / dB) */
-        js.append("    var dispForMeter = document.querySelector('.scanner-display');\n");
-        js.append("    if (dispForMeter && !document.getElementById('proscan-sig-meter-box')) {\n");
-        js.append("      window.__sigMeterStyle = parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0;\n");
-        js.append("      var mBox = document.createElement('div');\n");
-        js.append("      mBox.id = 'proscan-sig-meter-box';\n");
-        js.append("      mBox.title = 'Tap to cycle Signal Meter style';\n");
-        js.append("      var ledHtml = '<div id=\"sm-led-bars\">';\n");
-        js.append("      for (var s = 0; s < 12; s++) {\n");
-        js.append("        var sh = 4 + Math.round((s / 11) * 10);\n");
-        js.append("        ledHtml += '<span class=\"sm-seg\" style=\"height:' + sh + 'px\"></span>';\n");
-        js.append("      }\n");
-        js.append("      ledHtml += '</div>';\n");
-        js.append("      var vuHtml = '<div id=\"sm-vu-wrap\"><div id=\"sm-vu-needle\"></div></div>';\n");
-        js.append("      var specHtml = '<div id=\"sm-spec-bars\">';\n");
-        js.append("      for (var sp = 0; sp < 10; sp++) specHtml += '<span class=\"sm-spec-bar\"></span>';\n");
-        js.append("      specHtml += '</div>';\n");
-        js.append("      var scopeHtml = '<canvas id=\"sm-scope-canvas\" width=\"64\" height=\"15\"></canvas>';\n");
-        js.append("      var digHtml = '<div id=\"sm-dig-wrap\"><div id=\"sm-dig-txt\">S0 -98dB</div><div id=\"sm-peak-track\"><div id=\"sm-peak-fill\"></div></div></div>';\n");
-        js.append("      mBox.innerHTML = ledHtml + vuHtml + specHtml + scopeHtml + digHtml;\n");
-        js.append("      dispForMeter.appendChild(mBox);\n");
-        js.append("      window.__applySigMeterStyle = function(idx, showHud) {\n");
-        js.append("        window.__sigMeterStyle = ((idx % 5) + 5) % 5;\n");
-        js.append("        localStorage.setItem('proscan_sig_meter_style_v1', String(window.__sigMeterStyle));\n");
-        js.append("        var elLed = document.getElementById('sm-led-bars');\n");
-        js.append("        var elVu = document.getElementById('sm-vu-wrap');\n");
-        js.append("        var elSpec = document.getElementById('sm-spec-bars');\n");
-        js.append("        var elScope = document.getElementById('sm-scope-canvas');\n");
-        js.append("        var elDig = document.getElementById('sm-dig-wrap');\n");
-        js.append("        if (elLed) elLed.style.display = window.__sigMeterStyle === 0 ? 'flex' : 'none';\n");
-        js.append("        if (elVu) elVu.style.display = window.__sigMeterStyle === 1 ? 'block' : 'none';\n");
-        js.append("        if (elSpec) elSpec.style.display = window.__sigMeterStyle === 2 ? 'flex' : 'none';\n");
-        js.append("        if (elScope) elScope.style.display = window.__sigMeterStyle === 3 ? 'block' : 'none';\n");
-        js.append("        if (elDig) elDig.style.display = window.__sigMeterStyle === 4 ? 'flex' : 'none';\n");
-        js.append("        var names = ['LED BARS', 'VU NEEDLE', 'SPECTRUM', 'WAVE SCOPE', 'DIGITAL dB'];\n");
-        js.append("        if (showHud && typeof showDisplayHud === 'function') {\n");
-        js.append("          showDisplayHud('METER: ' + names[window.__sigMeterStyle], 1200);\n");
-        js.append("        }\n");
-        js.append("      };\n");
-        js.append("      window.__applySigMeterStyle(window.__sigMeterStyle, false);\n");
-        js.append("      mBox.addEventListener('click', function(ev) {\n");
-        js.append("        ev.stopPropagation();\n");
-        js.append("        if (navigator.vibrate) navigator.vibrate(15);\n");
-        js.append("        window.__applySigMeterStyle((window.__sigMeterStyle || 0) + 1, true);\n");
-        js.append("      });\n");
-        js.append("      var smCarrierLvl = 0, smAudioLvl = 0, smAdaptiveMax = 14.0, smPhase = 0;\n");
+    private void triggerAlexaWebhook(final boolean turnOn) {
+        final String offUrl = prefs.getString("alexa_lamp_off_url", "").trim();
+        final String onUrl = prefs.getString("alexa_lamp_on_url", "").trim();
+        if (offUrl.isEmpty() && onUrl.isEmpty()) {
+            showAlexaLampSetupDialog();
+            return;
+        }
+        final String targetUrl;
+        final String actionLabel;
+        if (!offUrl.isEmpty() && !onUrl.isEmpty()) {
+            bedroomLampOn = turnOn;
+            targetUrl = bedroomLampOn ? onUrl : offUrl;
+            actionLabel = bedroomLampOn ? "BEDROOM LIGHTS: ON" : "BEDROOM LIGHTS: OFF";
+        } else {
+            bedroomLampOn = !bedroomLampOn;
+            targetUrl = !offUrl.isEmpty() ? offUrl : onUrl;
+            actionLabel = "BEDROOM LIGHTS: TRIGGERED";
+        }
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "if(typeof showDisplayHud==='function')showDisplayHud('" + actionLabel + "',1500);",
+                    null
+            );
+        }
+        Toast.makeText(this, actionLabel, Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
+            try {
+                HttpURLConnection conn = (HttpURLConnection) new URL(targetUrl).openConnection();
+                conn.setConnectTimeout(6000);
+                conn.setReadTimeout(6000);
+                conn.setRequestMethod("GET");
+                conn.setRequestProperty("Cache-Control", "no-cache");
+                int code = conn.getResponseCode();
+                conn.disconnect();
+                if (code < 200 || code >= 400) {
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this, "Routine HTTP " + code, Toast.LENGTH_SHORT).show());
+                }
+            } catch (Exception e) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Routine failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private void showAlexaLampSetupDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        layout.setPadding(pad, pad, pad, pad);
+
+        TextView l1 = new TextView(this);
+        l1.setText("Lights Toggle / OFF Alexa Routine URL (Virtual Buttons / Voice Monkey):");
+        layout.addView(l1);
+        final EditText offInput = new EditText(this);
+        offInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        offInput.setHint("https://api.virtualbuttons.com/v1?...");
+        offInput.setText(prefs.getString("alexa_lamp_off_url", ""));
+        layout.addView(offInput);
+
+        TextView l2 = new TextView(this);
+        l2.setText("\nSecond Routine URL (Optional - leave blank for single toggle URL):");
+        layout.addView(l2);
+        final EditText onInput = new EditText(this);
+        onInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        onInput.setHint("Optional second routine URL");
+        onInput.setText(prefs.getString("alexa_lamp_on_url", ""));
+        layout.addView(onInput);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Bedroom Lights (Alexa Routine)")
+                .setView(layout)
+                .setPositiveButton("Save", (d, w) -> {
+                    prefs.edit()
+                            .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
+                            .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
+                            .apply();
+                    Toast.makeText(MainActivity.this, "Bedroom Light Routine Saved! Tap LAMP to trigger.", Toast.LENGTH_SHORT).show();
+                })
+                .setNeutralButton("Test Now", (d, w) -> {
+                    prefs.edit()
+                            .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
+                            .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
+                            .apply();
+                    triggerAlexaWebhook(false);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private synchronized void initTTS() {
+        try {
+            if (tts != null) {
+                try { tts.stop(); tts.shutdown(); } catch (Exception ignored) {}
+                tts = null;
+            }
+            ttsReady = false;
+            tts = new TextToSpeech(getApplicationContext(), status -> {
+                if (status == TextToSpeech.SUCCESS && tts != null) {
+                    tts.setLanguage(Locale.UK);
+                    tts.setSpeechRate(1.05f);
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        tts.setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .build());
+                    }
+                    tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                        @Override
+                        public void onStart(String utteranceId) {
+                            PriorityRadioEngine.onTtsSpeechStateChanged(prefs, true);
+                        }
+
+                        @Override
+                        public void onDone(String utteranceId) {
+                            PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
+                        }
+
+                        @Override
+                        public void onError(String utteranceId) {
+                            PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
+                        }
+                    });
+                    ttsReady = true;
+                }
+            });
+        } catch (Exception ignored) {}
+    }
+
+    private void forceStopScannerOnHeadphoneDisconnect() {
+        scannerAudioConnected = false;
+        PriorityRadioEngine.stopStation();
+        setBgServiceRunning(false);
+        releaseScannerWakeAndWifiLocks();
+        Runnable stopJs = () -> {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                        "try{if(window.__stopScannerAudioFromBt)window.__stopScannerAudioFromBt();" +
+                        "var p=document.getElementById('audio_player');if(p){p.pause();}" +
+                        "isConnected=false;var b=document.getElementById('btn-audio-toggle');if(b)b.classList.remove('active');" +
+                        "window.__voiceReadoutEnabled=false;var vb=document.getElementById('btn-voice-toggle');if(vb)vb.classList.remove('active');}catch(e){}",
+                        null
+                );
+            }
+        };
+        mainHandler.post(stopJs);
+        mainHandler.postDelayed(stopJs, 200);
+        mainHandler.postDelayed(stopJs, 500);
+        mainHandler.post(() -> Toast.makeText(MainActivity.this, "Headphones disconnected — Audio stopped", Toast.LENGTH_SHORT).show());
+    }
+
+    private final BroadcastReceiver noisyAudioReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent == null) return;
+            if (isInitialStickyBroadcast()) return;
+            String act = intent.getAction();
+            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(act)
+                    || (Intent.ACTION_HEADSET_PLUG.equals(act) && intent.getIntExtra("state", -1) == 0)) {
+                forceStopScannerOnHeadphoneDisconnect();
+            }
+        }
+    };
+
+    private final AudioDeviceCallback btDeviceCallback = new AudioDeviceCallback() {
+        @Override
+        public void onAudioDevicesRemoved(AudioDeviceInfo[] removedDevices) {
+            if (removedDevices == null) return;
+            for (AudioDeviceInfo dev : removedDevices) {
+                int t = dev.getType();
+                if (t == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                        || t == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                        || t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                        || t == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                        || t == AudioDeviceInfo.TYPE_USB_HEADSET
+                        || t == 26
+                        || t == 27) {
+                    forceStopScannerOnHeadphoneDisconnect();
+                    break;
+                }
+            }
+        }
+    };
+
+    private int injectorTickCount = 0;
+
+    // Fast 120ms native heartbeat so squelch/auto-duck detection NEVER lags even when Chromium throttles JS timers!
+    private final Runnable periodicInjector = new Runnable() {
+        @Override
+        public void run() {
+            if (webView != null) {
+                if ((injectorTickCount++ % 5) == 0) {
+                    injectEnhancements();
+                }
+                if (scannerAudioConnected || PriorityRadioEngine.isRadioPlaying()) {
+                    webView.evaluateJavascript(
+                            "try{if(window.__bgTickSquelchAndLog)window.__bgTickSquelchAndLog();}catch(e){}",
+                            null
+                    );
+                }
+            }
+            mainHandler.postDelayed(this, 120);
+        }
+    };
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        hideSystemUI();
+
+        if (Build.VERSION.SDK_INT >= 33) {
+            try {
+                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO"}, 101);
+            } catch (Exception ignored) {}
+        } else if (Build.VERSION.SDK_INT >= 23) {
+            try {
+                requestPermissions(new String[]{"android.permission.RECORD_AUDIO"}, 101);
+            } catch (Exception ignored) {}
+        }
+
+        try {
+            IntentFilter f = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+            f.addAction(Intent.ACTION_HEADSET_PLUG);
+            registerReceiver(noisyAudioReceiver, f);
+        } catch (Exception ignored) {}
+
+        try {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
+                audioManager.registerAudioDeviceCallback(btDeviceCallback, mainHandler);
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+            if (sensorManager != null) {
+                tiltSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY);
+                if (tiltSensor == null) {
+                    tiltSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+                }
+            }
+        } catch (Exception ignored) {}
+
+        prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
+
+        initTTS();
+
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.BLACK);
+
+        webView = new WebView(this) {
+            @Override
+            public void setKeepScreenOn(boolean keepScreenOn) {
+                super.setKeepScreenOn(userWakeLockEnabled);
+            }
+
+            @Override
+            protected void onWindowVisibilityChanged(int visibility) {
+                super.onWindowVisibilityChanged(View.VISIBLE);
+            }
+
+            @Override
+            public void onWindowFocusChanged(boolean hasWindowFocus) {
+                super.onWindowFocusChanged(true);
+            }
+
+            @Override
+            public void onPause() {
+            }
+
+            @Override
+            public void pauseTimers() {
+            }
+        };
+        webView.setKeepScreenOn(false);
+        setupWebView();
+        root.addView(webView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
+        setContentView(root);
+
+        userWakeLockEnabled = prefs.getBoolean("wake_lock_on", true);
+        if (userWakeLockEnabled) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            webView.setKeepScreenOn(true);
+        }
+
+        String localUrl = prefs.getString("local_url", "");
+        String tailscaleUrl = prefs.getString("tailscale_url", "");
+
+        if (localUrl.isEmpty() && tailscaleUrl.isEmpty()) {
+            showSetupDialog(true);
+        } else {
+            connectSmart(localUrl, tailscaleUrl);
+        }
+    }
+
+    private String getNativeBatteryStatus() {
+        try {
+            IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+            Intent b = registerReceiver(null, ifilter);
+            if (b != null) {
+                int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+                int status = b.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+                boolean charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
+                if (level >= 0 && scale > 0) {
+                    int pct = Math.round((level * 100f) / scale);
+                    return (charging ? "⚡" : "") + pct + "%";
+                }
+            }
+        } catch (Exception ignored) {}
+        return "";
+    }
+
+    private void setBgServiceRunning(boolean enable) {
+        bgAudioModeEnabled = enable;
+        Intent svc = new Intent(this, AudioKeepAliveService.class);
+        try {
+            if (enable || scannerAudioConnected || PriorityRadioEngine.isRadioPlaying()) {
+                acquireScannerWakeAndWifiLocks();
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(svc);
+                else startService(svc);
+            } else {
+                releaseScannerWakeAndWifiLocks();
+                stopService(svc);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast) {
+        try {
+            JSONObject root = new JSONObject();
+            root.put("local_url", prefs.getString("local_url", ""));
+            root.put("tailscale_url", prefs.getString("tailscale_url", ""));
+            root.put("alexa_lamp_off_url", prefs.getString("alexa_lamp_off_url", ""));
+            root.put("alexa_lamp_on_url", prefs.getString("alexa_lamp_on_url", ""));
+            JSONObject ws = webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject();
+            String rad = prefs.getString("radio_stations_json", "");
+            if (!rad.isEmpty() && !ws.has("proscan_radio_stations_v3")) {
+                ws.put("proscan_radio_stations_v3", rad);
+            }
+            root.put("web_storage", ws);
+            byte[] bytes = root.toString(2).getBytes(StandardCharsets.UTF_8);
+
+            prefs.edit().putString("last_backup_json", root.toString()).apply();
+
+            if (Build.VERSION.SDK_INT >= 29) {
+                try {
+                    getContentResolver().delete(
+                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            MediaStore.MediaColumns.DISPLAY_NAME + "=?",
+                            new String[]{"proscan_presets_backup.json"}
+                    );
+                } catch (Exception ignored) {}
+
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, "proscan_presets_backup.json");
+                values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+
+                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri != null) {
+                    OutputStream os = getContentResolver().openOutputStream(uri);
+                    if (os != null) {
+                        os.write(bytes);
+                        os.close();
+                    }
+                }
+            } else {
+                File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                File file = new File(dir, "proscan_presets_backup.json");
+                FileOutputStream fos = new FileOutputStream(file);
+                fos.write(bytes);
+                fos.close();
+            }
+
+            if (showToast) {
+                Toast.makeText(this, "Saved to Downloads/proscan_presets_backup.json", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            if (showToast) {
+                Toast.makeText(this, "Backup error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void restoreFromJsonString(String jsonStr) {
+        try {
+            JSONObject root = new JSONObject(jsonStr);
+            String loc = root.optString("local_url", "");
+            String ts = root.optString("tailscale_url", "");
+            String lampOff = root.optString("alexa_lamp_off_url", "");
+            String lampOn = root.optString("alexa_lamp_on_url", "");
+            JSONObject webStorage = root.optJSONObject("web_storage");
+
+            if (!loc.isEmpty() || !ts.isEmpty()) {
+                prefs.edit().putString("local_url", loc).putString("tailscale_url", ts).apply();
+            }
+            if (!lampOff.isEmpty() || !lampOn.isEmpty()) {
+                prefs.edit().putString("alexa_lamp_off_url", lampOff).putString("alexa_lamp_on_url", lampOn).apply();
+            }
+            if (webStorage != null) {
+                if (webStorage.has("proscan_radio_stations_v3")) {
+                    prefs.edit().putString("radio_stations_json", webStorage.optString("proscan_radio_stations_v3", "")).apply();
+                }
+                prefs.edit().putString("shared_web_storage", webStorage.toString()).putString("last_backup_json", root.toString()).apply();
+            }
+
+            Toast.makeText(this, "Presets & IPs Restored! Loading...", Toast.LENGTH_SHORT).show();
+            String activeLoc = prefs.getString("local_url", "");
+            String activeTs = prefs.getString("tailscale_url", "");
+            if (!activeLoc.isEmpty() || !activeTs.isEmpty()) {
+                connectSmart(activeLoc, activeTs);
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Invalid backup JSON file", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_LOAD_JSON && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            try {
+                InputStream is = getContentResolver().openInputStream(data.getData());
+                if (is != null) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) sb.append(line);
+                    reader.close();
+                    restoreFromJsonString(sb.toString());
+                }
+            } catch (Exception e) {
+                Toast.makeText(this, "Failed to read backup file", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void openPlayerActivityMode(final String mode) {
+        mainHandler.post(() -> {
+            String base = activeServerUrl;
+            if (base == null || base.isEmpty()) base = webView != null ? webView.getUrl() : "";
+            Intent i = new Intent(MainActivity.this, PlayerActivity.class);
+            i.putExtra("server_url", base != null ? base : "");
+            i.putExtra("start_mode", mode);
+            startActivity(i);
+            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+        });
+    }
+
+    public class WebAppBridge {
+        @JavascriptInterface
+        public String getBatteryStatus() {
+            return getNativeBatteryStatus();
+        }
+
+        @JavascriptInterface
+        public void triggerBedroomLamp(final boolean turnOn) {
+            mainHandler.post(() -> triggerAlexaWebhook(turnOn));
+        }
+
+        @JavascriptInterface
+        public void openLampSetup() {
+            mainHandler.post(() -> showAlexaLampSetupDialog());
+        }
+
+        @JavascriptInterface
+        public void openAppSettings() {
+            mainHandler.post(() -> showSetupDialog(false));
+        }
+
+        @JavascriptInterface
+        public void setKeepScreenOn(final boolean keepOn) {
+            mainHandler.post(() -> {
+                userWakeLockEnabled = keepOn;
+                prefs.edit().putBoolean("wake_lock_on", keepOn).apply();
+                if (keepOn) {
+                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    webView.setKeepScreenOn(true);
+                    Toast.makeText(MainActivity.this, "Screen Wake: ON (All Modes)", Toast.LENGTH_SHORT).show();
+                } else {
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    webView.setKeepScreenOn(false);
+                    Toast.makeText(MainActivity.this, "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void setScannerAudioConnected(final boolean connected) {
+            if (!connected) {
+                PriorityRadioEngine.onScannerRxStateChanged(prefs, false, false);
+            }
+            mainHandler.post(() -> {
+                scannerAudioConnected = connected;
+                setBgServiceRunning(connected || bgAudioModeEnabled);
+            });
+        }
+
+        @JavascriptInterface
+        public void setBackgroundAudioMode(final boolean enabled) {
+            mainHandler.post(() -> {
+                setBgServiceRunning(enabled);
+            });
+        }
+
+        @JavascriptInterface
+        public boolean isAutoDuckOn() {
+            return PriorityRadioEngine.isAutoDuckEnabled(prefs);
+        }
+
+        @JavascriptInterface
+        public boolean toggleSimpleAutoDuck() {
+            final boolean nextState = PriorityRadioEngine.toggleAutoDuck(prefs);
+            mainHandler.post(() -> Toast.makeText(MainActivity.this,
+                    nextState ? "Radio Auto-Duck: ON (Mutes on Scanner Hit)" : "Radio Auto-Duck: OFF",
+                    Toast.LENGTH_SHORT).show());
+            return nextState;
+        }
+
+        @JavascriptInterface
+        public void notifyScannerRx(final boolean rxActive, final boolean voiceReadoutEnabled) {
+            // Executes immediately on the calling JS bridge thread for 0ms radio mute!
+            PriorityRadioEngine.onScannerRxStateChanged(prefs, rxActive, voiceReadoutEnabled);
+        }
+
+        @JavascriptInterface
+        public void speakChannel(final String text) {
+            if (text == null || text.trim().isEmpty()) return;
+            PriorityRadioEngine.onTtsSpeechStateChanged(prefs, true);
+            mainHandler.post(() -> {
+                final String cleanText = text.trim();
+
+                long now = System.currentTimeMillis();
+                if (!cleanText.equalsIgnoreCase("Voice readout on")
+                        && cleanText.equalsIgnoreCase(lastSpokenText)
+                        && (now - lastSpokenTimestamp < 30000)) {
+                    PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
+                    return;
+                }
+                lastSpokenText = cleanText;
+                lastSpokenTimestamp = now;
+
+                if (tts == null || !ttsReady) {
+                    initTTS();
+                    mainHandler.postDelayed(() -> speakDirect(cleanText), 900);
+                    return;
+                }
+                speakDirect(cleanText);
+            });
+        }
+
+        private void speakDirect(String cleanText) {
+            int result = TextToSpeech.ERROR;
+            try {
+                if (Build.VERSION.SDK_INT >= 21) {
+                    Bundle params = new Bundle();
+                    params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.45f);
+                    result = tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "proscan_tts_" + System.currentTimeMillis());
+                } else {
+                    result = tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null);
+                }
+            } catch (Exception e) {
+                result = TextToSpeech.ERROR;
+            }
+
+            if (result != TextToSpeech.SUCCESS) {
+                initTTS();
+                mainHandler.postDelayed(() -> {
+                    if (tts != null && ttsReady) {
+                        if (Build.VERSION.SDK_INT >= 21) {
+                            Bundle params = new Bundle();
+                            params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.45f);
+                            tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "proscan_tts_retry");
+                        } else {
+                            tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null);
+                        }
+                    } else {
+                        PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
+                    }
+                }, 1000);
+            }
+        }
+
+        @JavascriptInterface
+        public void syncActiveThemeInMemory(final String webStorageJson) {
+            try {
+                if (webStorageJson != null && webStorageJson.length() > 10) {
+                    prefs.edit().putString("shared_web_storage", webStorageJson).apply();
+                }
+                JSONObject root = new JSONObject();
+                root.put("local_url", prefs.getString("local_url", ""));
+                root.put("tailscale_url", prefs.getString("tailscale_url", ""));
+                root.put("alexa_lamp_off_url", prefs.getString("alexa_lamp_off_url", ""));
+                root.put("alexa_lamp_on_url", prefs.getString("alexa_lamp_on_url", ""));
+                root.put("web_storage", webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject());
+                prefs.edit().putString("last_backup_json", root.toString()).apply();
+            } catch (Exception ignored) {}
+        }
+
+        @JavascriptInterface
+        public void openArchivePlayer() { openPlayerActivityMode("archive"); }
+
+        @JavascriptInterface
+        public void openBroadcastRadio() { openPlayerActivityMode("radio"); }
+
+        @JavascriptInterface
+        public void autoSavePresetsJson(final String webStorageJson, final boolean notifyUser) {
+            mainHandler.post(() -> {
+                if (webStorageJson != null && webStorageJson.length() > 10) {
+                    prefs.edit().putString("shared_web_storage", webStorageJson).apply();
+                }
+                saveBackupJsonToDownloads(webStorageJson, notifyUser);
+            });
+        }
+
+        @JavascriptInterface
+        public void showSystemBars() {
+            mainHandler.post(() -> {
+                showBothSystemBarsNow();
+                mainHandler.postDelayed(() -> hideSystemUI(), 4500);
+            });
+        }
+
+        @JavascriptInterface
+        public void minimizeApp() { mainHandler.post(() -> moveTaskToBack(true)); }
+
+        @JavascriptInterface
+        public void exitApp() { mainHandler.post(() -> closeAndExitApp()); }
+    }
+
+    private void showBothSystemBarsNow() {
+        try {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            );
+            if (Build.VERSION.SDK_INT >= 30) {
+                WindowInsetsController ic = getWindow().getInsetsController();
+                if (ic != null) ic.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void closeAndExitApp() {
+        scannerAudioConnected = false;
+        PriorityRadioEngine.stopStation();
+        setBgServiceRunning(false);
+        releaseScannerWakeAndWifiLocks();
+        try { if (sensorManager != null) sensorManager.unregisterListener(this); } catch (Exception ignored) {}
+        try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
+        try {
+            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
+                audioManager.unregisterAudioDeviceCallback(btDeviceCallback);
+            }
+        } catch (Exception ignored) {}
+        try { if (tts != null) { tts.stop(); tts.shutdown(); } } catch (Exception ignored) {}
+        try { if (webView != null) { webView.loadUrl("about:blank"); webView.stopLoading(); webView.destroy(); } } catch (Exception ignored) {}
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) finishAndRemoveTask();
+        else finish();
+        System.exit(0);
+    }
+
+    private void setupWebView() {
+        WebSettings s = webView.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setDatabaseEnabled(true);
+        s.setMediaPlaybackRequiresUserGesture(false);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        s.setUseWideViewPort(true);
+        s.setLoadWithOverviewMode(true);
+
+        CookieManager.getInstance().setAcceptCookie(true);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+
+        webView.addJavascriptInterface(new WebAppBridge(), "AndroidApp");
+        webView.setBackgroundColor(Color.BLACK);
+        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return false; }
+
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                injectEnhancements();
+                mainHandler.postDelayed(() -> injectEnhancements(), 400);
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                injectEnhancements();
+            }
+        });
+
+        mainHandler.removeCallbacks(periodicInjector);
+        mainHandler.postDelayed(periodicInjector, 200);
+    }
+js.append("      var smCarrierLvl = 0, smAudioLvl = 0, smAdaptiveMax = 14.0, smPhase = 0;\n");
         js.append("      function renderLiveScannerSignalMeter() {\n");
         js.append("        requestAnimationFrame(renderLiveScannerSignalMeter);\n");
+        js.append("        if (window.__bgTickSquelchAndLog) window.__bgTickSquelchAndLog();\n");
         js.append("        var rawAud = 0;\n");
         js.append("        var rxLedEl = document.getElementById('rx-led');\n");
         js.append("        var isRxVoiceActive = Boolean(rxLedEl && rxLedEl.classList.contains('active'));\n");
-        js.append("        if (window.__bgTickSquelchAndLog) window.__bgTickSquelchAndLog();\n");
         js.append("        var activeAn = window.analyser || (typeof analyser !== 'undefined' ? analyser : null);\n");
         js.append("        if (isRxVoiceActive && typeof isConnected !== 'undefined' && isConnected && activeAn && typeof dataArray !== 'undefined' && dataArray) {\n");
         js.append("          try {\n");
@@ -1436,7 +2133,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("    if (dispBox) {\n");
         js.append("      var clkEl = document.getElementById('display-clock-hud');\n");
         js.append("      var batEl = document.getElementById('scanner-bat-hud');\n");
-        js.append("      var mtrBoxEl = document.getElementById('proscan-sig-meter-box');\n");
         js.append("      if (!batEl) {\n");
         js.append("        batEl = document.createElement('div');\n");
         js.append("        batEl.id = 'scanner-bat-hud';\n");
@@ -1444,9 +2140,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        dispBox.appendChild(batEl);\n");
         js.append("      }\n");
         js.append("      if (clkEl && batEl) {\n");
-        js.append("        var isDisc = clkEl.classList.contains('disconnected');\n");
-        js.append("        batEl.classList.toggle('disconnected', isDisc);\n");
-        js.append("        if (mtrBoxEl) mtrBoxEl.classList.toggle('disconnected', isDisc);\n");
+        js.append("        if (clkEl.classList.contains('disconnected')) batEl.classList.add('disconnected');\n");
+        js.append("        else batEl.classList.remove('disconnected');\n");
         js.append("      }\n");
         js.append("      if (window.AndroidApp && typeof window.AndroidApp.getBatteryStatus === 'function') {\n");
         js.append("        var bStr = window.AndroidApp.getBatteryStatus() || '';\n");
@@ -1500,9 +2195,20 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("    window.prepareWakeLockMedia = function() {};\n");
         js.append("    window.requestScreenWake = function() { if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(true); };\n");
         js.append("    window.releaseScreenWake = function() { if (window.AndroidApp) window.AndroidApp.setKeepScreenOn(false); };\n");
+
+        /* Upgrade #btn-wake-toggle to Larger Square Glowing Button */
         js.append("    var wBtn = document.getElementById('btn-wake-toggle');\n");
-        js.append("    isWakeLockActive = ").append(wakePref).append(";\n");
-        js.append("    if (wBtn) { wBtn.classList.toggle('active', isWakeLockActive); wBtn.setAttribute('aria-pressed', isWakeLockActive ? 'true' : 'false'); }\n");
+        js.append("    if (wBtn) {\n");
+        js.append("      if (!wBtn.querySelector('.sq-hw-cap')) {\n");
+        js.append("        wBtn.innerHTML = '<div class=\"sq-hw-cap\"></div><span class=\"sq-hw-lbl\">WAKE</span>';\n");
+        js.append("      }\n");
+        js.append("      if (!wBtn.__wakeSyncedOnce) {\n");
+        js.append("        wBtn.__wakeSyncedOnce = true;\n");
+        js.append("        isWakeLockActive = ").append(wakePref).append(";\n");
+        js.append("      }\n");
+        js.append("      wBtn.classList.toggle('active', isWakeLockActive);\n");
+        js.append("      wBtn.setAttribute('aria-pressed', isWakeLockActive ? 'true' : 'false');\n");
+        js.append("    }\n");
         js.append("    window.toggleWakeLock = function() {\n");
         js.append("      var btn = document.getElementById('btn-wake-toggle');\n");
         js.append("      isWakeLockActive = !isWakeLockActive;\n");
@@ -1632,7 +2338,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      rowParent.appendChild(dspBtn);\n");
         js.append("    }\n");
 
-        /* Top LEDs Left: WAKE and VOICE */
+        /* Top LEDs Left: WAKE and VOICE (Larger Square Glowing Buttons) */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
         js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = '';\n");
@@ -1652,8 +2358,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        })();\n");
         js.append("      }\n");
         js.append("      var vBtn = document.createElement('button');\n");
-        js.append("      vBtn.id = 'btn-voice-toggle'; vBtn.className = 'wake-btn-wrapper'; vBtn.type = 'button';\n");
-        js.append("      vBtn.innerHTML = '<div class=\"wake-switch-col\"><div id=\"voice-switch-track\"><div id=\"voice-switch-thumb\"></div></div><span class=\"rx-label\">VOICE</span></div><div id=\"voice-led\"></div>';\n");
+        js.append("      vBtn.id = 'btn-voice-toggle'; vBtn.type = 'button';\n");
+        js.append("      vBtn.innerHTML = '<div class=\"sq-hw-cap\"></div><span class=\"sq-hw-lbl\">VOICE</span>';\n");
         js.append("      window.__setVoiceReadoutState = function(enable, showHud) {\n");
         js.append("        window.__voiceReadoutEnabled = Boolean(enable);\n");
         js.append("        var vb = document.getElementById('btn-voice-toggle');\n");
@@ -1757,6 +2463,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          if (window.AndroidApp) window.AndroidApp.setBackgroundAudioMode(false);\n");
         js.append("        }\n");
         js.append("        renderAudioLabel();\n");
+        js.append("        if (window.__syncPwrGlowState) window.__syncPwrGlowState();\n");
         js.append("      };\n");
         js.append("      renderAudioLabel();\n");
         js.append("      setInterval(function() {\n");
@@ -1791,16 +2498,13 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      aBtn.addEventListener('pointercancel', function() { clearTimeout(aTimer); aTimer = null; });\n");
         js.append("    }\n");
 
-        /* Top LEDs Right: RX, LOG, LAMP, and PWR (ON/OFF) Button:
-           - Double-Tap (whether ON or OFF) = Show Android Top/Bottom System Bars
-           - Long-Press (550ms) when OFF = Power ON both DISPLAY and AUDIO
-           - Long-Press (550ms) when ON  = Turn OFF AUDIO & DISPLAY, blank screen to pure black with white CRT animation, and Exit App */
+        /* Top LEDs Right: RX, LOG, LAMP, and PWR (Larger Square Glowing Buttons) */
         js.append("    var ledsRight = document.querySelector('.top-leds-right');\n");
         js.append("    if (ledsRight && !document.getElementById('btn-hardware-exit')) {\n");
         js.append("      var lampBtn = document.createElement('button');\n");
         js.append("      lampBtn.id = 'btn-lamp-toggle'; lampBtn.type = 'button';\n");
         js.append("      lampBtn.title = 'Tap: Bedroom Lights | Hold: Setup Alexa Routine URL';\n");
-        js.append("      lampBtn.innerHTML = '<div class=\"lamp-cap\"></div><span class=\"rx-label\">LAMP</span>';\n");
+        js.append("      lampBtn.innerHTML = '<div class=\"sq-hw-cap\"></div><span class=\"sq-hw-lbl\">LAMP</span>';\n");
         js.append("      ledsRight.appendChild(lampBtn);\n");
         js.append("      window.__scannerLampState = false;\n");
         js.append("      var lpTimer = null, lpLong = false;\n");
@@ -1817,6 +2521,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        if (wasTap && !lpLong) {\n");
         js.append("          if (navigator.vibrate) navigator.vibrate(25);\n");
         js.append("          window.__scannerLampState = !window.__scannerLampState;\n");
+        js.append("          lampBtn.classList.toggle('active', window.__scannerLampState);\n");
         js.append("          if (window.AndroidApp && window.AndroidApp.triggerBedroomLamp) {\n");
         js.append("            window.AndroidApp.triggerBedroomLamp(window.__scannerLampState);\n");
         js.append("          }\n");
@@ -1828,8 +2533,15 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      var exitBtn = document.createElement('button');\n");
         js.append("      exitBtn.id = 'btn-hardware-exit'; exitBtn.type = 'button';\n");
         js.append("      exitBtn.title = 'Hold: Power ON / OFF | Double-Tap: System Bars';\n");
-        js.append("      exitBtn.innerHTML = '<div class=\"exit-cap\"></div><span class=\"rx-label\">PWR</span>';\n");
+        js.append("      exitBtn.innerHTML = '<div class=\"sq-hw-cap\"></div><span class=\"sq-hw-lbl\">PWR</span>';\n");
         js.append("      ledsRight.appendChild(exitBtn);\n");
+        js.append("      window.__syncPwrGlowState = function() {\n");
+        js.append("        var anyOn = (typeof isDisplayOn !== 'undefined' && isDisplayOn) || (typeof isConnected !== 'undefined' && isConnected);\n");
+        js.append("        exitBtn.classList.toggle('active', Boolean(anyOn));\n");
+        js.append("      };\n");
+        js.append("      window.__syncPwrGlowState();\n");
+        js.append("      setInterval(window.__syncPwrGlowState, 600);\n");
+
         js.append("      var exHoldTimer = null, exLongFired = false, lastPwrTapMs = 0;\n");
         js.append("      exitBtn.addEventListener('pointerdown', function() {\n");
         js.append("        clearTimeout(exHoldTimer); exLongFired = false;\n");
@@ -1844,10 +2556,12 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("            if (window.__setScannerAudioState) {\n");
         js.append("              window.__setScannerAudioState(true);\n");
         js.append("            }\n");
+        js.append("            window.__syncPwrGlowState();\n");
         js.append("          } else {\n");
         js.append("            if (navigator.vibrate) navigator.vibrate([45, 60, 55]);\n");
         js.append("            if (window.__setScannerAudioState) window.__setScannerAudioState(false);\n");
         js.append("            isDisplayOn = false;\n");
+        js.append("            window.__syncPwrGlowState();\n");
         js.append("            var dBtn = document.getElementById('btn-disp-toggle'); if (dBtn) dBtn.classList.remove('active');\n");
         js.append("            var dispEl = document.querySelector('.scanner-display');\n");
         js.append("            var logWrap = document.querySelector('.log-wrapper');\n");
