@@ -346,7 +346,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-private WebView webView;
+    private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
     private SensorManager sensorManager;
@@ -1158,819 +1158,333 @@ private WebView webView;
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 200);
     }
-private WebView webView;
-    private SharedPreferences prefs;
-    private AudioManager audioManager;
-    private SensorManager sensorManager;
-    private Sensor tiltSensor;
-    private float smoothTiltX = 0f;
-    private float smoothTiltY = 0f;
-    private long lastTiltPushMs = 0L;
-
-    private AudioFocusRequest scannerAudioFocusReq = null;
-    private PowerManager.WakeLock scannerCpuLock = null;
-    private WifiManager.WifiLock scannerWifiLock = null;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
-
-    private boolean userWakeLockEnabled = false;
-    private boolean scannerAudioConnected = false;
-    private boolean bgAudioModeEnabled = false;
-    private boolean bedroomLampOn = false;
-    private String activeServerUrl = "";
-    private TextToSpeech tts = null;
-    private volatile boolean ttsReady = false;
-
-    private String lastSpokenText = "";
-    private long lastSpokenTimestamp = 0;
-
-    @Override
-    public void onSensorChanged(SensorEvent event) {
-        if (event == null || event.values == null || event.values.length < 2 || webView == null) return;
-        long now = System.currentTimeMillis();
-        if (now - lastTiltPushMs < 35) return;
-        lastTiltPushMs = now;
-        float rawX = Math.max(-7f, Math.min(7f, event.values[0])) / 7f;
-        float rawY = Math.max(-7f, Math.min(7f, event.values[1] - 4.5f)) / 7f;
-        smoothTiltX += (rawX - smoothTiltX) * 0.28f;
-        smoothTiltY += (rawY - smoothTiltY) * 0.28f;
-        int deg = Math.round(125f - smoothTiltX * 38f + smoothTiltY * 22f);
-        int posPct = Math.round(38f + smoothTiltX * 28f - smoothTiltY * 20f);
-        int bx = Math.round(-smoothTiltX * 14f);
-        int by = Math.round(smoothTiltY * 14f);
-        webView.evaluateJavascript(
-                "try{var r=document.documentElement.style;" +
-                "r.setProperty('--gloss-deg','" + deg + "deg');" +
-                "r.setProperty('--gloss-pos','" + posPct + "%');" +
-                "r.setProperty('--tilt-x','" + bx + "px');" +
-                "r.setProperty('--tilt-y','" + by + "px');}catch(e){}",
-                null
-        );
-    }
-
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {}
-
-    private synchronized void acquireScannerWakeAndWifiLocks() {
-        try {
-            if (audioManager != null) {
-                if (Build.VERSION.SDK_INT >= 26) {
-                    if (scannerAudioFocusReq == null) {
-                        scannerAudioFocusReq = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                                .setAudioAttributes(new AudioAttributes.Builder()
-                                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                        .build())
-                                .setAcceptsDelayedFocusGain(true)
-                                .setWillPauseWhenDucked(false)
-                                .setOnAudioFocusChangeListener(fc -> {}, mainHandler)
-                                .build();
-                    }
-                    audioManager.requestAudioFocus(scannerAudioFocusReq);
-                } else {
-                    audioManager.requestAudioFocus(fc -> {}, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
-                }
-            }
-            if (scannerCpuLock == null) {
-                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-                if (pm != null) {
-                    scannerCpuLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "proscan:main_scanner_cpu");
-                    scannerCpuLock.setReferenceCounted(false);
-                }
-            }
-            if (scannerCpuLock != null && !scannerCpuLock.isHeld()) {
-                scannerCpuLock.acquire();
-            }
-            if (scannerWifiLock == null) {
-                WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-                if (wm != null) {
-                    int mode = Build.VERSION.SDK_INT >= 29 ? WifiManager.WIFI_MODE_FULL_LOW_LATENCY : WifiManager.WIFI_MODE_FULL_HIGH_PERF;
-                    scannerWifiLock = wm.createWifiLock(mode, "proscan:main_scanner_wifi");
-                    scannerWifiLock.setReferenceCounted(false);
-                }
-            }
-            if (scannerWifiLock != null && !scannerWifiLock.isHeld()) {
-                scannerWifiLock.acquire();
-            }
-        } catch (Exception ignored) {}
-    }
-
-    private synchronized void releaseScannerWakeAndWifiLocks() {
-        if (PriorityRadioEngine.isRadioPlaying()) return;
-        try {
-            if (scannerCpuLock != null && scannerCpuLock.isHeld()) scannerCpuLock.release();
-            if (scannerWifiLock != null && scannerWifiLock.isHeld()) scannerWifiLock.release();
-        } catch (Exception ignored) {}
-    }
-
-    private void triggerAlexaWebhook(final boolean turnOn) {
-        final String offUrl = prefs.getString("alexa_lamp_off_url", "").trim();
-        final String onUrl = prefs.getString("alexa_lamp_on_url", "").trim();
-        if (offUrl.isEmpty() && onUrl.isEmpty()) {
-            showAlexaLampSetupDialog();
-            return;
-        }
-        final String targetUrl;
-        final String actionLabel;
-        if (!offUrl.isEmpty() && !onUrl.isEmpty()) {
-            bedroomLampOn = turnOn;
-            targetUrl = bedroomLampOn ? onUrl : offUrl;
-            actionLabel = bedroomLampOn ? "BEDROOM LIGHTS: ON" : "BEDROOM LIGHTS: OFF";
-        } else {
-            bedroomLampOn = !bedroomLampOn;
-            targetUrl = !offUrl.isEmpty() ? offUrl : onUrl;
-            actionLabel = "BEDROOM LIGHTS: TRIGGERED";
-        }
-        if (webView != null) {
-            webView.evaluateJavascript(
-                    "if(typeof showDisplayHud==='function')showDisplayHud('" + actionLabel + "',1500);",
-                    null
-            );
-        }
-        Toast.makeText(this, actionLabel, Toast.LENGTH_SHORT).show();
-        executor.execute(() -> {
-            try {
-                HttpURLConnection conn = (HttpURLConnection) new URL(targetUrl).openConnection();
-                conn.setConnectTimeout(6000);
-                conn.setReadTimeout(6000);
-                conn.setRequestMethod("GET");
-                conn.setRequestProperty("Cache-Control", "no-cache");
-                int code = conn.getResponseCode();
-                conn.disconnect();
-                if (code < 200 || code >= 400) {
-                    mainHandler.post(() -> Toast.makeText(MainActivity.this, "Routine HTTP " + code, Toast.LENGTH_SHORT).show());
-                }
-            } catch (Exception e) {
-                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Routine failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-            }
-        });
-    }
-
-    private void showAlexaLampSetupDialog() {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int) (18 * getResources().getDisplayMetrics().density);
-        layout.setPadding(pad, pad, pad, pad);
-
-        TextView l1 = new TextView(this);
-        l1.setText("Lights Toggle / OFF Alexa Routine URL (Virtual Buttons / Voice Monkey):");
-        layout.addView(l1);
-        final EditText offInput = new EditText(this);
-        offInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        offInput.setHint("https://api.virtualbuttons.com/v1?...");
-        offInput.setText(prefs.getString("alexa_lamp_off_url", ""));
-        layout.addView(offInput);
-
-        TextView l2 = new TextView(this);
-        l2.setText("\nSecond Routine URL (Optional - leave blank for single toggle URL):");
-        layout.addView(l2);
-        final EditText onInput = new EditText(this);
-        onInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        onInput.setHint("Optional second routine URL");
-        onInput.setText(prefs.getString("alexa_lamp_on_url", ""));
-        layout.addView(onInput);
-
-        new AlertDialog.Builder(this)
-                .setTitle("Bedroom Lights (Alexa Routine)")
-                .setView(layout)
-                .setPositiveButton("Save", (d, w) -> {
-                    prefs.edit()
-                            .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
-                            .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
-                            .apply();
-                    Toast.makeText(MainActivity.this, "Bedroom Light Routine Saved! Tap LAMP to trigger.", Toast.LENGTH_SHORT).show();
-                })
-                .setNeutralButton("Test Now", (d, w) -> {
-                    prefs.edit()
-                            .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
-                            .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
-                            .apply();
-                    triggerAlexaWebhook(false);
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private synchronized void initTTS() {
-        try {
-            if (tts != null) {
-                try { tts.stop(); tts.shutdown(); } catch (Exception ignored) {}
-                tts = null;
-            }
-            ttsReady = false;
-            tts = new TextToSpeech(getApplicationContext(), status -> {
-                if (status == TextToSpeech.SUCCESS && tts != null) {
-                    tts.setLanguage(Locale.UK);
-                    tts.setSpeechRate(1.05f);
-                    if (Build.VERSION.SDK_INT >= 21) {
-                        tts.setAudioAttributes(new AudioAttributes.Builder()
-                                .setUsage(AudioAttributes.USAGE_MEDIA)
-                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                .build());
-                    }
-                    tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                        @Override
-                        public void onStart(String utteranceId) {
-                            PriorityRadioEngine.onTtsSpeechStateChanged(prefs, true);
-                        }
-
-                        @Override
-                        public void onDone(String utteranceId) {
-                            PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
-                        }
-
-                        @Override
-                        public void onError(String utteranceId) {
-                            PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
-                        }
-                    });
-                    ttsReady = true;
-                }
-            });
-        } catch (Exception ignored) {}
-    }
-
-    private void forceStopScannerOnHeadphoneDisconnect() {
-        scannerAudioConnected = false;
-        PriorityRadioEngine.stopStation();
-        setBgServiceRunning(false);
-        releaseScannerWakeAndWifiLocks();
-        Runnable stopJs = () -> {
-            if (webView != null) {
-                webView.evaluateJavascript(
-                        "try{if(window.__stopScannerAudioFromBt)window.__stopScannerAudioFromBt();" +
-                        "var p=document.getElementById('audio_player');if(p){p.pause();}" +
-                        "isConnected=false;var b=document.getElementById('btn-audio-toggle');if(b)b.classList.remove('active');" +
-                        "window.__voiceReadoutEnabled=false;var vb=document.getElementById('btn-voice-toggle');if(vb)vb.classList.remove('active');}catch(e){}",
-                        null
-                );
-            }
-        };
-        mainHandler.post(stopJs);
-        mainHandler.postDelayed(stopJs, 200);
-        mainHandler.postDelayed(stopJs, 500);
-        mainHandler.post(() -> Toast.makeText(MainActivity.this, "Headphones disconnected — Audio stopped", Toast.LENGTH_SHORT).show());
-    }
-
-    private final BroadcastReceiver noisyAudioReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (intent == null) return;
-            if (isInitialStickyBroadcast()) return;
-            String act = intent.getAction();
-            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(act)
-                    || (Intent.ACTION_HEADSET_PLUG.equals(act) && intent.getIntExtra("state", -1) == 0)) {
-                forceStopScannerOnHeadphoneDisconnect();
-            }
-        }
-    };
-
-    private final AudioDeviceCallback btDeviceCallback = new AudioDeviceCallback() {
-        @Override
-        public void onAudioDevicesRemoved(AudioDeviceInfo[] removedDevices) {
-            if (removedDevices == null) return;
-            for (AudioDeviceInfo dev : removedDevices) {
-                int t = dev.getType();
-                if (t == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
-                        || t == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-                        || t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
-                        || t == AudioDeviceInfo.TYPE_WIRED_HEADSET
-                        || t == AudioDeviceInfo.TYPE_USB_HEADSET
-                        || t == 26
-                        || t == 27) {
-                    forceStopScannerOnHeadphoneDisconnect();
-                    break;
-                }
-            }
-        }
-    };
-
-    private int injectorTickCount = 0;
-
-    // Fast 120ms native heartbeat so squelch/auto-duck detection NEVER lags even when Chromium throttles JS timers!
-    private final Runnable periodicInjector = new Runnable() {
-        @Override
-        public void run() {
-            if (webView != null) {
-                if ((injectorTickCount++ % 5) == 0) {
-                    injectEnhancements();
-                }
-                if (scannerAudioConnected || PriorityRadioEngine.isRadioPlaying()) {
-                    webView.evaluateJavascript(
-                            "try{if(window.__bgTickSquelchAndLog)window.__bgTickSquelchAndLog();}catch(e){}",
-                            null
-                    );
-                }
-            }
-            mainHandler.postDelayed(this, 120);
-        }
-    };
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        requestWindowFeature(Window.FEATURE_NO_TITLE);
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        hideSystemUI();
-
-        if (Build.VERSION.SDK_INT >= 33) {
-            try {
-                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO"}, 101);
-            } catch (Exception ignored) {}
-        } else if (Build.VERSION.SDK_INT >= 23) {
-            try {
-                requestPermissions(new String[]{"android.permission.RECORD_AUDIO"}, 101);
-            } catch (Exception ignored) {}
-        }
-
-        try {
-            IntentFilter f = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
-            f.addAction(Intent.ACTION_HEADSET_PLUG);
-            registerReceiver(noisyAudioReceiver, f);
-        } catch (Exception ignored) {}
-
-        try {
-            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
-                audioManager.registerAudioDeviceCallback(btDeviceCallback, mainHandler);
-            }
-        } catch (Exception ignored) {}
-
-        try {
-            sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-            if (sensorManager != null) {
-                tiltSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY);
-                if (tiltSensor == null) {
-                    tiltSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-                }
-            }
-        } catch (Exception ignored) {}
-
-        prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
-
-        initTTS();
-
-        FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.BLACK);
-
-        webView = new WebView(this) {
-            @Override
-            public void setKeepScreenOn(boolean keepScreenOn) {
-                super.setKeepScreenOn(userWakeLockEnabled);
-            }
-
-            @Override
-            protected void onWindowVisibilityChanged(int visibility) {
-                super.onWindowVisibilityChanged(View.VISIBLE);
-            }
-
-            @Override
-            public void onWindowFocusChanged(boolean hasWindowFocus) {
-                super.onWindowFocusChanged(true);
-            }
-
-            @Override
-            public void onPause() {
-            }
-
-            @Override
-            public void pauseTimers() {
-            }
-        };
-        webView.setKeepScreenOn(false);
-        setupWebView();
-        root.addView(webView, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-        ));
-
-        setContentView(root);
-
-        userWakeLockEnabled = prefs.getBoolean("wake_lock_on", true);
-        if (userWakeLockEnabled) {
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            webView.setKeepScreenOn(true);
-        }
-
-        String localUrl = prefs.getString("local_url", "");
-        String tailscaleUrl = prefs.getString("tailscale_url", "");
-
-        if (localUrl.isEmpty() && tailscaleUrl.isEmpty()) {
-            showSetupDialog(true);
-        } else {
-            connectSmart(localUrl, tailscaleUrl);
-        }
-    }
-
-    private String getNativeBatteryStatus() {
-        try {
-            IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
-            Intent b = registerReceiver(null, ifilter);
-            if (b != null) {
-                int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
-                int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
-                int status = b.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
-                boolean charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
-                if (level >= 0 && scale > 0) {
-                    int pct = Math.round((level * 100f) / scale);
-                    return (charging ? "⚡" : "") + pct + "%";
-                }
-            }
-        } catch (Exception ignored) {}
-        return "";
-    }
-
-    private void setBgServiceRunning(boolean enable) {
-        bgAudioModeEnabled = enable;
-        Intent svc = new Intent(this, AudioKeepAliveService.class);
-        try {
-            if (enable || scannerAudioConnected || PriorityRadioEngine.isRadioPlaying()) {
-                acquireScannerWakeAndWifiLocks();
-                if (Build.VERSION.SDK_INT >= 26) startForegroundService(svc);
-                else startService(svc);
-            } else {
-                releaseScannerWakeAndWifiLocks();
-                stopService(svc);
-            }
-        } catch (Exception ignored) {}
-    }
-
-    private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast) {
-        try {
-            JSONObject root = new JSONObject();
-            root.put("local_url", prefs.getString("local_url", ""));
-            root.put("tailscale_url", prefs.getString("tailscale_url", ""));
-            root.put("alexa_lamp_off_url", prefs.getString("alexa_lamp_off_url", ""));
-            root.put("alexa_lamp_on_url", prefs.getString("alexa_lamp_on_url", ""));
-            JSONObject ws = webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject();
-            String rad = prefs.getString("radio_stations_json", "");
-            if (!rad.isEmpty() && !ws.has("proscan_radio_stations_v3")) {
-                ws.put("proscan_radio_stations_v3", rad);
-            }
-            root.put("web_storage", ws);
-            byte[] bytes = root.toString(2).getBytes(StandardCharsets.UTF_8);
-
-            prefs.edit().putString("last_backup_json", root.toString()).apply();
-
-            if (Build.VERSION.SDK_INT >= 29) {
-                try {
-                    getContentResolver().delete(
-                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                            MediaStore.MediaColumns.DISPLAY_NAME + "=?",
-                            new String[]{"proscan_presets_backup.json"}
-                    );
-                } catch (Exception ignored) {}
-
-                ContentValues values = new ContentValues();
-                values.put(MediaStore.MediaColumns.DISPLAY_NAME, "proscan_presets_backup.json");
-                values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-
-                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-                if (uri != null) {
-                    OutputStream os = getContentResolver().openOutputStream(uri);
-                    if (os != null) {
-                        os.write(bytes);
-                        os.close();
-                    }
-                }
-            } else {
-                File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                File file = new File(dir, "proscan_presets_backup.json");
-                FileOutputStream fos = new FileOutputStream(file);
-                fos.write(bytes);
-                fos.close();
-            }
-
-            if (showToast) {
-                Toast.makeText(this, "Saved to Downloads/proscan_presets_backup.json", Toast.LENGTH_SHORT).show();
-            }
-        } catch (Exception e) {
-            if (showToast) {
-                Toast.makeText(this, "Backup error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
-        }
-    }
-
-    private void restoreFromJsonString(String jsonStr) {
-        try {
-            JSONObject root = new JSONObject(jsonStr);
-            String loc = root.optString("local_url", "");
-            String ts = root.optString("tailscale_url", "");
-            String lampOff = root.optString("alexa_lamp_off_url", "");
-            String lampOn = root.optString("alexa_lamp_on_url", "");
-            JSONObject webStorage = root.optJSONObject("web_storage");
-
-            if (!loc.isEmpty() || !ts.isEmpty()) {
-                prefs.edit().putString("local_url", loc).putString("tailscale_url", ts).apply();
-            }
-            if (!lampOff.isEmpty() || !lampOn.isEmpty()) {
-                prefs.edit().putString("alexa_lamp_off_url", lampOff).putString("alexa_lamp_on_url", lampOn).apply();
-            }
-            if (webStorage != null) {
-                if (webStorage.has("proscan_radio_stations_v3")) {
-                    prefs.edit().putString("radio_stations_json", webStorage.optString("proscan_radio_stations_v3", "")).apply();
-                }
-                prefs.edit().putString("shared_web_storage", webStorage.toString()).putString("last_backup_json", root.toString()).apply();
-            }
-
-            Toast.makeText(this, "Presets & IPs Restored! Loading...", Toast.LENGTH_SHORT).show();
-            String activeLoc = prefs.getString("local_url", "");
-            String activeTs = prefs.getString("tailscale_url", "");
-            if (!activeLoc.isEmpty() || !activeTs.isEmpty()) {
-                connectSmart(activeLoc, activeTs);
-            }
-        } catch (Exception e) {
-            Toast.makeText(this, "Invalid backup JSON file", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_LOAD_JSON && resultCode == RESULT_OK && data != null && data.getData() != null) {
-            try {
-                InputStream is = getContentResolver().openInputStream(data.getData());
-                if (is != null) {
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
-                    StringBuilder sb = new StringBuilder();
-                    String line;
-                    while ((line = reader.readLine()) != null) sb.append(line);
-                    reader.close();
-                    restoreFromJsonString(sb.toString());
-                }
-            } catch (Exception e) {
-                Toast.makeText(this, "Failed to read backup file", Toast.LENGTH_SHORT).show();
-            }
-        }
-    }
-
-    private void openPlayerActivityMode(final String mode) {
-        mainHandler.post(() -> {
-            String base = activeServerUrl;
-            if (base == null || base.isEmpty()) base = webView != null ? webView.getUrl() : "";
-            Intent i = new Intent(MainActivity.this, PlayerActivity.class);
-            i.putExtra("server_url", base != null ? base : "");
-            i.putExtra("start_mode", mode);
-            startActivity(i);
-            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
-        });
-    }
-
-    public class WebAppBridge {
-        @JavascriptInterface
-        public String getBatteryStatus() {
-            return getNativeBatteryStatus();
-        }
-
-        @JavascriptInterface
-        public void triggerBedroomLamp(final boolean turnOn) {
-            mainHandler.post(() -> triggerAlexaWebhook(turnOn));
-        }
-
-        @JavascriptInterface
-        public void openLampSetup() {
-            mainHandler.post(() -> showAlexaLampSetupDialog());
-        }
-
-        @JavascriptInterface
-        public void openAppSettings() {
-            mainHandler.post(() -> showSetupDialog(false));
-        }
-
-        @JavascriptInterface
-        public void setKeepScreenOn(final boolean keepOn) {
-            mainHandler.post(() -> {
-                userWakeLockEnabled = keepOn;
-                prefs.edit().putBoolean("wake_lock_on", keepOn).apply();
-                if (keepOn) {
-                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                    webView.setKeepScreenOn(true);
-                    Toast.makeText(MainActivity.this, "Screen Wake: ON (All Modes)", Toast.LENGTH_SHORT).show();
-                } else {
-                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                    webView.setKeepScreenOn(false);
-                    Toast.makeText(MainActivity.this, "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public void setScannerAudioConnected(final boolean connected) {
-            if (!connected) {
-                PriorityRadioEngine.onScannerRxStateChanged(prefs, false, false);
-            }
-            mainHandler.post(() -> {
-                scannerAudioConnected = connected;
-                setBgServiceRunning(connected || bgAudioModeEnabled);
-            });
-        }
-
-        @JavascriptInterface
-        public void setBackgroundAudioMode(final boolean enabled) {
-            mainHandler.post(() -> {
-                setBgServiceRunning(enabled);
-            });
-        }
-
-        @JavascriptInterface
-        public boolean isAutoDuckOn() {
-            return PriorityRadioEngine.isAutoDuckEnabled(prefs);
-        }
-
-        @JavascriptInterface
-        public boolean toggleSimpleAutoDuck() {
-            final boolean nextState = PriorityRadioEngine.toggleAutoDuck(prefs);
-            mainHandler.post(() -> Toast.makeText(MainActivity.this,
-                    nextState ? "Radio Auto-Duck: ON (Mutes on Scanner Hit)" : "Radio Auto-Duck: OFF",
-                    Toast.LENGTH_SHORT).show());
-            return nextState;
-        }
-
-        @JavascriptInterface
-        public void notifyScannerRx(final boolean rxActive, final boolean voiceReadoutEnabled) {
-            // Executes immediately on the calling JS bridge thread for 0ms radio mute!
-            PriorityRadioEngine.onScannerRxStateChanged(prefs, rxActive, voiceReadoutEnabled);
-        }
-
-        @JavascriptInterface
-        public void speakChannel(final String text) {
-            if (text == null || text.trim().isEmpty()) return;
-            PriorityRadioEngine.onTtsSpeechStateChanged(prefs, true);
-            mainHandler.post(() -> {
-                final String cleanText = text.trim();
-
-                long now = System.currentTimeMillis();
-                if (!cleanText.equalsIgnoreCase("Voice readout on")
-                        && cleanText.equalsIgnoreCase(lastSpokenText)
-                        && (now - lastSpokenTimestamp < 30000)) {
-                    PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
-                    return;
-                }
-                lastSpokenText = cleanText;
-                lastSpokenTimestamp = now;
-
-                if (tts == null || !ttsReady) {
-                    initTTS();
-                    mainHandler.postDelayed(() -> speakDirect(cleanText), 900);
-                    return;
-                }
-                speakDirect(cleanText);
-            });
-        }
-
-        private void speakDirect(String cleanText) {
-            int result = TextToSpeech.ERROR;
-            try {
-                if (Build.VERSION.SDK_INT >= 21) {
-                    Bundle params = new Bundle();
-                    params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.45f);
-                    result = tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "proscan_tts_" + System.currentTimeMillis());
-                } else {
-                    result = tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null);
-                }
-            } catch (Exception e) {
-                result = TextToSpeech.ERROR;
-            }
-
-            if (result != TextToSpeech.SUCCESS) {
-                initTTS();
-                mainHandler.postDelayed(() -> {
-                    if (tts != null && ttsReady) {
-                        if (Build.VERSION.SDK_INT >= 21) {
-                            Bundle params = new Bundle();
-                            params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.45f);
-                            tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "proscan_tts_retry");
-                        } else {
-                            tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null);
-                        }
-                    } else {
-                        PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
-                    }
-                }, 1000);
-            }
-        }
-
-        @JavascriptInterface
-        public void syncActiveThemeInMemory(final String webStorageJson) {
-            try {
-                if (webStorageJson != null && webStorageJson.length() > 10) {
-                    prefs.edit().putString("shared_web_storage", webStorageJson).apply();
-                }
-                JSONObject root = new JSONObject();
-                root.put("local_url", prefs.getString("local_url", ""));
-                root.put("tailscale_url", prefs.getString("tailscale_url", ""));
-                root.put("alexa_lamp_off_url", prefs.getString("alexa_lamp_off_url", ""));
-                root.put("alexa_lamp_on_url", prefs.getString("alexa_lamp_on_url", ""));
-                root.put("web_storage", webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject());
-                prefs.edit().putString("last_backup_json", root.toString()).apply();
-            } catch (Exception ignored) {}
-        }
-
-        @JavascriptInterface
-        public void openArchivePlayer() { openPlayerActivityMode("archive"); }
-
-        @JavascriptInterface
-        public void openBroadcastRadio() { openPlayerActivityMode("radio"); }
-
-        @JavascriptInterface
-        public void autoSavePresetsJson(final String webStorageJson, final boolean notifyUser) {
-            mainHandler.post(() -> {
-                if (webStorageJson != null && webStorageJson.length() > 10) {
-                    prefs.edit().putString("shared_web_storage", webStorageJson).apply();
-                }
-                saveBackupJsonToDownloads(webStorageJson, notifyUser);
-            });
-        }
-
-        @JavascriptInterface
-        public void showSystemBars() {
-            mainHandler.post(() -> {
-                showBothSystemBarsNow();
-                mainHandler.postDelayed(() -> hideSystemUI(), 4500);
-            });
-        }
-
-        @JavascriptInterface
-        public void minimizeApp() { mainHandler.post(() -> moveTaskToBack(true)); }
-
-        @JavascriptInterface
-        public void exitApp() { mainHandler.post(() -> closeAndExitApp()); }
-    }
-
-    private void showBothSystemBarsNow() {
-        try {
-            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-            getWindow().getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-            );
-            if (Build.VERSION.SDK_INT >= 30) {
-                WindowInsetsController ic = getWindow().getInsetsController();
-                if (ic != null) ic.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-            }
-        } catch (Exception ignored) {}
-    }
-
-    private void closeAndExitApp() {
-        scannerAudioConnected = false;
-        PriorityRadioEngine.stopStation();
-        setBgServiceRunning(false);
-        releaseScannerWakeAndWifiLocks();
-        try { if (sensorManager != null) sensorManager.unregisterListener(this); } catch (Exception ignored) {}
-        try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
-        try {
-            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
-                audioManager.unregisterAudioDeviceCallback(btDeviceCallback);
-            }
-        } catch (Exception ignored) {}
-        try { if (tts != null) { tts.stop(); tts.shutdown(); } } catch (Exception ignored) {}
-        try { if (webView != null) { webView.loadUrl("about:blank"); webView.stopLoading(); webView.destroy(); } } catch (Exception ignored) {}
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) finishAndRemoveTask();
-        else finish();
-        System.exit(0);
-    }
-
-    private void setupWebView() {
-        WebSettings s = webView.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
-        s.setDatabaseEnabled(true);
-        s.setMediaPlaybackRequiresUserGesture(false);
-        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        s.setUseWideViewPort(true);
-        s.setLoadWithOverviewMode(true);
-
-        CookieManager.getInstance().setAcceptCookie(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
-
-        webView.addJavascriptInterface(new WebAppBridge(), "AndroidApp");
-        webView.setBackgroundColor(Color.BLACK);
-        webView.setWebChromeClient(new WebChromeClient());
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return false; }
-
-            @Override
-            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                super.onPageStarted(view, url, favicon);
-                injectEnhancements();
-                mainHandler.postDelayed(() -> injectEnhancements(), 400);
-            }
-
-            @Override
-            public void onPageFinished(WebView view, String url) {
-                super.onPageFinished(view, url);
-                injectEnhancements();
-            }
-        });
-
-        mainHandler.removeCallbacks(periodicInjector);
-        mainHandler.postDelayed(periodicInjector, 200);
-    }
-js.append("      var smCarrierLvl = 0, smAudioLvl = 0, smAdaptiveMax = 14.0, smPhase = 0;\n");
+    private void injectEnhancements() {
+        String sharedStorage = prefs.getString("shared_web_storage", "");
+        String safeShared = JSONObject.quote(sharedStorage);
+        boolean wakePref = prefs.getBoolean("wake_lock_on", true);
+
+        StringBuilder js = new StringBuilder();
+        js.append("(function() {\n");
+        js.append("  try {\n");
+        js.append("    try {\n");
+        js.append("      Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });\n");
+        js.append("      Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });\n");
+        js.append("    } catch(e) {}\n");
+
+        js.append("    var existingSt = document.getElementById('proscan-v8-upgrade-css');\n");
+        js.append("    if (document.head && !existingSt) {\n");
+        js.append("      var st = document.createElement('style');\n");
+        js.append("      st.id = 'proscan-v8-upgrade-css';\n");
+        js.append("      st.textContent = '' +\n");
+        js.append("        'html{--gloss-deg:125deg;--gloss-pos:38%;--tilt-x:0px;--tilt-y:0px;}' +\n");
+        js.append("        '#device-wrapper{width:95%!important;max-height:94dvh!important;transition:opacity 0.18s ease!important;}' +\n");
+        js.append("        '#device-wrapper.flipping-out{opacity:0!important;}' +\n");
+        js.append("        '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;position:relative!important;}' +\n");
+        /* Visible Tilt-Reactive Specular Lighting Across All 24 Skins */
+        js.append("        '#custom-scanner-ui::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:25!important;border-radius:inherit!important;background:radial-gradient(circle at calc(50% + var(--tilt-x,0px) * 4.5) calc(24% + var(--tilt-y,0px) * 4.5),rgba(255,255,255,0.16) 0%,rgba(255,255,255,0.05) 34%,transparent 65%)!important;}' +\n");
+        js.append("        '.scanner-display{height:325px!important;position:relative!important;overflow:hidden!important;transition:height 0.22s ease!important;}' +\n");
+        /* Visible Tilt-Reactive Moving Gloss Glass Reflection on the Display */
+        js.append("        '.scanner-display::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:18!important;opacity:1!important;background:linear-gradient(var(--gloss-deg,125deg),rgba(255,255,255,0.22) 0%,rgba(255,255,255,0.08) calc(var(--gloss-pos,38%) - 4%),rgba(255,255,255,0.26) var(--gloss-pos,38%),rgba(255,255,255,0.03) calc(var(--gloss-pos,38%) + 2%),transparent calc(var(--gloss-pos,38%) + 12%),transparent 100%),radial-gradient(circle at center,transparent 60%,rgba(0,0,0,0.32) 100%)!important;}' +\n");
+        js.append("        '.top-controls-container{height:40px!important;align-items:center!important;}' +\n");
+        js.append("        '.top-right-group{height:34px!important;}' +\n");
+        js.append("        '.top-right-group .btn{font-size:11px!important;}' +\n");
+        js.append("        '.scanner-nav-6{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:4px!important;height:32px!important;}' +\n");
+        js.append("        '.scanner-nav-6 .btn{font-size:8.5px!important;letter-spacing:-0.3px!important;padding:2px 1px!important;white-space:nowrap!important;}' +\n");
+        js.append("        '.essential-controls{grid-auto-rows:33px!important;gap:6px!important;}' +\n");
+        js.append("        '.essential-controls > .btn{font-size:11.5px!important;}' +\n");
+        js.append("        '.essential-controls .scroll-btn{font-size:9px!important;}' +\n");
+        js.append("        '.numpad{grid-auto-rows:34px!important;gap:6px!important;}' +\n");
+        js.append("        '.numpad .btn{font-size:15.5px!important;font-weight:900!important;}' +\n");
+
+        /* Pure Black Screen Before/With CRT Switch-Off Animation */
+        js.append("        'html.tv-off .scanner-display, .scanner-display.tv-shutting-down{background:#000000!important;border-color:#0a0a0a!important;box-shadow:inset 0 0 24px #000000!important;filter:brightness(1)!important;transition:none!important;}' +\n");
+        js.append("        'html.tv-off .scanner-display #custom-imgd, html.tv-off .scanner-display #custom-imgf, html.tv-off .scanner-display .log-wrapper, html.tv-off .scanner-display #display-clock-hud, html.tv-off .scanner-display #scanner-bat-hud, html.tv-off .scanner-display #display-font-hud, .scanner-display.tv-shutting-down #custom-imgd, .scanner-display.tv-shutting-down #custom-imgf, .scanner-display.tv-shutting-down .log-wrapper, .scanner-display.tv-shutting-down #display-clock-hud, .scanner-display.tv-shutting-down #scanner-bat-hud, .scanner-display.tv-shutting-down #display-font-hud{opacity:0!important;visibility:hidden!important;animation:none!important;transition:none!important;}' +\n");
+
+        /* 3D Bevelled Buttons on WIRE, TRON, NEON & TERM Skins */
+        js.append("        'html[data-skin=\"whiteline\"]{--ui-bg:radial-gradient(circle at 50% 12%,#26292e 0%,#121417 65%,#070809 100%)!important;--btn-bg:linear-gradient(180deg,#2e3238 0%,#181a1e 55%,#0d0e11 100%)!important;--btn-color:#ffffff!important;--btn-active-color:#38bdf8!important;--btn-border:1px solid rgba(255,255,255,0.75)!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #94a3b8,0 4px 6px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.45)!important;--btn-shadow-active:0 0 0 #94a3b8,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
+        js.append("        'html[data-skin=\"whiteline\"] .btn:active{background:linear-gradient(180deg,#181a1e 0%,#0d0e11 100%)!important;color:#38bdf8!important;}' +\n");
+        js.append("        'html[data-skin=\"tron\"]{--ui-bg:radial-gradient(circle at 50% 12%,#0c2e36 0%,#06161a 65%,#02080a 100%)!important;--btn-bg:linear-gradient(180deg,#103c47 0%,#071f26 55%,#031014 100%)!important;--btn-color:#00ffff!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #00ffff!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #008b8b,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(180,255,255,0.45)!important;--btn-shadow-active:0 0 0 #008b8b,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
+        js.append("        'html[data-skin=\"tron\"] .btn:active{background:linear-gradient(180deg,#071f26 0%,#031014 100%)!important;color:#ffffff!important;box-shadow:0 0 12px rgba(0,255,255,0.5),inset 0 2px 5px rgba(0,0,0,0.9)!important;}' +\n");
+        js.append("        'html[data-skin=\"neongreen\"]{--ui-bg:radial-gradient(circle at 50% 12%,#11330d 0%,#081906 65%,#030a02 100%)!important;--btn-bg:linear-gradient(180deg,#184212 0%,#0b2108 55%,#051104 100%)!important;--btn-color:#39ff14!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #39ff14!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #1b8a08,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(190,255,180,0.45)!important;--btn-shadow-active:0 0 0 #1b8a08,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
+        js.append("        'html[data-skin=\"neongreen\"] .btn:active{background:linear-gradient(180deg,#0b2108 0%,#051104 100%)!important;color:#ffffff!important;box-shadow:0 0 12px rgba(57,255,20,0.5),inset 0 2px 5px rgba(0,0,0,0.9)!important;}' +\n");
+        js.append("        'html[data-skin=\"amber\"]{--ui-bg:radial-gradient(circle at 50% 12%,#332406 0%,#1a1203 65%,#0a0701 100%)!important;--btn-bg:linear-gradient(180deg,#422f08 0%,#211704 55%,#120c02 100%)!important;--btn-color:#ffb000!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #ffb000!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #996900,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,230,170,0.45)!important;--btn-shadow-active:0 0 0 #996900,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
+        js.append("        'html[data-skin=\"amber\"] .btn:active{background:linear-gradient(180deg,#211704 0%,#120c02 100%)!important;color:#ffffff!important;box-shadow:0 0 12px rgba(255,176,0,0.5),inset 0 2px 5px rgba(0,0,0,0.9)!important;}' +\n");
+
+        /* SCANNER LITE MODE (Larger 420px Display & Big Controls) */
+        js.append("        'html[data-scanner-lite=\"true\"] .scanner-display{height:420px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(4),' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(5),' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(6),' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(8),' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(11),' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > *:nth-child(12),' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] #btn-brt-toggle{display:none!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls{grid-auto-rows:44px!important;gap:8px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls > .btn{font-size:13.5px!important;font-weight:900!important;letter-spacing:0.6px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .essential-controls .scroll-btn{font-size:10.5px!important;font-weight:900!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .numpad{grid-auto-rows:40px!important;gap:7px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .numpad .btn{font-size:16.5px!important;font-weight:900!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .top-right-group{height:38px!important;}' +\n");
+        js.append("        'html[data-scanner-lite=\"true\"] .top-right-group .btn{font-size:12px!important;}' +\n");
+
+        /* MOBILE LANDSCAPE SPLIT-SCREEN COCKPIT LAYOUT */
+        js.append("        '@media (orientation: landscape) and (max-height: 540px){' +\n");
+        js.append("          '#device-wrapper{width:96vw!important;max-width:96vw!important;height:94dvh!important;max-height:94dvh!important;}' +\n");
+        js.append("          '#custom-scanner-ui{display:grid!important;grid-template-columns:1.08fr 1fr!important;grid-template-rows:auto 1fr!important;gap:6px 12px!important;padding:10px 14px!important;height:100%!important;overflow:hidden!important;}' +\n");
+        js.append("          '.scanner-display, html[data-scanner-lite=\"true\"] .scanner-display{grid-column:1!important;grid-row:1 / span 2!important;height:100%!important;min-height:0!important;}' +\n");
+        js.append("          '#custom-imgd{max-height:92px!important;}' +\n");
+        js.append("          '.top-controls-container{grid-column:2!important;grid-row:1!important;height:34px!important;}' +\n");
+        js.append("          '.buttons-box{grid-column:2!important;grid-row:2!important;height:100%!important;min-height:0!important;padding:6px!important;gap:5px!important;justify-content:space-between!important;}' +\n");
+        js.append("          '.top-btn-wrapper{gap:4px!important;}' +\n");
+        js.append("          '.top-right-group, html[data-scanner-lite=\"true\"] .top-right-group{height:26px!important;}' +\n");
+        js.append("          '.scanner-nav-6{height:25px!important;gap:3px!important;}' +\n");
+        js.append("          '.keypads-wrapper{flex-direction:row!important;gap:6px!important;flex:1!important;min-height:0!important;}' +\n");
+        js.append("          '.keypad-half{flex:1!important;height:100%!important;}' +\n");
+        js.append("          '.essential-controls, .numpad, html[data-scanner-lite=\"true\"] .essential-controls, html[data-scanner-lite=\"true\"] .numpad{height:100%!important;grid-auto-rows:1fr!important;gap:4px!important;}' +\n");
+        js.append("          '.essential-controls > .btn, html[data-scanner-lite=\"true\"] .essential-controls > .btn{font-size:9px!important;letter-spacing:0!important;}' +\n");
+        js.append("          '.essential-controls .scroll-btn, .essential-controls .split-btn-group .btn, html[data-scanner-lite=\"true\"] .essential-controls .scroll-btn{font-size:7.5px!important;}' +\n");
+        js.append("          '.numpad .btn, html[data-scanner-lite=\"true\"] .numpad .btn{font-size:13px!important;}' +\n");
+        js.append("        '}' +\n");
+
+        js.append("        '.buttons-box{border:1px solid rgba(0,0,0,0.48)!important;border-radius:12px!important;padding:8px!important;gap:8px!important;background:rgba(0,0,0,0.22)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,0.75),0 1px 0 rgba(255,255,255,0.09)!important;}' +\n");
+        js.append("        '.scanner-display .log-container{display:flex!important;flex-direction:column!important;overflow:hidden!important;}' +\n");
+        js.append("        '#mini-log-table{display:flex!important;flex-direction:column!important;height:100%!important;width:100%!important;}' +\n");
+        js.append("        '#mini-log-table thead{flex:0 0 auto!important;display:table!important;width:100%!important;table-layout:fixed!important;background:transparent!important;}' +\n");
+        js.append("        '#mini-log-table thead th{background:transparent!important;position:static!important;}' +\n");
+        js.append("        '#mini-log-table tbody{flex:1 1 auto!important;display:block!important;overflow-y:auto!important;overflow-x:hidden!important;width:100%!important;scrollbar-width:thin!important;scrollbar-color:var(--log-header-text) transparent!important;}' +\n");
+        js.append("        '#mini-log-table tbody::-webkit-scrollbar{width:4px!important;}' +\n");
+        js.append("        '#mini-log-table tbody::-webkit-scrollbar-thumb{background:var(--log-header-text)!important;border-radius:2px!important;}' +\n");
+        js.append("        '#mini-log-table tbody tr{display:table!important;width:100%!important;table-layout:fixed!important;cursor:pointer;}' +\n");
+        js.append("        '#mini-log-table tbody tr:active{background:rgba(255,255,255,0.15)!important;}' +\n");
+        js.append("        '.freq-hit-badge, #mini-log-table .freq-hit-badge, #mini-log-table td:nth-child(5) .freq-hit-badge, #mini-log-table td:nth-child(5) span[class*=\"hit\"], #mini-log-table td:nth-child(5) span[class*=\"badge\"]{display:none!important;visibility:hidden!important;width:0!important;height:0!important;padding:0!important;margin:0!important;border:none!important;overflow:hidden!important;font-size:0!important;}' +\n");
+        js.append("        '#mini-log-table th,#mini-log-table td{padding:3.5px 2px 3.5px 4px!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(1),#mini-log-table td:nth-child(1){width:19%!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(2),#mini-log-table td:nth-child(2){width:20%!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(3),#mini-log-table td:nth-child(3){width:13%!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(4),#mini-log-table td:nth-child(4){width:14%!important;}' +\n");
+        js.append("        '#mini-log-table th:nth-child(5),#mini-log-table td:nth-child(5){width:34%!important;}' +\n");
+
+        /* Larger Illuminated Square Top Hardware Buttons: WAKE, VOICE, LAMP, and PWR (Glow when ON, Unlit Matte when OFF) */
+        js.append("        '.top-leds-left{gap:7px!important;align-items:center!important;}' +\n");
+        js.append("        '.top-leds-right{gap:7px!important;align-items:center!important;}' +\n");
+        js.append("        '#btn-wake-toggle, #btn-voice-toggle, #btn-lamp-toggle, #btn-hardware-exit{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:2px!important;background:transparent!important;border:none!important;padding:0!important;margin:0 1px!important;cursor:pointer!important;touch-action:manipulation!important;box-shadow:none!important;}' +\n");
+        js.append("        '#btn-wake-toggle > *:not(.sq-hw-cap):not(.sq-hw-lbl), #btn-voice-toggle > *:not(.sq-hw-cap):not(.sq-hw-lbl){display:none!important;}' +\n");
+        js.append("        '.sq-hw-cap{width:28px!important;height:22px!important;border-radius:5px!important;background:linear-gradient(180deg,#262a30 0%,#14171a 100%)!important;border:1.5px solid #090a0c!important;box-shadow:0 2px 4px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.12)!important;display:flex!important;align-items:center!important;justify-content:center!important;transition:all 0.2s ease!important;position:relative!important;}' +\n");
+        js.append("        '.sq-hw-cap::after{content:\"\"!important;width:12px!important;height:4px!important;border-radius:2px!important;background:#334155!important;box-shadow:inset 0 1px 2px rgba(0,0,0,0.8)!important;transition:all 0.2s ease!important;}' +\n");
+        js.append("        '.sq-hw-lbl{font-family:\"JetBrains Mono\",monospace!important;font-size:7px!important;font-weight:900!important;letter-spacing:0.4px!important;color:var(--toggle-color,#94a3b8)!important;line-height:1!important;}' +\n");
+        js.append("        '#btn-wake-toggle:active .sq-hw-cap, #btn-voice-toggle:active .sq-hw-cap, #btn-lamp-toggle:active .sq-hw-cap, #btn-hardware-exit:active .sq-hw-cap{transform:translateY(1.5px)!important;}' +\n");
+        /* WAKE Glowing Emerald Green when ON */
+        js.append("        '#btn-wake-toggle.active .sq-hw-cap{background:linear-gradient(180deg,#10b981 0%,#047857 100%)!important;border-color:#6ee7b7!important;box-shadow:0 0 10px rgba(16,185,129,0.85),0 0 18px rgba(16,185,129,0.45),inset 0 1px 2px rgba(255,255,255,0.65)!important;}' +\n");
+        js.append("        '#btn-wake-toggle.active .sq-hw-cap::after{background:#ecfdf5!important;box-shadow:0 0 6px #ffffff!important;}' +\n");
+        /* VOICE Glowing Cyan-Blue when ON */
+        js.append("        '#btn-voice-toggle.active .sq-hw-cap{background:linear-gradient(180deg,#0ea5e9 0%,#0369a1 100%)!important;border-color:#7dd3fc!important;box-shadow:0 0 10px rgba(14,165,233,0.85),0 0 18px rgba(14,165,233,0.45),inset 0 1px 2px rgba(255,255,255,0.65)!important;}' +\n");
+        js.append("        '#btn-voice-toggle.active .sq-hw-cap::after{background:#f0f9ff!important;box-shadow:0 0 6px #ffffff!important;}' +\n");
+        /* LAMP Glowing Warm Amber Gold when ON */
+        js.append("        '#btn-lamp-toggle.active .sq-hw-cap{background:linear-gradient(180deg,#facc15 0%,#ca8a04 100%)!important;border-color:#fef08a!important;box-shadow:0 0 11px rgba(250,204,21,0.9),0 0 20px rgba(250,204,21,0.5),inset 0 1px 2px rgba(255,255,255,0.75)!important;}' +\n");
+        js.append("        '#btn-lamp-toggle.active .sq-hw-cap::after{background:#fefce8!important;box-shadow:0 0 7px #ffffff!important;}' +\n");
+        /* PWR Glowing Crimson Red when Scanner Display/Audio is ON, Unlit Dark when OFF */
+        js.append("        '#btn-hardware-exit.active .sq-hw-cap{background:linear-gradient(180deg,#ef4444 0%,#b91c1c 100%)!important;border-color:#fca5a5!important;box-shadow:0 0 10px rgba(239,68,68,0.85),0 0 18px rgba(239,68,68,0.45),inset 0 1px 2px rgba(255,255,255,0.6)!important;}' +\n");
+        js.append("        '#btn-hardware-exit.active .sq-hw-cap::after{background:#fef2f2!important;box-shadow:0 0 6px #ffffff!important;}' +\n");
+
+        /* Signal Meter in #brand-logo-slot */
+        js.append("        '#sig-meter-host{display:inline-flex;align-items:center;justify-content:center;width:124px;height:23px;background:rgba(6,8,12,0.82);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 5px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.1);position:relative;overflow:hidden;pointer-events:auto;cursor:pointer;}' +\n");
+        js.append("        '.sm-mode{display:none;width:100%;height:100%;align-items:center;justify-content:space-between;}' +\n");
+        js.append("        '.sm-mode.active{display:flex;}' +\n");
+        js.append("        '.sm-lbl{font-family:\"JetBrains Mono\",monospace;font-size:7.5px;font-weight:900;color:#38bdf8;letter-spacing:0.3px;margin-right:3px;flex-shrink:0;}' +\n");
+        js.append("        '.sm-bar-wrap{display:flex;align-items:center;gap:2px;flex:1;height:11px;justify-content:space-between;}' +\n");
+        js.append("        '.sm-seg{flex:1;height:100%;border-radius:1px;background:#1e293b;transition:background 0.04s linear;}' +\n");
+        js.append("        '.sm-vu-wrap{width:100%;height:100%;background:linear-gradient(90deg,#fef9c3 0%,#fde047 68%,#f59e0b 100%);border-radius:3px;position:relative;overflow:hidden;border:1px solid #000;box-shadow:inset 0 1px 3px rgba(0,0,0,0.45);}' +\n");
+        js.append("        '.sm-vu-wrap::after{content:\"\";position:absolute;left:4px;right:4px;bottom:1px;height:5px;border-bottom:1.5px solid #0f172a;background:repeating-linear-gradient(90deg,#0f172a 0px,#0f172a 2px,transparent 2px,transparent 8px);opacity:0.9;z-index:1;pointer-events:none;}' +\n");
+        js.append("        '.sm-vu-scale{position:absolute;top:1px;left:4px;right:4px;font-family:monospace;font-size:6.5px;font-weight:900;color:#0f172a;display:flex;justify-content:space-between;line-height:1;z-index:2;pointer-events:none;}' +\n");
+        js.append("        '#sm-vu-needle{position:absolute;top:0;bottom:0;left:3px;width:2.5px;background:#dc2626;border-radius:1px;box-shadow:0 0 4px rgba(220,38,38,0.9),1px 0 2px rgba(0,0,0,0.6);transition:left 0.14s ease-out;z-index:3;}' +\n");
+        js.append("        '.sm-spec-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:2px;width:100%;height:15px;padding-top:1px;}' +\n");
+        js.append("        '.sm-spec-bar{flex:1;height:2px;background:linear-gradient(180deg,#ef4444 0%,#facc15 35%,#22c55e 100%);border-radius:1px 1px 0 0;transition:height 0.04s linear;}' +\n");
+        js.append("        '#sm-scope-canvas{width:100%;height:16px;display:block;}' +\n");
+        js.append("        '.sm-dig-wrap{display:flex;align-items:center;justify-content:space-between;width:100%;gap:4px;font-family:\"JetBrains Mono\",monospace;}' +\n");
+        js.append("        '#sm-dig-txt{font-size:8.5px;font-weight:900;color:#39ff14;min-width:46px;text-align:left;letter-spacing:-0.3px;}' +\n");
+        js.append("        '.sm-peak-track{flex:1;height:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;overflow:hidden;position:relative;}' +\n");
+        js.append("        '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.14s ease-out;}' +\n");
+
+        js.append("        '#display-clock-hud{position:absolute!important;top:6px!important;left:10px!important;right:auto!important;z-index:3!important;}' +\n");
+        js.append("        '#scanner-bat-hud{position:absolute!important;top:6px!important;right:9px!important;left:auto!important;z-index:3!important;font-family:\"JetBrains Mono\",monospace!important;font-size:10px!important;font-weight:700!important;letter-spacing:0.8px!important;color:var(--log-text)!important;opacity:0.88;pointer-events:none;display:inline-flex!important;align-items:center!important;line-height:1;transition:opacity 0.3s ease,color 0.3s ease;}' +\n");
+        js.append("        '#scanner-bat-hud *{font-family:inherit!important;font-size:inherit!important;font-weight:inherit!important;letter-spacing:inherit!important;line-height:inherit!important;}' +\n");
+        js.append("        '#scanner-bat-txt{color:inherit!important;}' +\n");
+        js.append("        '#scanner-bat-hud.disconnected{opacity:0!important;}' +\n");
+        js.append("        '.bat-icon-box{display:inline-block;width:13px;height:8px;border:1.4px solid currentColor;border-radius:2px;padding:1px;position:relative;vertical-align:middle;margin-right:4px;box-sizing:border-box;flex-shrink:0;}' +\n");
+        js.append("        '.bat-icon-box::after{content:\"\";position:absolute;right:-3px;top:1px;width:1.5px;height:3px;background:currentColor;border-radius:0 1px 1px 0;}' +\n");
+        js.append("        '.bat-icon-fill{display:block;height:100%;background:currentColor;width:80%;transition:width 0.3s ease;}';\n");
+        js.append("      document.head.appendChild(st);\n");
+        js.append("    } else if (existingSt && document.head.lastElementChild !== existingSt) {\n");
+        js.append("      document.head.appendChild(existingSt);\n");
+        js.append("    }\n");
+
+        /* Non-Stalling History Log.txt Polling + Instant Zero-Lag Squelch Detector */
+        js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
+        js.append("      window.__reliableLogAndSquelchHooked = true;\n");
+        js.append("      window.updateMiniLog = function() {\n");
+        js.append("        if (typeof isDisplayOn !== 'undefined' && !isDisplayOn && (typeof isConnected === 'undefined' || !isConnected)) return;\n");
+        js.append("        fetch('History Log.txt?_t=' + Date.now(), { cache: 'no-store', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } })\n");
+        js.append("          .then(function(r) { if (!r.ok) throw 0; return r.text(); })\n");
+        js.append("          .then(function(text) {\n");
+        js.append("            isLogFetchInFlight = false;\n");
+        js.append("            if (!text || text.toLowerCase().indexOf('<html') !== -1) return;\n");
+        js.append("            var dataLines = text.trim().split('\\n').filter(function(l) { return l.indexOf(',') !== -1 && l.toLowerCase().indexOf('frequency') === -1; });\n");
+        js.append("            if (!dataLines.length) return;\n");
+        js.append("            var counts = {}, hits = new Array(dataLines.length);\n");
+        js.append("            for (var k = 0; k < dataLines.length; k++) {\n");
+        js.append("              var fc = dataLines[k].indexOf(','), fk = fc > 0 ? dataLines[k].slice(0, fc).trim() : '';\n");
+        js.append("              if (fk && fk !== '---') { counts[fk] = (counts[fk] || 0) + 1; hits[k] = counts[fk]; } else hits[k] = 1;\n");
+        js.append("            }\n");
+        js.append("            var html = '', added = 0, newRow = false;\n");
+        js.append("            for (var i = dataLines.length - 1; i >= 0 && added < 25; i--) {\n");
+        js.append("              var p = dataLines[i].split(',');\n");
+        js.append("              if (p.length >= 5) {\n");
+        js.append("                var fq = (p[0] || '---').trim(), tn = (p[1] || '').trim(), nm = (p[p.length - 1] || '---').trim(), du = '---', tr = '---';\n");
+        js.append("                for (var j = 0; j < p.length; j++) {\n");
+        js.append("                  var v = p[j].trim();\n");
+        js.append("                  if (/^\\d{2}:\\d{2}:\\d{2}$/.test(v)) du = v;\n");
+        js.append("                  else if (/^\\d{1,4}[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,4}\\s+\\d{1,2}:\\d{2}(:\\d{2})?$/.test(v)) tr = v;\n");
+        js.append("                }\n");
+        js.append("                var tp = tr.split(' '), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
+        js.append("                if (du.indexOf('00:') === 0) du = du.slice(3);\n");
+        js.append("                var id = tm + '|' + fq + '|' + nm;\n");
+        js.append("                var isN = !knownLogLines.has(id);\n");
+        js.append("                if (isN) { knownLogLines.add(id); newRow = true; }\n");
+        js.append("                if (knownLogLines.size > 150) knownLogLines.delete(knownLogLines.values().next().value);\n");
+        js.append("                var h = hits[i] || 1;\n");
+        js.append("                if (fq !== '---' && fq !== '') {\n");
+        js.append("                  html += '<tr class=\"' + ((isN && !isFirstLoad) ? 'new-log-row' : '') + '\"><td title=\"' + tm + '\">' + tm + '</td><td title=\"' + fq + '\">' + fq + '</td><td title=\"' + tn + '\">' + tn + '</td><td title=\"' + du + '\">' + du + '</td><td title=\"(Hit #' + h + ') ' + nm + '\" data-hit-count=\"' + h + '\"><span class=\"freq-hit-badge\" style=\"display:none\">×' + h + '</span>' + nm + '</td></tr>';\n");
+        js.append("                  added++;\n");
+        js.append("                }\n");
+        js.append("              }\n");
+        js.append("            }\n");
+        js.append("            if (html && isDisplayOn) {\n");
+        js.append("              var tb = document.getElementById('mini-log-data');\n");
+        js.append("              if (tb && tb.innerHTML !== html) tb.innerHTML = html;\n");
+        js.append("            }\n");
+        js.append("            if (newRow && !isFirstLoad) {\n");
+        js.append("              if (typeof triggerLogLight === 'function') triggerLogLight();\n");
+        js.append("            }\n");
+        js.append("            isFirstLoad = false;\n");
+        js.append("          })\n");
+        js.append("          .catch(function() { isLogFetchInFlight = false; });\n");
+        js.append("      };\n");
+
+        /* Instant Squelch & Auto-Duck Trigger: Mutes Radio on first audio sample > squelch (0ms delay!) */
+        js.append("      window.detectAudio = function() {};\n");
+        js.append("      window.__lastLogPollMs = 0;\n");
+        js.append("      window.__bgTickSquelchAndLog = function() {\n");
+        js.append("        var nowWall = Date.now();\n");
+        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1600)) {\n");
+        js.append("          window.__lastLogPollMs = nowWall;\n");
+        js.append("          window.updateMiniLog();\n");
+        js.append("        }\n");
+        js.append("        var led = document.getElementById('rx-led');\n");
+        js.append("        var activeAn = window.analyser || (typeof analyser !== 'undefined' ? analyser : null);\n");
+        js.append("        if (typeof isConnected === 'undefined' || !isConnected || !activeAn || typeof dataArray === 'undefined' || !dataArray) {\n");
+        js.append("          if (led && led.classList.contains('active')) led.classList.remove('active');\n");
+        js.append("          if (window.__lastNotifiedRxState) {\n");
+        js.append("            window.__lastNotifiedRxState = false;\n");
+        js.append("            if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
+        js.append("              window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
+        js.append("            }\n");
+        js.append("          }\n");
+        js.append("          return;\n");
+        js.append("        }\n");
+        js.append("        if (window.audioContext && window.audioContext.state === 'suspended') {\n");
+        js.append("          try { window.audioContext.resume(); } catch(e) {}\n");
+        js.append("        }\n");
+        js.append("        activeAn.getByteTimeDomainData(dataArray);\n");
+        js.append("        var maxDev = 0;\n");
+        js.append("        for (var i = 0; i < dataArray.length; i++) {\n");
+        js.append("          var d = Math.abs(dataArray[i] - 128);\n");
+        js.append("          if (d > maxDev) maxDev = d;\n");
+        js.append("        }\n");
+        js.append("        var now = performance.now();\n");
+        js.append("        if (maxDev > 2) {\n");
+        js.append("          var isKey = (now - lastScannerKeyTime) < 2200;\n");
+        js.append("          // INSTANT DUCKING: Mute radio immediately on first carrier audio packet (unless user just pressed a keypad button)\n");
+        js.append("          if (!isKey && !window.__lastNotifiedRxState) {\n");
+        js.append("            window.__lastNotifiedRxState = true;\n");
+        js.append("            if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
+        js.append("              window.AndroidApp.notifyScannerRx(true, Boolean(window.__voiceReadoutEnabled));\n");
+        js.append("            }\n");
+        js.append("          }\n");
+        js.append("          if (rxSignalStartTime === 0) rxSignalStartTime = now;\n");
+        js.append("          rxLastActiveTime = now;\n");
+        js.append("          var reqMs = isKey ? 240 : 25;\n");
+        js.append("          if ((now - rxSignalStartTime) >= reqMs) {\n");
+        js.append("            if (led && !led.classList.contains('active')) led.classList.add('active');\n");
+        js.append("            if (!window.__lastNotifiedRxState) {\n");
+        js.append("              window.__lastNotifiedRxState = true;\n");
+        js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
+        js.append("                window.AndroidApp.notifyScannerRx(true, Boolean(window.__voiceReadoutEnabled));\n");
+        js.append("              }\n");
+        js.append("            }\n");
+        js.append("          }\n");
+        js.append("          clearTimeout(rxHoldTimeout);\n");
+        js.append("          rxHoldTimeout = setTimeout(function() {\n");
+        js.append("            if (led) led.classList.remove('active');\n");
+        js.append("            if (window.__lastNotifiedRxState) {\n");
+        js.append("              window.__lastNotifiedRxState = false;\n");
+        js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
+        js.append("                window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
+        js.append("              }\n");
+        js.append("            }\n");
+        js.append("            if (isDisplayOn || isConnected) {\n");
+        js.append("              clearTimeout(rxPostLogTimeout);\n");
+        js.append("              rxPostLogTimeout = setTimeout(window.updateMiniLog, 350);\n");
+        js.append("            }\n");
+        js.append("          }, 380);\n");
+        js.append("        } else if (rxSignalStartTime !== 0 && (now - rxLastActiveTime) > 140) {\n");
+        js.append("          rxSignalStartTime = 0;\n");
+        js.append("        }\n");
+        js.append("      };\n");
+        js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
+        js.append("    }\n");
+
+        /* Signal Meter in #brand-logo-slot */
+        js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
+        js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
+        js.append("      window.renderCustomBrand = function() {};\n");
+        js.append("      var mShortNames = ['BAR', 'VU', 'EQ', 'SCP', 'dB'];\n");
+        js.append("      var mHudNames   = ['S-BAR', 'VU DIAL', 'SPECTRUM', 'SCOPE', 'PEAK dB'];\n");
+        js.append("      window.__sigMeterStyle = parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0;\n");
+        js.append("      var segHtml = ''; for (var s=0; s<12; s++) segHtml += '<div class=\"sm-seg\"></div>';\n");
+        js.append("      var specHtml = ''; for (var sp=0; sp<10; sp++) specHtml += '<div class=\"sm-spec-bar\"></div>';\n");
+        js.append("      bSlot.innerHTML = '<div id=\"sig-meter-host\" title=\"Tap to cycle Signal Meter style\">' +\n");
+        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-0\"><span class=\"sm-lbl\">S</span><div class=\"sm-bar-wrap\" id=\"sm-led-bars\">' + segHtml + '</div></div>' +\n");
+        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-1\"><div class=\"sm-vu-wrap\"><div class=\"sm-vu-scale\"><span>S1</span><span>3</span><span>5</span><span>7</span><span>9</span><span style=\"color:#dc2626;\">+30</span></div><div id=\"sm-vu-needle\"></div></div></div>' +\n");
+        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-2\"><span class=\"sm-lbl\">EQ</span><div class=\"sm-spec-wrap\" id=\"sm-spec-bars\">' + specHtml + '</div></div>' +\n");
+        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-3\"><canvas id=\"sm-scope-canvas\" width=\"114\" height=\"16\"></canvas></div>' +\n");
+        js.append("        '<div class=\"sm-mode\" id=\"sm-mode-4\"><div class=\"sm-dig-wrap\"><span id=\"sm-dig-txt\">S0 -98dB</span><div class=\"sm-peak-track\"><div id=\"sm-peak-fill\"></div></div></div></div>' +\n");
+        js.append("      '</div>';\n");
+
+        js.append("      window.__applySigMeterStyle = function(idx, showHudMsg) {\n");
+        js.append("        window.__sigMeterStyle = ((idx % 5) + 5) % 5;\n");
+        js.append("        localStorage.setItem('proscan_sig_meter_style_v1', String(window.__sigMeterStyle));\n");
+        js.append("        for (var m = 0; m < 5; m++) {\n");
+        js.append("          var el = document.getElementById('sm-mode-' + m);\n");
+        js.append("          if (el) el.classList.toggle('active', m === window.__sigMeterStyle);\n");
+        js.append("        }\n");
+        js.append("        var mBtn = document.getElementById('btn-brand-open');\n");
+        js.append("        if (mBtn) mBtn.innerText = 'MTR: ' + mShortNames[window.__sigMeterStyle];\n");
+        js.append("        if (showHudMsg && typeof showDisplayHud === 'function') {\n");
+        js.append("          showDisplayHud('SIGNAL METER: ' + mHudNames[window.__sigMeterStyle], 1300);\n");
+        js.append("        }\n");
+        js.append("      };\n");
+
+        js.append("      window.handleBrandCornerTap = function() {\n");
+        js.append("        if (navigator.vibrate) navigator.vibrate(20);\n");
+        js.append("        var bp = document.getElementById('proscan-brand-panel');\n");
+        js.append("        if (bp) bp.hidden = true;\n");
+        js.append("        window.__applySigMeterStyle((window.__sigMeterStyle || 0) + 1, true);\n");
+        js.append("      };\n");
+
+        js.append("      var mHost = document.getElementById('sig-meter-host');\n");
+        js.append("      if (mHost) mHost.addEventListener('click', window.handleBrandCornerTap);\n");
+        js.append("      window.__applySigMeterStyle(window.__sigMeterStyle, false);\n");
+        js.append("      var smCarrierLvl = 0, smAudioLvl = 0, smAdaptiveMax = 14.0, smPhase = 0;\n");
         js.append("      function renderLiveScannerSignalMeter() {\n");
         js.append("        requestAnimationFrame(renderLiveScannerSignalMeter);\n");
         js.append("        if (window.__bgTickSquelchAndLog) window.__bgTickSquelchAndLog();\n");
