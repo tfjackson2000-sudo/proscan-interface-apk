@@ -386,7 +386,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-    private WebView webView;
+private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
     private SensorManager sensorManager;
@@ -1221,7 +1221,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 200);
     }
-    private void injectEnhancements() {
+private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -1362,21 +1362,85 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Keep Native HTML updateMiniLog (So All Log FX Work 100%!) + Unblock In-Flight Flag + 4-Stage Post-RX Burst Poll */
+        /* Proven Original History Log.txt Poller + Line-Index Deduplication + Full 3.5s Log FX Animation Preservation */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
+        js.append("      window.__knownRowAddedTime = {};\n");
+        js.append("      window.__lastRenderedIdsSig = '';\n");
+        js.append("      window.__logFetchInFlightSince = 0;\n");
+
+        js.append("      window.updateMiniLog = function() {\n");
+        js.append("        if (typeof isDisplayOn !== 'undefined' && !isDisplayOn && (typeof isConnected === 'undefined' || !isConnected)) return;\n");
+        js.append("        var nowStart = Date.now();\n");
+        js.append("        if (window.__logFetchInFlightSince > 0 && (nowStart - window.__logFetchInFlightSince < 2200)) return;\n");
+        js.append("        window.__logFetchInFlightSince = nowStart;\n");
+        js.append("        fetch('History Log.txt?_t=' + nowStart, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } })\n");
+        js.append("          .then(function(r) { if (!r.ok) throw 0; return r.text(); })\n");
+        js.append("          .then(function(text) {\n");
+        js.append("            window.__logFetchInFlightSince = 0;\n");
+        js.append("            isLogFetchInFlight = false;\n");
+        js.append("            if (!text || text.toLowerCase().indexOf('<html') !== -1) return;\n");
+        js.append("            var dataLines = text.replace(/\\r/g, '').trim().split('\\n').filter(function(l) { return (l.indexOf(',') !== -1 || l.indexOf('\\t') !== -1) && l.toLowerCase().indexOf('frequency') === -1; });\n");
+        js.append("            if (!dataLines.length) return;\n");
+        js.append("            var counts = {}, hits = new Array(dataLines.length);\n");
+        js.append("            for (var k = 0; k < dataLines.length; k++) {\n");
+        js.append("              var sep = dataLines[k].indexOf('\\t') !== -1 ? '\\t' : ',';\n");
+        js.append("              var fc = dataLines[k].indexOf(sep), fk = fc > 0 ? dataLines[k].slice(0, fc).trim() : '';\n");
+        js.append("              if (fk && fk !== '---') { counts[fk] = (counts[fk] || 0) + 1; hits[k] = counts[fk]; } else hits[k] = 1;\n");
+        js.append("            }\n");
+        js.append("            var html = '', idsSig = '', added = 0, newRow = false, nowMs = Date.now();\n");
+        js.append("            for (var i = dataLines.length - 1; i >= 0 && added < 25; i--) {\n");
+        js.append("              var sep2 = dataLines[i].indexOf('\\t') !== -1 ? '\\t' : ',';\n");
+        js.append("              var p = dataLines[i].split(sep2);\n");
+        js.append("              if (p.length >= 3) {\n");
+        js.append("                var fq = (p[0] || '---').trim(), tn = (p[1] || '').trim(), nm = (p[p.length - 1] || '---').trim(), du = '---', tr = '---';\n");
+        js.append("                for (var j = 1; j < p.length; j++) {\n");
+        js.append("                  var v = p[j].trim();\n");
+        js.append("                  if (/^\\d{2}:\\d{2}:\\d{2}$/.test(v) && du === '---') du = v;\n");
+        js.append("                  else if (/\\d{1,4}[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,4}\\s+\\d{1,2}:\\d{2}(:\\d{2})?/.test(v)) tr = v;\n");
+        js.append("                }\n");
+        js.append("                var tp = tr.trim().split(/\\s+/), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
+        js.append("                if (du.indexOf('00:') === 0) du = du.slice(3);\n");
+        js.append("                var id = i + '|' + tm + '|' + fq + '|' + nm;\n");
+        js.append("                var isN = !knownLogLines.has(id);\n");
+        js.append("                if (isN) {\n");
+        js.append("                  knownLogLines.add(id);\n");
+        js.append("                  window.__knownRowAddedTime[id] = isFirstLoad ? 0 : nowMs;\n");
+        js.append("                  newRow = true;\n");
+        js.append("                }\n");
+        js.append("                var rowAge = nowMs - (window.__knownRowAddedTime[id] || 0);\n");
+        js.append("                var showFxClass = (!isFirstLoad && rowAge < 3500);\n");
+        js.append("                var h = hits[i] || 1;\n");
+        js.append("                if (fq !== '---' && fq !== '') {\n");
+        js.append("                  idsSig += id + ';';\n");
+        js.append("                  html += '<tr class=\"' + (showFxClass ? 'new-log-row' : '') + '\"><td title=\"' + tm + '\">' + tm + '</td><td title=\"' + fq + '\">' + fq + '</td><td title=\"' + tn + '\">' + tn + '</td><td title=\"' + du + '\">' + du + '</td><td title=\"(Hit #' + h + ') ' + nm + '\" data-hit-count=\"' + h + '\"><span class=\"freq-hit-badge\" style=\"display:none\">×' + h + '</span>' + nm + '</td></tr>';\n");
+        js.append("                  added++;\n");
+        js.append("                }\n");
+        js.append("              }\n");
+        js.append("            }\n");
+        js.append("            if (html && isDisplayOn) {\n");
+        js.append("              var tb = document.getElementById('mini-log-data');\n");
+        js.append("              if (tb && (newRow || window.__lastRenderedIdsSig !== idsSig || !tb.children.length)) {\n");
+        js.append("                window.__lastRenderedIdsSig = idsSig;\n");
+        js.append("                tb.innerHTML = html;\n");
+        js.append("              }\n");
+        js.append("            }\n");
+        js.append("            if (newRow && !isFirstLoad) {\n");
+        js.append("              if (typeof triggerLogLight === 'function') triggerLogLight();\n");
+        js.append("            }\n");
+        js.append("            isFirstLoad = false;\n");
+        js.append("          })\n");
+        js.append("          .catch(function() { window.__logFetchInFlightSince = 0; isLogFetchInFlight = false; });\n");
+        js.append("      };\n");
+
         js.append("      window.detectAudio = function() {};\n");
         js.append("      window.__lastLogPollMs = 0;\n");
         js.append("      window.__lastActiveRxPushMs = 0;\n");
-        js.append("      window.__forcePollMiniLog = function() {\n");
-        js.append("        try { isLogFetchInFlight = false; } catch(e) {}\n");
-        js.append("        if (typeof window.updateMiniLog === 'function') window.updateMiniLog();\n");
-        js.append("      };\n");
         js.append("      window.__bgTickSquelchAndLog = function() {\n");
         js.append("        var nowWall = Date.now();\n");
-        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1100)) {\n");
+        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1300)) {\n");
         js.append("          window.__lastLogPollMs = nowWall;\n");
-        js.append("          window.__forcePollMiniLog();\n");
+        js.append("          window.updateMiniLog();\n");
         js.append("        }\n");
         js.append("        var led = document.getElementById('rx-led');\n");
         js.append("        var activeAn = window.analyser || (typeof analyser !== 'undefined' ? analyser : null);\n");
@@ -1426,10 +1490,9 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("                window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
         js.append("              }\n");
         js.append("              if (isDisplayOn || isConnected) {\n");
-        js.append("                setTimeout(window.__forcePollMiniLog, 150);\n");
-        js.append("                setTimeout(window.__forcePollMiniLog, 600);\n");
-        js.append("                setTimeout(window.__forcePollMiniLog, 1200);\n");
-        js.append("                setTimeout(window.__forcePollMiniLog, 2200);\n");
+        js.append("                setTimeout(window.updateMiniLog, 250);\n");
+        js.append("                setTimeout(window.updateMiniLog, 850);\n");
+        js.append("                setTimeout(window.updateMiniLog, 1650);\n");
         js.append("              }\n");
         js.append("            }\n");
         js.append("          }\n");
@@ -1437,7 +1500,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      };\n");
         js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
         js.append("    }\n");
-        /* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
+/* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
         js.append("      window.renderCustomBrand = function() {};\n");
