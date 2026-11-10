@@ -869,17 +869,12 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    '#device-wrapper{width:95%!important;max-height:94dvh!important;animation:smoothFadeIn 0.25s ease-out forwards;transition:opacity 0.2s ease!important;}' +\n");
         js.append("    '#device-wrapper.fading-out{opacity:0!important;}' +\n");
         js.append("    '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;position:relative!important;}' +\n");
-        /* Matching Tilt-Reactive Dynamic Lighting on All 24 Skins */
         js.append("    '#custom-scanner-ui::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:25!important;border-radius:inherit!important;background:radial-gradient(circle at calc(50% + var(--tilt-x,0px) * 4.5) calc(24% + var(--tilt-y,0px) * 4.5),rgba(255,255,255,0.16) 0%,rgba(255,255,255,0.05) 34%,transparent 65%)!important;}' +\n");
-        /* Matching Gloss Glass Reflection ONLY when Gloss Display Texture is active */
         js.append("    'html[data-disp-tex=\"glass\"] .scanner-display::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:18!important;opacity:1!important;background:linear-gradient(var(--gloss-deg,125deg),rgba(255,255,255,0.22) 0%,rgba(255,255,255,0.08) calc(var(--gloss-pos,38%) - 4%),rgba(255,255,255,0.26) var(--gloss-pos,38%),rgba(255,255,255,0.03) calc(var(--gloss-pos,38%) + 2%),transparent calc(var(--gloss-pos,38%) + 12%),transparent 100%),radial-gradient(circle at center,transparent 60%,rgba(0,0,0,0.32) 100%)!important;}' +\n");
-        /* Matching 3D Bevelled Skins (whiteline, tron, neongreen, amber) */
         js.append("    'html[data-skin=\"whiteline\"]{--ui-bg:radial-gradient(circle at 50% 12%,#26292e 0%,#121417 65%,#070809 100%)!important;--btn-bg:linear-gradient(180deg,#2e3238 0%,#181a1e 55%,#0d0e11 100%)!important;--btn-color:#ffffff!important;--btn-active-color:#38bdf8!important;--btn-border:1px solid rgba(255,255,255,0.75)!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #94a3b8,0 4px 6px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.45)!important;--btn-shadow-active:0 0 0 #94a3b8,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
         js.append("    'html[data-skin=\"tron\"]{--ui-bg:radial-gradient(circle at 50% 12%,#0c2e36 0%,#06161a 65%,#02080a 100%)!important;--btn-bg:linear-gradient(180deg,#103c47 0%,#071f26 55%,#031014 100%)!important;--btn-color:#00ffff!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #00ffff!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #008b8b,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(180,255,255,0.45)!important;--btn-shadow-active:0 0 0 #008b8b,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
         js.append("    'html[data-skin=\"neongreen\"]{--ui-bg:radial-gradient(circle at 50% 12%,#11330d 0%,#081906 65%,#030a02 100%)!important;--btn-bg:linear-gradient(180deg,#184212 0%,#0b2108 55%,#051104 100%)!important;--btn-color:#39ff14!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #39ff14!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #1b8a08,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(190,255,180,0.45)!important;--btn-shadow-active:0 0 0 #1b8a08,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
         js.append("    'html[data-skin=\"amber\"]{--ui-bg:radial-gradient(circle at 50% 12%,#332406 0%,#1a1203 65%,#0a0701 100%)!important;--btn-bg:linear-gradient(180deg,#422f08 0%,#211704 55%,#120c02 100%)!important;--btn-color:#ffb000!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #ffb000!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #996900,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,230,170,0.45)!important;--btn-shadow-active:0 0 0 #996900,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
-
-        /* Identical Symmetrical Top Controls Bar & Larger Square Glowing Buttons (WAKE, VOICE | RX, S-METER, LOG | LAMP, PWR) */
         js.append("    '.scanner-display{height:345px!important;position:relative!important;overflow:hidden!important;transition:height 0.22s ease!important;}' +\n");
         js.append("    '.top-controls-container{height:40px!important;display:grid!important;grid-template-columns:1fr auto 1fr!important;align-items:center!important;width:100%!important;}' +\n");
         js.append("    '.top-leds-left{justify-self:start!important;display:inline-flex!important;gap:8px!important;align-items:center!important;}' +\n");
@@ -903,6 +898,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    '}' +\n");
         js.append("    '#playlist-box{overflow-y:scroll!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior:contain!important;}' +\n");
         js.append("    '.rec-row{padding:4.5px 4px!important;font-size:10px!important;touch-action:pan-y!important;}' +\n");
+        js.append("    '.rec-transcript-sub{grid-column:1 / -1!important;font-size:9px!important;opacity:0.86!important;padding:1px 4px 1px 10px!important;white-space:normal!important;word-break:break-word!important;line-height:1.22!important;font-style:italic!important;border-top:1px dotted rgba(148,163,184,0.22)!important;margin-top:2px!important;}' +\n");
         js.append("    '.rec-row.playing, .rec-row.playing.selected{background:var(--log-text)!important;color:var(--display-bg)!important;font-weight:800!important;border-radius:3px!important;outline:none!important;}' +\n");
         js.append("    '.rec-row.selected:not(.playing){outline:1px dashed var(--log-text,#38bdf8)!important;background:rgba(0,0,0,0.16)!important;color:var(--log-text)!important;font-weight:800!important;}' +\n");
         js.append("    '.radio-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;padding:8px 6px!important;width:100%!important;}' +\n");
@@ -1112,7 +1108,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("      });\n");
         js.append("    }\n");
 
-        /* WAKE Button Handler */
         js.append("    window.__playerWakeActive = ").append(wakePref).append(";\n");
         js.append("    var wPill = document.getElementById('btn-player-wake');\n");
         js.append("    wPill.addEventListener('click', function() {\n");
@@ -1124,7 +1119,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("      }\n");
         js.append("    });\n");
 
-        /* VOICE Button Handler (Announces Track/Station Names via TTS when ON) */
         js.append("    var vBtn = document.getElementById('btn-player-voice');\n");
         js.append("    vBtn.classList.toggle('active', Boolean(typeof isTts !== 'undefined' && isTts));\n");
         js.append("    vBtn.addEventListener('click', function() {\n");
@@ -1136,7 +1130,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("      }\n");
         js.append("    });\n");
 
-        /* LAMP Button Handler */
         js.append("    var lampBtn = document.getElementById('btn-player-lamp');\n");
         js.append("    window.__playerLampState = false;\n");
         js.append("    var lpTimer = null, lpLong = false;\n");
@@ -1162,7 +1155,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    lampBtn.addEventListener('pointerleave', function() { clearTimeout(lpTimer); lpTimer = null; });\n");
         js.append("    lampBtn.addEventListener('pointercancel', function() { clearTimeout(lpTimer); lpTimer = null; });\n");
 
-        /* PWR Button Handler */
         js.append("    var exBtn = document.getElementById('btn-player-exit');\n");
         js.append("    var exHoldTimer = null, exLongFired = false, lastPwrTapMs = 0;\n");
         js.append("    exBtn.addEventListener('pointerdown', function() {\n");
@@ -1808,11 +1800,25 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    }, skipAnim ? 0 : 150);\n");
         js.append("  };\n");
 
+        /* Ensure onDriveRecordingsLoaded Preserves the Transcript Field */
+        js.append("  var origOnDriveLoaded = window.onDriveRecordingsLoaded;\n");
+        js.append("  window.onDriveRecordingsLoaded = function(jsonStr) {\n");
+        js.append("    if (origOnDriveLoaded) origOnDriveLoaded(jsonStr);\n");
+        js.append("    try {\n");
+        js.append("      var rawArr = JSON.parse(jsonStr);\n");
+        js.append("      var trMap = {};\n");
+        js.append("      rawArr.forEach(function(it){ if (it.fileId && it.transcript) trMap[it.fileId] = it.transcript; });\n");
+        js.append("      allRecs.forEach(function(r){ if (r.fileId && trMap[r.fileId]) r.transcript = trMap[r.fileId]; });\n");
+        js.append("      window.renderPlaylist();\n");
+        js.append("    } catch(e) {}\n");
+        js.append("  };\n");
+
         js.append("  window.selectIndexOnly = function(idx) {\n");
         js.append("    if (idx < 0 || idx >= filteredRecs.length) return;\n");
         js.append("    curIdx = idx;\n");
         js.append("    var r = filteredRecs[idx];\n");
-        js.append("    document.getElementById('track-main-readout').innerText = 'READY: ' + r.name + ' • ' + r.freq;\n");
+        js.append("    var trSuffix = (r.transcript && r.transcript.length > 0) ? (' — \"' + r.transcript + '\"') : '';\n");
+        js.append("    document.getElementById('track-main-readout').innerText = 'READY: ' + r.name + ' • ' + r.freq + trSuffix;\n");
         js.append("    document.getElementById('cassette-lbl-left').innerText = r.name;\n");
         js.append("    document.getElementById('cassette-lbl-right').innerText = r.freq + ' (' + r.timeStr + ')';\n");
         js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
@@ -1875,7 +1881,8 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("        if (fMode === 1 && window.__seenOnPrevVisit && window.__seenOnPrevVisit[key]) return false;\n");
         js.append("        if (fMode === 2 && window.__playedDriveIds && window.__playedDriveIds[key]) return false;\n");
         js.append("      }\n");
-        js.append("      if (q && !r.name.toLowerCase().includes(q) && !r.freq.toLowerCase().includes(q) && !r.timeStr.toLowerCase().includes(q)) return false;\n");
+        js.append("      var trLower = (r.transcript || '').toLowerCase();\n");
+        js.append("      if (q && !r.name.toLowerCase().includes(q) && !r.freq.toLowerCase().includes(q) && !r.timeStr.toLowerCase().includes(q) && !trLower.includes(q)) return false;\n");
         js.append("      return true;\n");
         js.append("    });\n");
         js.append("    document.getElementById('rec-count-hud').innerText = filteredRecs.length + ' RECS';\n");
@@ -1887,9 +1894,10 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    for (var i = 0; i < filteredRecs.length; i++) {\n");
         js.append("      var r = filteredRecs[i];\n");
         js.append("      var cls = ((r.fileId && r.fileId === window.__activePlayingFileId && isPlayingNow) ? 'playing ' : '') + (i === curIdx ? 'selected' : '');\n");
+        js.append("      var trHtml = (r.transcript && r.transcript.length > 0) ? ('<div class=\"rec-transcript-sub\">\"' + r.transcript + '\"</div>') : '';\n");
         js.append("      html += '<div class=\"rec-row ' + cls + '\" data-idx=\"' + i + '\">' +\n");
         js.append("        '<span>' + r.ukDate + '</span><span>' + r.timeStr + '</span><span>' + r.freq + '</span><span>' + r.dur + '</span>' +\n");
-        js.append("        '<span title=\"' + r.name + '\">' + r.name + '</span></div>';\n");
+        js.append("        '<span title=\"' + r.name + '\">' + r.name + '</span>' + trHtml + '</div>';\n");
         js.append("    }\n");
         js.append("    box.innerHTML = html; box.scrollTop = prevScroll;\n");
         js.append("    box.querySelectorAll('.rec-row').forEach(function(el) {\n");
@@ -1917,7 +1925,8 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    var id = r.fileId || r.fileName;\n");
         js.append("    window.__activePlayingRecordKey = id;\n");
         js.append("    var ro = document.getElementById('track-main-readout');\n");
-        js.append("    if (ro) ro.innerText = r.name + ' • ' + r.freq;\n");
+        js.append("    var trSuffix = (r.transcript && r.transcript.length > 0) ? (' — \"' + r.transcript + '\"') : '';\n");
+        js.append("    if (ro) ro.innerText = r.name + ' • ' + r.freq + trSuffix;\n");
         js.append("    var bCh = document.getElementById('badge-ch-name'), bFr = document.getElementById('badge-ch-freq');\n");
         js.append("    if (bCh) bCh.innerText = 'PLAYING: ' + r.name + ' (' + r.timeStr + ')';\n");
         js.append("    if (bFr) bFr.innerText = r.freq;\n");
@@ -2649,19 +2658,26 @@ public class PlayerActivity extends Activity implements SensorEventListener {
     }
 
     private static class RecItem implements Comparable<RecItem> {
-        String fileId, fileName, dateStr, timeStr, freq, dur, name, sortKey;
+        String fileId, fileName, dateStr, timeStr, freq, dur, name, transcript, sortKey;
         @Override
         public int compareTo(RecItem o) { return o.sortKey.compareTo(this.sortKey); }
     }
 
     private RecItem parseMp3Filename(String dateFolder, String fileName, String fileId) {
         String base = fileName.endsWith(".mp3") ? fileName.substring(0, fileName.length() - 4) : fileName;
+        String extractedTranscript = "";
+        int trSplit = base.indexOf(" __ ");
+        if (trSplit != -1) {
+            extractedTranscript = base.substring(trSplit + 4).trim();
+            base = base.substring(0, trSplit).trim();
+        }
         Pattern pat = Pattern.compile("^(.*?)\\s+-\\s+(\\d+\\.\\d+)\\s+-\\s+(\\d{2})-(\\d{2})-(\\d{2})(?:.*?TO\\s+(\\d{2})-(\\d{2})-(\\d{2}))?");
         Matcher m = pat.matcher(base);
         RecItem item = new RecItem();
         item.fileId = fileId;
         item.fileName = fileName;
         item.dateStr = dateFolder;
+        item.transcript = extractedTranscript;
         if (m.find()) {
             item.name = m.group(1).trim();
             item.freq = m.group(2).trim();
@@ -2737,6 +2753,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
                     o.put("freq", it.freq);
                     o.put("dur", it.dur);
                     o.put("name", it.name);
+                    o.put("transcript", it.transcript != null ? it.transcript : "");
                     arr.put(o);
                 }
                 final String escapedJson = JSONObject.quote(arr.toString());
