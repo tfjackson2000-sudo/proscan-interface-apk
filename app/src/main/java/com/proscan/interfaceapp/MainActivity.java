@@ -1246,6 +1246,17 @@ private void injectEnhancements() {
         js.append("        '#custom-scanner-ui::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:25!important;border-radius:inherit!important;background:radial-gradient(circle at calc(50% + var(--tilt-x,0px) * 4.5) calc(24% + var(--tilt-y,0px) * 4.5),rgba(255,255,255,0.16) 0%,rgba(255,255,255,0.05) 34%,transparent 65%)!important;}' +\n");
         js.append("        '.scanner-display{height:325px!important;position:relative!important;overflow:hidden!important;transition:height 0.22s ease!important;}' +\n");
         js.append("        'html[data-disp-tex=\"glass\"] .scanner-display::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:18!important;opacity:1!important;background:linear-gradient(var(--gloss-deg,125deg),rgba(255,255,255,0.22) 0%,rgba(255,255,255,0.08) calc(var(--gloss-pos,38%) - 4%),rgba(255,255,255,0.26) var(--gloss-pos,38%),rgba(255,255,255,0.03) calc(var(--gloss-pos,38%) + 2%),transparent calc(var(--gloss-pos,38%) + 12%),transparent 100%),radial-gradient(circle at center,transparent 60%,rgba(0,0,0,0.32) 100%)!important;}' +\n");
+        /* Log FX Keyframes Built Directly Into Mobile CSS Too! */
+        js.append("        '@keyframes logFxBlock{0%{background:var(--log-text);color:var(--display-bg);font-weight:900}55%{background:var(--log-text);color:var(--display-bg);font-weight:900}100%{background:transparent;color:var(--log-text)}}' +\n");
+        js.append("        '@keyframes logFxScroll{0%{opacity:0;transform:translateY(-100%)}100%{opacity:1;transform:translateY(0)}}' +\n");
+        js.append("        '@keyframes logFxFlap{0%{transform:perspective(300px) rotateX(-88deg);opacity:0}60%{transform:perspective(300px) rotateX(14deg);opacity:1}100%{transform:perspective(300px) rotateX(0deg);opacity:1}}' +\n");
+        js.append("        '@keyframes logFxType{0%{clip-path:inset(0 100% 0 0)}100%{clip-path:inset(0 0 0 0)}}' +\n");
+        js.append("        '@keyframes logFxGlow{0%{text-shadow:0 0 12px var(--log-text),0 0 22px var(--log-text);background:rgba(255,255,255,.18)}100%{text-shadow:none;background:transparent}}' +\n");
+        js.append("        'html[data-log-fx=\"fx-block\"] #mini-log-table tbody tr.new-log-row td{animation:logFxBlock 1.6s ease-out forwards!important;}' +\n");
+        js.append("        'html[data-log-fx=\"fx-scroll\"] #mini-log-table tbody tr.new-log-row{animation:logFxScroll 0.42s cubic-bezier(0.22,1,0.36,1) forwards!important;}' +\n");
+        js.append("        'html[data-log-fx=\"fx-flap\"] #mini-log-table tbody tr.new-log-row{transform-origin:top center;animation:logFxFlap 0.55s ease-out forwards!important;}' +\n");
+        js.append("        'html[data-log-fx=\"fx-type\"] #mini-log-table tbody tr.new-log-row{animation:logFxType 0.65s steps(24,end) forwards!important;}' +\n");
+        js.append("        'html[data-log-fx=\"fx-glow\"] #mini-log-table tbody tr.new-log-row td{animation:logFxGlow 1.9s ease-out forwards!important;}' +\n");
         js.append("        '.top-controls-container{height:40px!important;display:grid!important;grid-template-columns:1fr auto 1fr!important;align-items:center!important;}' +\n");
         js.append("        '.top-leds-left{justify-self:start!important;gap:8px!important;align-items:center!important;}' +\n");
         js.append("        '#brand-logo-slot{justify-self:center!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:8px!important;}' +\n");
@@ -1362,44 +1373,37 @@ private void injectEnhancements() {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Proven Original History Log.txt Poller + Line-Index Deduplication + Full 3.5s Log FX Animation Preservation */
+        /* Clean, Exact Original History Log.txt Fetcher (NO ?_t= Query String So ProScan Never Rejects It!) + 3.5s Log FX Window */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
         js.append("      window.__knownRowAddedTime = {};\n");
         js.append("      window.__lastRenderedIdsSig = '';\n");
-        js.append("      window.__logFetchInFlightSince = 0;\n");
 
         js.append("      window.updateMiniLog = function() {\n");
         js.append("        if (typeof isDisplayOn !== 'undefined' && !isDisplayOn && (typeof isConnected === 'undefined' || !isConnected)) return;\n");
-        js.append("        var nowStart = Date.now();\n");
-        js.append("        if (window.__logFetchInFlightSince > 0 && (nowStart - window.__logFetchInFlightSince < 2200)) return;\n");
-        js.append("        window.__logFetchInFlightSince = nowStart;\n");
-        js.append("        fetch('History Log.txt?_t=' + nowStart, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } })\n");
+        js.append("        fetch('History Log.txt', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } })\n");
         js.append("          .then(function(r) { if (!r.ok) throw 0; return r.text(); })\n");
         js.append("          .then(function(text) {\n");
-        js.append("            window.__logFetchInFlightSince = 0;\n");
         js.append("            isLogFetchInFlight = false;\n");
         js.append("            if (!text || text.toLowerCase().indexOf('<html') !== -1) return;\n");
-        js.append("            var dataLines = text.replace(/\\r/g, '').trim().split('\\n').filter(function(l) { return (l.indexOf(',') !== -1 || l.indexOf('\\t') !== -1) && l.toLowerCase().indexOf('frequency') === -1; });\n");
+        js.append("            var dataLines = text.trim().split('\\n').filter(function(l) { return l.indexOf(',') !== -1 && l.toLowerCase().indexOf('frequency') === -1; });\n");
         js.append("            if (!dataLines.length) return;\n");
         js.append("            var counts = {}, hits = new Array(dataLines.length);\n");
         js.append("            for (var k = 0; k < dataLines.length; k++) {\n");
-        js.append("              var sep = dataLines[k].indexOf('\\t') !== -1 ? '\\t' : ',';\n");
-        js.append("              var fc = dataLines[k].indexOf(sep), fk = fc > 0 ? dataLines[k].slice(0, fc).trim() : '';\n");
+        js.append("              var fc = dataLines[k].indexOf(','), fk = fc > 0 ? dataLines[k].slice(0, fc).trim() : '';\n");
         js.append("              if (fk && fk !== '---') { counts[fk] = (counts[fk] || 0) + 1; hits[k] = counts[fk]; } else hits[k] = 1;\n");
         js.append("            }\n");
         js.append("            var html = '', idsSig = '', added = 0, newRow = false, nowMs = Date.now();\n");
         js.append("            for (var i = dataLines.length - 1; i >= 0 && added < 25; i--) {\n");
-        js.append("              var sep2 = dataLines[i].indexOf('\\t') !== -1 ? '\\t' : ',';\n");
-        js.append("              var p = dataLines[i].split(sep2);\n");
-        js.append("              if (p.length >= 3) {\n");
+        js.append("              var p = dataLines[i].split(',');\n");
+        js.append("              if (p.length >= 5) {\n");
         js.append("                var fq = (p[0] || '---').trim(), tn = (p[1] || '').trim(), nm = (p[p.length - 1] || '---').trim(), du = '---', tr = '---';\n");
-        js.append("                for (var j = 1; j < p.length; j++) {\n");
+        js.append("                for (var j = 0; j < p.length; j++) {\n");
         js.append("                  var v = p[j].trim();\n");
-        js.append("                  if (/^\\d{2}:\\d{2}:\\d{2}$/.test(v) && du === '---') du = v;\n");
-        js.append("                  else if (/\\d{1,4}[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,4}\\s+\\d{1,2}:\\d{2}(:\\d{2})?/.test(v)) tr = v;\n");
+        js.append("                  if (/^\\d{2}:\\d{2}:\\d{2}$/.test(v)) du = v;\n");
+        js.append("                  else if (/^\\d{1,4}[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,4}\\s+\\d{1,2}:\\d{2}(:\\d{2})?$/.test(v)) tr = v;\n");
         js.append("                }\n");
-        js.append("                var tp = tr.trim().split(/\\s+/), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
+        js.append("                var tp = tr.split(' '), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
         js.append("                if (du.indexOf('00:') === 0) du = du.slice(3);\n");
         js.append("                var id = i + '|' + tm + '|' + fq + '|' + nm;\n");
         js.append("                var isN = !knownLogLines.has(id);\n");
@@ -1430,7 +1434,7 @@ private void injectEnhancements() {
         js.append("            }\n");
         js.append("            isFirstLoad = false;\n");
         js.append("          })\n");
-        js.append("          .catch(function() { window.__logFetchInFlightSince = 0; isLogFetchInFlight = false; });\n");
+        js.append("          .catch(function() { isLogFetchInFlight = false; });\n");
         js.append("      };\n");
 
         js.append("      window.detectAudio = function() {};\n");
@@ -1438,7 +1442,7 @@ private void injectEnhancements() {
         js.append("      window.__lastActiveRxPushMs = 0;\n");
         js.append("      window.__bgTickSquelchAndLog = function() {\n");
         js.append("        var nowWall = Date.now();\n");
-        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1300)) {\n");
+        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1400)) {\n");
         js.append("          window.__lastLogPollMs = nowWall;\n");
         js.append("          window.updateMiniLog();\n");
         js.append("        }\n");
@@ -1490,9 +1494,8 @@ private void injectEnhancements() {
         js.append("                window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
         js.append("              }\n");
         js.append("              if (isDisplayOn || isConnected) {\n");
-        js.append("                setTimeout(window.updateMiniLog, 250);\n");
-        js.append("                setTimeout(window.updateMiniLog, 850);\n");
-        js.append("                setTimeout(window.updateMiniLog, 1650);\n");
+        js.append("                setTimeout(window.updateMiniLog, 300);\n");
+        js.append("                setTimeout(window.updateMiniLog, 950);\n");
         js.append("              }\n");
         js.append("            }\n");
         js.append("          }\n");
