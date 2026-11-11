@@ -44,6 +44,7 @@ import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -56,6 +57,8 @@ import android.widget.Toast;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -386,7 +389,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-private WebView webView;
+
+    private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
     private SensorManager sensorManager;
@@ -1183,6 +1187,87 @@ private WebView webView;
         System.exit(0);
     }
 
+    /**
+     * Fetches History Log.txt directly via Java HttpURLConnection without any query string
+     * so ProScan's server never rejects it, while completely bypassing Android WebView's cache.
+     */
+    private WebResourceResponse fetchUncachedHistoryLogResponse(String requestUrlStr) {
+        HttpURLConnection conn = null;
+        try {
+            URL reqUrl = new URL(requestUrlStr);
+            String cleanBase = reqUrl.getProtocol() + "://" + reqUrl.getAuthority() + "/History%20Log.txt";
+            conn = (HttpURLConnection) new URL(cleanBase).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setUseCaches(false);
+            conn.setConnectTimeout(3500);
+            conn.setReadTimeout(4500);
+            conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
+            conn.setRequestProperty("Pragma", "no-cache");
+            conn.setRequestProperty("Connection", "close");
+            String cookie = CookieManager.getInstance().getCookie(cleanBase);
+            if (cookie != null && !cookie.isEmpty()) {
+                conn.setRequestProperty("Cookie", cookie);
+            }
+
+            int code = conn.getResponseCode();
+            if (code >= 200 && code < 300) {
+                InputStream is = conn.getInputStream();
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = is.read(buf)) != -1) {
+                    bos.write(buf, 0, n);
+                }
+                is.close();
+                byte[] fullBytes = bos.toByteArray();
+
+                // If History Log.txt has grown very large over weeks, only keep the last 120KB
+                // so mobile JS parses the latest transmissions instantaneously.
+                byte[] payload = fullBytes;
+                int maxTailBytes = 120 * 1024;
+                if (fullBytes.length > maxTailBytes) {
+                    int start = fullBytes.length - maxTailBytes;
+                    while (start < fullBytes.length && fullBytes[start] != (byte) '\n') {
+                        start++;
+                    }
+                    if (start < fullBytes.length) start++;
+                    int len = fullBytes.length - start;
+                    payload = new byte[len];
+                    System.arraycopy(fullBytes, start, payload, 0, len);
+                }
+
+                Map<String, String> respHeaders = new HashMap<>();
+                respHeaders.put("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+                respHeaders.put("Pragma", "no-cache");
+                respHeaders.put("Expires", "0");
+                respHeaders.put("Access-Control-Allow-Origin", "*");
+
+                if (Build.VERSION.SDK_INT >= 21) {
+                    return new WebResourceResponse(
+                            "text/plain",
+                            "UTF-8",
+                            200,
+                            "OK",
+                            respHeaders,
+                            new ByteArrayInputStream(payload)
+                    );
+                } else {
+                    return new WebResourceResponse(
+                            "text/plain",
+                            "UTF-8",
+                            new ByteArrayInputStream(payload)
+                    );
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (conn != null) {
+                try { conn.disconnect(); } catch (Exception ignored) {}
+            }
+        }
+        return null;
+    }
+
     private void setupWebView() {
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
@@ -1205,23 +1290,30 @@ private WebView webView;
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return false; }
 
             @Override
-            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                super.onPageStarted(view, url, favicon);
-                injectEnhancements();
-                mainHandler.postDelayed(() -> injectEnhancements(), 400);
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                if (Build.VERSION.SDK_INT >= 21 && request != null && request.getUrl() != null) {
+                    String u = request.getUrl().toString();
+                    if (u.contains("History%20Log.txt") || u.contains("History Log.txt")) {
+                        WebResourceResponse resp = fetchUncachedHistoryLogResponse(u);
+                        if (resp != null) return resp;
+                    }
+                }
+                return super.shouldInterceptRequest(view, request);
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 injectEnhancements();
+                mainHandler.postDelayed(() -> injectEnhancements(), 350);
             }
         });
 
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 200);
     }
-private void injectEnhancements() {
+
+    private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -1246,7 +1338,6 @@ private void injectEnhancements() {
         js.append("        '#custom-scanner-ui::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:25!important;border-radius:inherit!important;background:radial-gradient(circle at calc(50% + var(--tilt-x,0px) * 4.5) calc(24% + var(--tilt-y,0px) * 4.5),rgba(255,255,255,0.16) 0%,rgba(255,255,255,0.05) 34%,transparent 65%)!important;}' +\n");
         js.append("        '.scanner-display{height:325px!important;position:relative!important;overflow:hidden!important;transition:height 0.22s ease!important;}' +\n");
         js.append("        'html[data-disp-tex=\"glass\"] .scanner-display::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:18!important;opacity:1!important;background:linear-gradient(var(--gloss-deg,125deg),rgba(255,255,255,0.22) 0%,rgba(255,255,255,0.08) calc(var(--gloss-pos,38%) - 4%),rgba(255,255,255,0.26) var(--gloss-pos,38%),rgba(255,255,255,0.03) calc(var(--gloss-pos,38%) + 2%),transparent calc(var(--gloss-pos,38%) + 12%),transparent 100%),radial-gradient(circle at center,transparent 60%,rgba(0,0,0,0.32) 100%)!important;}' +\n");
-        /* Log FX Keyframes Built Directly Into Mobile CSS Too! */
         js.append("        '@keyframes logFxBlock{0%{background:var(--log-text);color:var(--display-bg);font-weight:900}55%{background:var(--log-text);color:var(--display-bg);font-weight:900}100%{background:transparent;color:var(--log-text)}}' +\n");
         js.append("        '@keyframes logFxScroll{0%{opacity:0;transform:translateY(-100%)}100%{opacity:1;transform:translateY(0)}}' +\n");
         js.append("        '@keyframes logFxFlap{0%{transform:perspective(300px) rotateX(-88deg);opacity:0}60%{transform:perspective(300px) rotateX(14deg);opacity:1}100%{transform:perspective(300px) rotateX(0deg);opacity:1}}' +\n");
@@ -1373,20 +1464,33 @@ private void injectEnhancements() {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Clean, Exact Original History Log.txt Fetcher (NO ?_t= Query String So ProScan Never Rejects It!) + 3.5s Log FX Window */
-        js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
+        /* Wait until the page's own <script> has initialized toggleDisplay before hooking updateMiniLog so the HTML script never overwrites our hook */
+        js.append("    if (typeof window.toggleDisplay === 'function' && (!window.__reliableLogAndSquelchHooked || window.updateMiniLog !== window.__customUpdateMiniLog)) {\n");
+        js.append("      var firstHook = !window.__reliableLogAndSquelchHooked;\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
-        js.append("      window.__knownRowAddedTime = {};\n");
-        js.append("      window.__lastRenderedIdsSig = '';\n");
+        js.append("      window.__knownRowAddedTime = window.__knownRowAddedTime || {};\n");
+        js.append("      window.__lastRenderedIdsSig = window.__lastRenderedIdsSig || '';\n");
+        js.append("      window.__logFetchInFlight = false;\n");
+        js.append("      window.__logFetchStartMs = 0;\n");
+        js.append("      window.__logFetchPending = false;\n");
 
-        js.append("      window.updateMiniLog = function() {\n");
+        js.append("      window.__customUpdateMiniLog = function() {\n");
         js.append("        if (typeof isDisplayOn !== 'undefined' && !isDisplayOn && (typeof isConnected === 'undefined' || !isConnected)) return;\n");
-        js.append("        fetch('History Log.txt', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } })\n");
+        js.append("        var nowCheck = Date.now();\n");
+        js.append("        if (window.__logFetchInFlight && (nowCheck - window.__logFetchStartMs < 3500)) {\n");
+        js.append("          window.__logFetchPending = true;\n");
+        js.append("          return;\n");
+        js.append("        }\n");
+        js.append("        window.__logFetchInFlight = true;\n");
+        js.append("        window.__logFetchPending = false;\n");
+        js.append("        window.__logFetchStartMs = nowCheck;\n");
+        js.append("        fetch('History Log.txt?_t=' + nowCheck, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } })\n");
         js.append("          .then(function(r) { if (!r.ok) throw 0; return r.text(); })\n");
         js.append("          .then(function(text) {\n");
+        js.append("            window.__logFetchInFlight = false;\n");
         js.append("            isLogFetchInFlight = false;\n");
         js.append("            if (!text || text.toLowerCase().indexOf('<html') !== -1) return;\n");
-        js.append("            var dataLines = text.trim().split('\\n').filter(function(l) { return l.indexOf(',') !== -1 && l.toLowerCase().indexOf('frequency') === -1; });\n");
+        js.append("            var dataLines = text.trim().split(/\\r?\\n/).filter(function(l) { return l.indexOf(',') !== -1 && l.toLowerCase().indexOf('frequency') === -1; });\n");
         js.append("            if (!dataLines.length) return;\n");
         js.append("            var counts = {}, hits = new Array(dataLines.length);\n");
         js.append("            for (var k = 0; k < dataLines.length; k++) {\n");
@@ -1403,12 +1507,13 @@ private void injectEnhancements() {
         js.append("                  if (/^\\d{2}:\\d{2}:\\d{2}$/.test(v)) du = v;\n");
         js.append("                  else if (/^\\d{1,4}[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,4}\\s+\\d{1,2}:\\d{2}(:\\d{2})?$/.test(v)) tr = v;\n");
         js.append("                }\n");
-        js.append("                var tp = tr.split(' '), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
+        js.append("                var tp = tr.split(/\\s+/), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
         js.append("                if (du.indexOf('00:') === 0) du = du.slice(3);\n");
-        js.append("                var id = i + '|' + tm + '|' + fq + '|' + nm;\n");
+        js.append("                var id = tm + '|' + fq + '|' + nm;\n");
         js.append("                var isN = !knownLogLines.has(id);\n");
         js.append("                if (isN) {\n");
         js.append("                  knownLogLines.add(id);\n");
+        js.append("                  if (knownLogLines.size > 150) knownLogLines.delete(knownLogLines.values().next().value);\n");
         js.append("                  window.__knownRowAddedTime[id] = isFirstLoad ? 0 : nowMs;\n");
         js.append("                  newRow = true;\n");
         js.append("                }\n");
@@ -1416,7 +1521,7 @@ private void injectEnhancements() {
         js.append("                var showFxClass = (!isFirstLoad && rowAge < 3500);\n");
         js.append("                var h = hits[i] || 1;\n");
         js.append("                if (fq !== '---' && fq !== '') {\n");
-        js.append("                  idsSig += id + ';';\n");
+        js.append("                  idsSig += id + '|' + du + ';';\n");
         js.append("                  html += '<tr class=\"' + (showFxClass ? 'new-log-row' : '') + '\"><td title=\"' + tm + '\">' + tm + '</td><td title=\"' + fq + '\">' + fq + '</td><td title=\"' + tn + '\">' + tn + '</td><td title=\"' + du + '\">' + du + '</td><td title=\"(Hit #' + h + ') ' + nm + '\" data-hit-count=\"' + h + '\"><span class=\"freq-hit-badge\" style=\"display:none\">×' + h + '</span>' + nm + '</td></tr>';\n");
         js.append("                  added++;\n");
         js.append("                }\n");
@@ -1424,7 +1529,8 @@ private void injectEnhancements() {
         js.append("            }\n");
         js.append("            if (html && isDisplayOn) {\n");
         js.append("              var tb = document.getElementById('mini-log-data');\n");
-        js.append("              if (tb && (newRow || window.__lastRenderedIdsSig !== idsSig || !tb.children.length)) {\n");
+        js.append("              var hasPlaceholder = tb && tb.textContent && (tb.textContent.indexOf('Waiting') !== -1 || tb.textContent.indexOf('OFF LINE') !== -1);\n");
+        js.append("              if (tb && (newRow || hasPlaceholder || window.__lastRenderedIdsSig !== idsSig || !tb.children.length)) {\n");
         js.append("                window.__lastRenderedIdsSig = idsSig;\n");
         js.append("                tb.innerHTML = html;\n");
         js.append("              }\n");
@@ -1433,77 +1539,89 @@ private void injectEnhancements() {
         js.append("              if (typeof triggerLogLight === 'function') triggerLogLight();\n");
         js.append("            }\n");
         js.append("            isFirstLoad = false;\n");
+        js.append("            if (window.__logFetchPending) {\n");
+        js.append("              window.__logFetchPending = false;\n");
+        js.append("              setTimeout(window.updateMiniLog, 250);\n");
+        js.append("            }\n");
         js.append("          })\n");
-        js.append("          .catch(function() { isLogFetchInFlight = false; });\n");
+        js.append("          .catch(function() {\n");
+        js.append("            window.__logFetchInFlight = false;\n");
+        js.append("            isLogFetchInFlight = false;\n");
+        js.append("          });\n");
         js.append("      };\n");
+        js.append("      window.updateMiniLog = window.__customUpdateMiniLog;\n");
 
         js.append("      window.detectAudio = function() {};\n");
-        js.append("      window.__lastLogPollMs = 0;\n");
-        js.append("      window.__lastActiveRxPushMs = 0;\n");
-        js.append("      window.__bgTickSquelchAndLog = function() {\n");
-        js.append("        var nowWall = Date.now();\n");
-        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1400)) {\n");
-        js.append("          window.__lastLogPollMs = nowWall;\n");
-        js.append("          window.updateMiniLog();\n");
-        js.append("        }\n");
-        js.append("        var led = document.getElementById('rx-led');\n");
-        js.append("        var activeAn = window.analyser || (typeof analyser !== 'undefined' ? analyser : null);\n");
-        js.append("        if (typeof isConnected === 'undefined' || !isConnected || !activeAn || typeof dataArray === 'undefined' || !dataArray) {\n");
-        js.append("          if (led && led.classList.contains('active')) led.classList.remove('active');\n");
-        js.append("          if (window.__lastNotifiedRxState) {\n");
-        js.append("            window.__lastNotifiedRxState = false;\n");
-        js.append("            if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
-        js.append("              window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
-        js.append("            }\n");
+        js.append("      if (firstHook) {\n");
+        js.append("        window.__lastLogPollMs = 0;\n");
+        js.append("        window.__lastActiveRxPushMs = 0;\n");
+        js.append("        window.__bgTickSquelchAndLog = function() {\n");
+        js.append("          var nowWall = Date.now();\n");
+        js.append("          if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1500)) {\n");
+        js.append("            window.__lastLogPollMs = nowWall;\n");
+        js.append("            window.updateMiniLog();\n");
         js.append("          }\n");
-        js.append("          return;\n");
-        js.append("        }\n");
-        js.append("        if (window.audioContext && window.audioContext.state === 'suspended') {\n");
-        js.append("          try { window.audioContext.resume(); } catch(e) {}\n");
-        js.append("        }\n");
-        js.append("        activeAn.getByteTimeDomainData(dataArray);\n");
-        js.append("        var maxDev = 0;\n");
-        js.append("        for (var i = 0; i < dataArray.length; i++) {\n");
-        js.append("          var d = Math.abs(dataArray[i] - 128);\n");
-        js.append("          if (d > maxDev) maxDev = d;\n");
-        js.append("        }\n");
-        js.append("        var now = performance.now();\n");
-        js.append("        if (maxDev > 2) {\n");
-        js.append("          var isKey = (now - lastScannerKeyTime) < 2200;\n");
-        js.append("          if (rxSignalStartTime === 0) rxSignalStartTime = now;\n");
-        js.append("          rxLastActiveTime = now;\n");
-        js.append("          var reqMs = isKey ? 240 : 20;\n");
-        js.append("          if (!isKey || (now - rxSignalStartTime) >= reqMs) {\n");
-        js.append("            if (led && !led.classList.contains('active')) led.classList.add('active');\n");
-        js.append("            if (!window.__lastNotifiedRxState || (nowWall - window.__lastActiveRxPushMs > 350)) {\n");
-        js.append("              window.__lastNotifiedRxState = true;\n");
-        js.append("              window.__lastActiveRxPushMs = nowWall;\n");
-        js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
-        js.append("                window.AndroidApp.notifyScannerRx(true, Boolean(window.__voiceReadoutEnabled));\n");
-        js.append("              }\n");
-        js.append("            }\n");
-        js.append("          }\n");
-        js.append("        } else {\n");
-        js.append("          var silentMs = rxLastActiveTime > 0 ? (now - rxLastActiveTime) : 99999;\n");
-        js.append("          if (silentMs > 140) rxSignalStartTime = 0;\n");
-        js.append("          if (silentMs >= 360) {\n");
+        js.append("          var led = document.getElementById('rx-led');\n");
+        js.append("          var activeAn = window.analyser || (typeof analyser !== 'undefined' ? analyser : null);\n");
+        js.append("          if (typeof isConnected === 'undefined' || !isConnected || !activeAn || typeof dataArray === 'undefined' || !dataArray) {\n");
         js.append("            if (led && led.classList.contains('active')) led.classList.remove('active');\n");
         js.append("            if (window.__lastNotifiedRxState) {\n");
         js.append("              window.__lastNotifiedRxState = false;\n");
         js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
         js.append("                window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
         js.append("              }\n");
-        js.append("              if (isDisplayOn || isConnected) {\n");
-        js.append("                setTimeout(window.updateMiniLog, 300);\n");
-        js.append("                setTimeout(window.updateMiniLog, 950);\n");
+        js.append("            }\n");
+        js.append("            return;\n");
+        js.append("          }\n");
+        js.append("          if (window.audioContext && window.audioContext.state === 'suspended') {\n");
+        js.append("            try { window.audioContext.resume(); } catch(e) {}\n");
+        js.append("          }\n");
+        js.append("          activeAn.getByteTimeDomainData(dataArray);\n");
+        js.append("          var maxDev = 0;\n");
+        js.append("          for (var i = 0; i < dataArray.length; i++) {\n");
+        js.append("            var d = Math.abs(dataArray[i] - 128);\n");
+        js.append("            if (d > maxDev) maxDev = d;\n");
+        js.append("          }\n");
+        js.append("          var now = performance.now();\n");
+        js.append("          if (maxDev > 2) {\n");
+        js.append("            var isKey = (now - lastScannerKeyTime) < 2200;\n");
+        js.append("            if (rxSignalStartTime === 0) rxSignalStartTime = now;\n");
+        js.append("            rxLastActiveTime = now;\n");
+        js.append("            var reqMs = isKey ? 240 : 20;\n");
+        js.append("            if (!isKey || (now - rxSignalStartTime) >= reqMs) {\n");
+        js.append("              if (led && !led.classList.contains('active')) led.classList.add('active');\n");
+        js.append("              if (!window.__lastNotifiedRxState || (nowWall - window.__lastActiveRxPushMs > 350)) {\n");
+        js.append("                window.__lastNotifiedRxState = true;\n");
+        js.append("                window.__lastActiveRxPushMs = nowWall;\n");
+        js.append("                if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
+        js.append("                  window.AndroidApp.notifyScannerRx(true, Boolean(window.__voiceReadoutEnabled));\n");
+        js.append("                }\n");
+        js.append("              }\n");
+        js.append("            }\n");
+        js.append("          } else {\n");
+        js.append("            var silentMs = rxLastActiveTime > 0 ? (now - rxLastActiveTime) : 99999;\n");
+        js.append("            if (silentMs > 140) rxSignalStartTime = 0;\n");
+        js.append("            if (silentMs >= 360) {\n");
+        js.append("              if (led && led.classList.contains('active')) led.classList.remove('active');\n");
+        js.append("              if (window.__lastNotifiedRxState) {\n");
+        js.append("                window.__lastNotifiedRxState = false;\n");
+        js.append("                if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
+        js.append("                  window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
+        js.append("                }\n");
+        js.append("                if (isDisplayOn || isConnected) {\n");
+        js.append("                  setTimeout(window.updateMiniLog, 350);\n");
+        js.append("                  setTimeout(window.updateMiniLog, 1100);\n");
+        js.append("                  setTimeout(window.updateMiniLog, 2300);\n");
+        js.append("                }\n");
         js.append("              }\n");
         js.append("            }\n");
         js.append("          }\n");
-        js.append("        }\n");
-        js.append("      };\n");
-        js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
+        js.append("        };\n");
+        js.append("        setInterval(window.__bgTickSquelchAndLog, 45);\n");
+        js.append("      }\n");
         js.append("    }\n");
-/* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
+
+        /* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
         js.append("      window.renderCustomBrand = function() {};\n");
