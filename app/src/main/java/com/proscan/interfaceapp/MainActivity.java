@@ -404,7 +404,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private final ExecutorService logPollExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private volatile boolean nativeLogPollInFlight = false;
-    private long lastNativeLogPollMs = 0L;
+    private volatile long lastNativeLogPollMs = 0L;
 
     private boolean userWakeLockEnabled = false;
     private boolean scannerAudioConnected = false;
@@ -447,11 +447,12 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     /**
      * Native Uncached Java Log Poller:
-     * Fetches "History Log.txt" on a dedicated Java socket with setUseCaches(false) so WebView's
-     * Chromium cache and HTTP/1.1 socket limit over Tailscale NEVER block or cache scanner log updates!
+     * Uses "Connection: close" so Android never holds ProScan's Windows file/socket open,
+     * and passes totalDataLines so back-to-back hits on the same channel are always detected!
      */
     private void pollHistoryLogNatively() {
-        if (nativeLogPollInFlight) return;
+        long now = System.currentTimeMillis();
+        if (nativeLogPollInFlight || (now - lastNativeLogPollMs < 450L)) return;
         String base = activeServerUrl;
         if ((base == null || base.isEmpty()) && webView != null) {
             base = webView.getUrl();
@@ -459,18 +460,19 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (base == null || base.isEmpty()) return;
         final String cleanBase = base.replaceAll("/+$", "");
         nativeLogPollInFlight = true;
-        lastNativeLogPollMs = System.currentTimeMillis();
+        lastNativeLogPollMs = now;
         logPollExecutor.execute(() -> {
             HttpURLConnection conn = null;
             try {
-                URL url = new URL(cleanBase + "/History%20Log.txt");
+                URL url = new URL(cleanBase + "/History%20Log.txt?_t=" + System.currentTimeMillis());
                 conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(4500);
-                conn.setReadTimeout(4500);
+                conn.setConnectTimeout(4000);
+                conn.setReadTimeout(4000);
                 conn.setUseCaches(false);
                 conn.setRequestMethod("GET");
                 conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
                 conn.setRequestProperty("Pragma", "no-cache");
+                conn.setRequestProperty("Connection", "close");
                 String cookie = CookieManager.getInstance().getCookie(cleanBase);
                 if (cookie != null && !cookie.isEmpty()) {
                     conn.setRequestProperty("Cookie", cookie);
@@ -479,10 +481,12 @@ public class MainActivity extends Activity implements SensorEventListener {
                 if (code == 200) {
                     BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
                     List<String> tailLines = new LinkedList<>();
+                    int totalValidLines = 0;
                     String line;
                     while ((line = reader.readLine()) != null) {
-                        if (line.contains(",") || line.contains("\t")) {
-                            tailLines.add(line);
+                        if (line.contains(",") && !line.toLowerCase(Locale.ROOT).contains("frequency")) {
+                            totalValidLines++;
+                            tailLines.add(totalValidLines + "\t" + line);
                             if (tailLines.size() > 160) {
                                 tailLines.remove(0);
                             }
@@ -765,9 +769,6 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (webView != null) {
                 if ((injectorTickCount++ % 5) == 0) {
                     injectEnhancements();
-                }
-                if (System.currentTimeMillis() - lastNativeLogPollMs >= 1300L) {
-                    pollHistoryLogNatively();
                 }
                 if (scannerAudioConnected || PriorityRadioEngine.isRadioPlaying()) {
                     webView.evaluateJavascript(
@@ -1110,8 +1111,9 @@ public class MainActivity extends Activity implements SensorEventListener {
         public void notifyScannerRx(final boolean rxActive, final boolean voiceReadoutEnabled) {
             PriorityRadioEngine.onScannerRxStateChanged(prefs, rxActive, voiceReadoutEnabled);
             if (!rxActive) {
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 250);
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 900);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 350);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 1100);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 2200);
             }
         }
 
@@ -1124,7 +1126,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 long now = System.currentTimeMillis();
                 if (!cleanText.equalsIgnoreCase("Voice readout on")
                         && cleanText.equalsIgnoreCase(lastSpokenText)
-                        && (now - lastSpokenTimestamp < 30000)) {
+                        && (now - lastSpokenTimestamp < 6000)) {
                     if (tts == null || !tts.isSpeaking()) {
                         PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
                     }
@@ -1467,23 +1469,32 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Native Java Log Receiver + Uncached Fallback Poller + 3.5s Log FX Window */
+        /* Event-Driven Log Receiver + Line-Indexed Deduplication + Direct TTS Trigger */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
         js.append("      window.__knownRowAddedTime = {};\n");
         js.append("      window.__lastRenderedIdsSig = '';\n");
+        js.append("      if (typeof logInterval !== 'undefined') clearInterval(logInterval);\n");
 
         js.append("      window.__onNativeHistoryLogText = function(text) {\n");
         js.append("        isLogFetchInFlight = false;\n");
         js.append("        if (!text || text.toLowerCase().indexOf('<html') !== -1) return;\n");
-        js.append("        var dataLines = text.trim().split('\\n').filter(function(l) { return l.indexOf(',') !== -1 && l.toLowerCase().indexOf('frequency') === -1; });\n");
-        js.append("        if (!dataLines.length) return;\n");
-        js.append("        var counts = {}, hits = new Array(dataLines.length);\n");
-        js.append("        for (var k = 0; k < dataLines.length; k++) {\n");
+        js.append("        var rawLines = text.trim().split('\\n').filter(function(l) { return l.indexOf(',') !== -1 && l.toLowerCase().indexOf('frequency') === -1; });\n");
+        js.append("        if (!rawLines.length) return;\n");
+        js.append("        var counts = {}, hits = new Array(rawLines.length), lineNums = new Array(rawLines.length), dataLines = new Array(rawLines.length);\n");
+        js.append("        for (var k = 0; k < rawLines.length; k++) {\n");
+        js.append("          var rawL = rawLines[k], tabIdx = rawL.indexOf('\\t');\n");
+        js.append("          if (tabIdx > 0 && /^\\d+$/.test(rawL.slice(0, tabIdx))) {\n");
+        js.append("            lineNums[k] = rawL.slice(0, tabIdx);\n");
+        js.append("            dataLines[k] = rawL.slice(tabIdx + 1);\n");
+        js.append("          } else {\n");
+        js.append("            lineNums[k] = String(k + 1);\n");
+        js.append("            dataLines[k] = rawL;\n");
+        js.append("          }\n");
         js.append("          var fc = dataLines[k].indexOf(','), fk = fc > 0 ? dataLines[k].slice(0, fc).trim() : '';\n");
         js.append("          if (fk && fk !== '---') { counts[fk] = (counts[fk] || 0) + 1; hits[k] = counts[fk]; } else hits[k] = 1;\n");
         js.append("        }\n");
-        js.append("        var html = '', idsSig = '', added = 0, newRow = false, nowMs = Date.now();\n");
+        js.append("        var html = '', idsSig = '', added = 0, newRow = false, newestSpokenCandidate = '', newestLineKey = '', nowMs = Date.now();\n");
         js.append("        for (var i = dataLines.length - 1; i >= 0 && added < 25; i--) {\n");
         js.append("          var p = dataLines[i].split(',');\n");
         js.append("          if (p.length >= 5) {\n");
@@ -1495,18 +1506,22 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("            }\n");
         js.append("            var tp = tr.split(' '), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
         js.append("            if (du.indexOf('00:') === 0) du = du.slice(3);\n");
-        js.append("            var id = tm + '|' + fq + '|' + du + '|' + nm;\n");
-        js.append("            var isN = !knownLogLines.has(id);\n");
+        js.append("            var lineKey = lineNums[i] + '|' + tm + '|' + fq + '|' + nm;\n");
+        js.append("            var isN = !knownLogLines.has(lineKey);\n");
         js.append("            if (isN) {\n");
-        js.append("              knownLogLines.add(id);\n");
-        js.append("              window.__knownRowAddedTime[id] = isFirstLoad ? 0 : nowMs;\n");
+        js.append("              knownLogLines.add(lineKey);\n");
+        js.append("              window.__knownRowAddedTime[lineKey] = isFirstLoad ? 0 : nowMs;\n");
         js.append("              newRow = true;\n");
+        js.append("              if (!newestSpokenCandidate && fq !== '---' && fq !== '') {\n");
+        js.append("                newestSpokenCandidate = (nm && nm !== '---') ? nm : fq;\n");
+        js.append("                newestLineKey = lineKey;\n");
+        js.append("              }\n");
         js.append("            }\n");
-        js.append("            var rowAge = nowMs - (window.__knownRowAddedTime[id] || 0);\n");
+        js.append("            var rowAge = nowMs - (window.__knownRowAddedTime[lineKey] || 0);\n");
         js.append("            var showFxClass = (!isFirstLoad && rowAge < 3500);\n");
         js.append("            var h = hits[i] || 1;\n");
         js.append("            if (fq !== '---' && fq !== '') {\n");
-        js.append("              idsSig += id + ';';\n");
+        js.append("              idsSig += lineKey + '|' + du + ';';\n");
         js.append("              html += '<tr class=\"' + (showFxClass ? 'new-log-row' : '') + '\"><td title=\"' + tm + '\">' + tm + '</td><td title=\"' + fq + '\">' + fq + '</td><td title=\"' + tn + '\">' + tn + '</td><td title=\"' + du + '\">' + du + '</td><td title=\"(Hit #' + h + ') ' + nm + '\" data-hit-count=\"' + h + '\"><span class=\"freq-hit-badge\" style=\"display:none\">×' + h + '</span>' + nm + '</td></tr>';\n");
         js.append("              added++;\n");
         js.append("            }\n");
@@ -1521,6 +1536,10 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        }\n");
         js.append("        if (newRow && !isFirstLoad) {\n");
         js.append("          if (typeof triggerLogLight === 'function') triggerLogLight();\n");
+        js.append("          if (window.__voiceReadoutEnabled && newestSpokenCandidate && newestLineKey !== window.__lastSpokenRowKey) {\n");
+        js.append("            window.__lastSpokenRowKey = newestLineKey;\n");
+        js.append("            if (window.__speakTextAfterRx) window.__speakTextAfterRx(newestSpokenCandidate, false);\n");
+        js.append("          }\n");
         js.append("        }\n");
         js.append("        isFirstLoad = false;\n");
         js.append("      };\n");
@@ -1530,7 +1549,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        if (window.AndroidApp && window.AndroidApp.requestNativeLogPoll) {\n");
         js.append("          window.AndroidApp.requestNativeLogPoll();\n");
         js.append("        } else {\n");
-        js.append("          fetch('History Log.txt', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })\n");
+        js.append("          fetch('History Log.txt?_t=' + Date.now(), { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })\n");
         js.append("            .then(function(r) { return r.text(); })\n");
         js.append("            .then(window.__onNativeHistoryLogText)\n");
         js.append("            .catch(function() { isLogFetchInFlight = false; });\n");
@@ -1540,13 +1559,15 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      window.detectAudio = function() {};\n");
         js.append("      window.__lastLogPollMs = 0;\n");
         js.append("      window.__lastActiveRxPushMs = 0;\n");
+        js.append("      window.__rxStartLoggedOnce = false;\n");
         js.append("      window.__bgTickSquelchAndLog = function() {\n");
         js.append("        var nowWall = Date.now();\n");
-        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1300)) {\n");
+        js.append("        var led = document.getElementById('rx-led');\n");
+        js.append("        var isRxCurrentlyLit = Boolean(led && led.classList.contains('active'));\n");
+        js.append("        if ((isDisplayOn || isConnected) && !isRxCurrentlyLit && (nowWall - window.__lastLogPollMs >= 3200)) {\n");
         js.append("          window.__lastLogPollMs = nowWall;\n");
         js.append("          window.updateMiniLog();\n");
         js.append("        }\n");
-        js.append("        var led = document.getElementById('rx-led');\n");
         js.append("        var activeAn = window.analyser || (typeof analyser !== 'undefined' ? analyser : null);\n");
         js.append("        if (typeof isConnected === 'undefined' || !isConnected || !activeAn || typeof dataArray === 'undefined' || !dataArray) {\n");
         js.append("          if (led && led.classList.contains('active')) led.classList.remove('active');\n");
@@ -1570,11 +1591,16 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        var now = performance.now();\n");
         js.append("        if (maxDev > 2) {\n");
         js.append("          var isKey = (now - lastScannerKeyTime) < 2200;\n");
-        js.append("          if (rxSignalStartTime === 0) rxSignalStartTime = now;\n");
+        js.append("          if (rxSignalStartTime === 0) { rxSignalStartTime = now; window.__rxStartLoggedOnce = false; }\n");
         js.append("          rxLastActiveTime = now;\n");
         js.append("          var reqMs = isKey ? 240 : 20;\n");
         js.append("          if (!isKey || (now - rxSignalStartTime) >= reqMs) {\n");
         js.append("            if (led && !led.classList.contains('active')) led.classList.add('active');\n");
+        js.append("            if (!window.__rxStartLoggedOnce && (now - rxSignalStartTime) >= 650) {\n");
+        js.append("              window.__rxStartLoggedOnce = true;\n");
+        js.append("              window.__lastLogPollMs = nowWall;\n");
+        js.append("              window.updateMiniLog();\n");
+        js.append("            }\n");
         js.append("            if (!window.__lastNotifiedRxState || (nowWall - window.__lastActiveRxPushMs > 350)) {\n");
         js.append("              window.__lastNotifiedRxState = true;\n");
         js.append("              window.__lastActiveRxPushMs = nowWall;\n");
@@ -1590,12 +1616,9 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("            if (led && led.classList.contains('active')) led.classList.remove('active');\n");
         js.append("            if (window.__lastNotifiedRxState) {\n");
         js.append("              window.__lastNotifiedRxState = false;\n");
+        js.append("              window.__lastLogPollMs = nowWall;\n");
         js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
         js.append("                window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
-        js.append("              }\n");
-        js.append("              if (isDisplayOn || isConnected) {\n");
-        js.append("                setTimeout(window.updateMiniLog, 250);\n");
-        js.append("                setTimeout(window.updateMiniLog, 900);\n");
         js.append("              }\n");
         js.append("            }\n");
         js.append("          }\n");
@@ -2011,20 +2034,20 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
         js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = '';\n");
         js.append("      var rxWaitTimer = null;\n");
-        js.append("      function speakTextNow(txt, immediate) {\n");
+        js.append("      window.__speakTextAfterRx = function(txt, immediate) {\n");
         js.append("        if (!window.AndroidApp) return;\n");
         js.append("        if (immediate) { window.AndroidApp.speakChannel(txt); return; }\n");
         js.append("        clearTimeout(rxWaitTimer);\n");
         js.append("        var tries = 0;\n");
         js.append("        (function waitRxOff() {\n");
         js.append("          var rx = document.getElementById('rx-led');\n");
-        js.append("          if (rx && rx.classList.contains('active') && tries++ < 25) {\n");
+        js.append("          if (rx && rx.classList.contains('active') && tries++ < 30) {\n");
         js.append("            rxWaitTimer = setTimeout(waitRxOff, 220);\n");
         js.append("          } else {\n");
         js.append("            rxWaitTimer = setTimeout(function() { window.AndroidApp.speakChannel(txt); }, 150);\n");
         js.append("          }\n");
         js.append("        })();\n");
-        js.append("      }\n");
+        js.append("      };\n");
         js.append("      var vBtn = document.createElement('button');\n");
         js.append("      vBtn.id = 'btn-voice-toggle'; vBtn.type = 'button';\n");
         js.append("      vBtn.innerHTML = '<div class=\"sq-hw-cap\"></div><span class=\"sq-hw-lbl\">VOICE</span>';\n");
@@ -2043,36 +2066,11 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
         js.append("        window.__setVoiceReadoutState(!window.__voiceReadoutEnabled, true);\n");
         js.append("        if (window.__voiceReadoutEnabled) {\n");
-        js.append("          speakTextNow('Voice readout on', true);\n");
+        js.append("          window.__speakTextAfterRx('Voice readout on', true);\n");
         js.append("        }\n");
         js.append("      });\n");
         js.append("      ledsLeft.appendChild(vBtn);\n");
 
-        js.append("      var logBody = document.getElementById('mini-log-data');\n");
-        js.append("      if (logBody) {\n");
-        js.append("        var speechThrottleTimer = null;\n");
-        js.append("        function checkTopLogRowForSpeech() {\n");
-        js.append("          if (!window.__voiceReadoutEnabled) return;\n");
-        js.append("          var topRow = logBody.querySelector('tr.new-log-row') || logBody.querySelector('tr');\n");
-        js.append("          if (!topRow || topRow.children.length < 5) return;\n");
-        js.append("          var timeStr = (topRow.children[0].textContent || '').trim();\n");
-        js.append("          var freqStr = (topRow.children[1].textContent || '').trim();\n");
-        js.append("          var nameTd = topRow.children[4];\n");
-        js.append("          var rawTitle = nameTd.getAttribute('title') || nameTd.textContent || '';\n");
-        js.append("          var closeParen = rawTitle.indexOf(')');\n");
-        js.append("          var chName = (closeParen !== -1 ? rawTitle.slice(closeParen + 1) : rawTitle).replace(/^[×xX]\\s*\\d+\\s*/, '').trim();\n");
-        js.append("          if (!chName || chName === '---') chName = freqStr;\n");
-        js.append("          if (!chName) return;\n");
-        js.append("          if (speechThrottleTimer) return;\n");
-        js.append("          speechThrottleTimer = setTimeout(function() { speechThrottleTimer = null; }, 400);\n");
-        js.append("          var rowKey = timeStr + '|' + freqStr + '|' + chName;\n");
-        js.append("          if (rowKey !== window.__lastSpokenRowKey) {\n");
-        js.append("            window.__lastSpokenRowKey = rowKey;\n");
-        js.append("            speakTextNow(chName, false);\n");
-        js.append("          }\n");
-        js.append("        }\n");
-        js.append("        new MutationObserver(checkTopLogRowForSpeech).observe(logBody, { childList: true });\n");
-        js.append("      }\n");
         js.append("      setInterval(function() {\n");
         js.append("        try {\n");
         js.append("          var p = document.getElementById('audio_player'), rx = document.getElementById('rx-led');\n");
