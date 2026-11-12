@@ -388,7 +388,6 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-
     private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
@@ -516,6 +515,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
         });
     }
+
     private synchronized void acquireScannerWakeAndWifiLocks() {
         try {
             if (audioManager != null) {
@@ -1308,7 +1308,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 200);
     }
-    ```java
     private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
@@ -1654,7 +1653,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      };\n");
         js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
         js.append("    }\n");
-
         /* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
@@ -2568,4 +2566,3 @@ public class MainActivity extends Activity implements SensorEventListener {
     @Override
     public void onBackPressed() { showSetupDialog(false); }
 }
-```
