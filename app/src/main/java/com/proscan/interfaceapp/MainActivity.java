@@ -388,6 +388,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
+
     private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
@@ -447,8 +448,8 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     /**
      * Native Uncached Java Log Poller:
-     * Uses "Connection: close" so Android never holds ProScan's Windows file/socket open,
-     * and passes totalValidLines so back-to-back hits on the same channel are always detected!
+     * Requests "/History%20Log.txt" (without query strings that ProScan 404s) with
+     * "Connection: close" and setUseCaches(false), and numbers every line so back-to-back hits never get skipped!
      */
     private void pollHistoryLogNatively() {
         long now = System.currentTimeMillis();
@@ -464,7 +465,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         logPollExecutor.execute(() -> {
             HttpURLConnection conn = null;
             try {
-                URL url = new URL(cleanBase + "/History%20Log.txt?_t=" + System.currentTimeMillis());
+                URL url = new URL(cleanBase + "/History%20Log.txt");
                 conn = (HttpURLConnection) url.openConnection();
                 conn.setConnectTimeout(4000);
                 conn.setReadTimeout(4000);
@@ -515,7 +516,6 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
         });
     }
-
     private synchronized void acquireScannerWakeAndWifiLocks() {
         try {
             if (audioManager != null) {
@@ -1308,6 +1308,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 200);
     }
+    ```java
     private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
@@ -1576,7 +1577,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        if (window.AndroidApp && window.AndroidApp.requestNativeLogPoll) {\n");
         js.append("          window.AndroidApp.requestNativeLogPoll();\n");
         js.append("        } else {\n");
-        js.append("          fetch('History Log.txt?_t=' + Date.now(), { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })\n");
+        js.append("          fetch('History Log.txt', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })\n");
         js.append("            .then(function(r) { return r.text(); })\n");
         js.append("            .then(window.__onNativeHistoryLogText)\n");
         js.append("            .catch(function() { isLogFetchInFlight = false; });\n");
@@ -1653,6 +1654,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      };\n");
         js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
         js.append("    }\n");
+
         /* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
@@ -2566,3 +2568,4 @@ public class MainActivity extends Activity implements SensorEventListener {
     @Override
     public void onBackPressed() { showSetupDialog(false); }
 }
+```
