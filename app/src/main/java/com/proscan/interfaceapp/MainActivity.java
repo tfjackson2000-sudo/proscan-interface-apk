@@ -448,11 +448,11 @@ public class MainActivity extends Activity implements SensorEventListener {
     /**
      * Native Uncached Java Log Poller:
      * Uses "Connection: close" so Android never holds ProScan's Windows file/socket open,
-     * and passes totalDataLines so back-to-back hits on the same channel are always detected!
+     * and passes totalValidLines so back-to-back hits on the same channel are always detected!
      */
     private void pollHistoryLogNatively() {
         long now = System.currentTimeMillis();
-        if (nativeLogPollInFlight || (now - lastNativeLogPollMs < 450L)) return;
+        if (nativeLogPollInFlight || (now - lastNativeLogPollMs < 400L)) return;
         String base = activeServerUrl;
         if ((base == null || base.isEmpty()) && webView != null) {
             base = webView.getUrl();
@@ -717,7 +717,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                         "try{if(window.__stopScannerAudioFromBt)window.__stopScannerAudioFromBt();" +
                         "var p=document.getElementById('audio_player');if(p){p.pause();}" +
                         "isConnected=false;var b=document.getElementById('btn-audio-toggle');if(b)b.classList.remove('active');" +
-                        "window.__voiceReadoutEnabled=false;var vb=document.getElementById('btn-voice-toggle');if(vb)vb.classList.remove('active');}catch(e){}",
+                        "window.__voiceReadoutEnabled=false;window.__vOn=false;var vb=document.getElementById('btn-voice-toggle');if(vb)vb.classList.remove('active');}catch(e){}",
                         null
                 );
             }
@@ -1126,7 +1126,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 long now = System.currentTimeMillis();
                 if (!cleanText.equalsIgnoreCase("Voice readout on")
                         && cleanText.equalsIgnoreCase(lastSpokenText)
-                        && (now - lastSpokenTimestamp < 6000)) {
+                        && (now - lastSpokenTimestamp < 15000)) {
                     if (tts == null || !tts.isSpeaking()) {
                         PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
                     }
@@ -1469,12 +1469,38 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Event-Driven Log Receiver + Line-Indexed Deduplication + Direct TTS Trigger */
+        /* Global Native TTS Helper + Event-Driven Log Receiver */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
         js.append("      window.__knownRowAddedTime = {};\n");
         js.append("      window.__lastRenderedIdsSig = '';\n");
+        js.append("      window.__lastSpokenRowKey = '';\n");
+        js.append("      window.__rxTtsWaitTimer = null;\n");
         js.append("      if (typeof logInterval !== 'undefined') clearInterval(logInterval);\n");
+
+        js.append("      window.__speakTextAfterRx = function(txt, immediate) {\n");
+        js.append("        if (!window.AndroidApp || !txt) return;\n");
+        js.append("        var clean = String(txt).trim();\n");
+        js.append("        if (!clean) return;\n");
+        js.append("        if (immediate) {\n");
+        js.append("          window.AndroidApp.speakChannel(clean);\n");
+        js.append("          return;\n");
+        js.append("        }\n");
+        js.append("        clearTimeout(window.__rxTtsWaitTimer);\n");
+        js.append("        var tries = 0;\n");
+        js.append("        (function waitRxOff() {\n");
+        js.append("          var rx = document.getElementById('rx-led');\n");
+        js.append("          if (rx && rx.classList.contains('active') && tries++ < 35) {\n");
+        js.append("            window.__rxTtsWaitTimer = setTimeout(waitRxOff, 200);\n");
+        js.append("          } else {\n");
+        js.append("            window.__rxTtsWaitTimer = setTimeout(function() {\n");
+        js.append("              if (window.__voiceReadoutEnabled || window.__vOn) {\n");
+        js.append("                window.AndroidApp.speakChannel(clean);\n");
+        js.append("              }\n");
+        js.append("            }, 150);\n");
+        js.append("          }\n");
+        js.append("        })();\n");
+        js.append("      };\n");
 
         js.append("      window.__onNativeHistoryLogText = function(text) {\n");
         js.append("        isLogFetchInFlight = false;\n");
@@ -1522,7 +1548,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("            var h = hits[i] || 1;\n");
         js.append("            if (fq !== '---' && fq !== '') {\n");
         js.append("              idsSig += lineKey + '|' + du + ';';\n");
-        js.append("              html += '<tr class=\"' + (showFxClass ? 'new-log-row' : '') + '\"><td title=\"' + tm + '\">' + tm + '</td><td title=\"' + fq + '\">' + fq + '</td><td title=\"' + tn + '\">' + tn + '</td><td title=\"' + du + '\">' + du + '</td><td title=\"(Hit #' + h + ') ' + nm + '\" data-hit-count=\"' + h + '\"><span class=\"freq-hit-badge\" style=\"display:none\">×' + h + '</span>' + nm + '</td></tr>';\n");
+        js.append("              html += '<tr class=\"' + (showFxClass ? 'new-log-row' : '') + '\" data-line-key=\"' + lineKey + '\"><td title=\"' + tm + '\">' + tm + '</td><td title=\"' + fq + '\">' + fq + '</td><td title=\"' + tn + '\">' + tn + '</td><td title=\"' + du + '\">' + du + '</td><td title=\"(Hit #' + h + ') ' + nm + '\" data-hit-count=\"' + h + '\"><span class=\"freq-hit-badge\" style=\"display:none\">×' + h + '</span>' + nm + '</td></tr>';\n");
         js.append("              added++;\n");
         js.append("            }\n");
         js.append("          }\n");
@@ -1536,15 +1562,16 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        }\n");
         js.append("        if (newRow && !isFirstLoad) {\n");
         js.append("          if (typeof triggerLogLight === 'function') triggerLogLight();\n");
-        js.append("          if (window.__voiceReadoutEnabled && newestSpokenCandidate && newestLineKey !== window.__lastSpokenRowKey) {\n");
+        js.append("          if ((window.__voiceReadoutEnabled || window.__vOn) && newestSpokenCandidate && newestLineKey !== window.__lastSpokenRowKey) {\n");
         js.append("            window.__lastSpokenRowKey = newestLineKey;\n");
-        js.append("            if (window.__speakTextAfterRx) window.__speakTextAfterRx(newestSpokenCandidate, false);\n");
+        js.append("            window.__speakTextAfterRx(newestSpokenCandidate, false);\n");
         js.append("          }\n");
         js.append("        }\n");
         js.append("        isFirstLoad = false;\n");
         js.append("      };\n");
 
         js.append("      window.updateMiniLog = function() {\n");
+        js.append("        if (typeof logInterval !== 'undefined') clearInterval(logInterval);\n");
         js.append("        if (typeof isDisplayOn !== 'undefined' && !isDisplayOn && (typeof isConnected === 'undefined' || !isConnected)) return;\n");
         js.append("        if (window.AndroidApp && window.AndroidApp.requestNativeLogPoll) {\n");
         js.append("          window.AndroidApp.requestNativeLogPoll();\n");
@@ -1574,7 +1601,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          if (window.__lastNotifiedRxState) {\n");
         js.append("            window.__lastNotifiedRxState = false;\n");
         js.append("            if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
-        js.append("              window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
+        js.append("              window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled || window.__vOn));\n");
         js.append("            }\n");
         js.append("          }\n");
         js.append("          return;\n");
@@ -1605,7 +1632,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("              window.__lastNotifiedRxState = true;\n");
         js.append("              window.__lastActiveRxPushMs = nowWall;\n");
         js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
-        js.append("                window.AndroidApp.notifyScannerRx(true, Boolean(window.__voiceReadoutEnabled));\n");
+        js.append("                window.AndroidApp.notifyScannerRx(true, Boolean(window.__voiceReadoutEnabled || window.__vOn));\n");
         js.append("              }\n");
         js.append("            }\n");
         js.append("          }\n");
@@ -1618,7 +1645,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("              window.__lastNotifiedRxState = false;\n");
         js.append("              window.__lastLogPollMs = nowWall;\n");
         js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
-        js.append("                window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled));\n");
+        js.append("                window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled || window.__vOn));\n");
         js.append("              }\n");
         js.append("            }\n");
         js.append("          }\n");
@@ -2030,47 +2057,72 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      rowParent.appendChild(dspBtn);\n");
         js.append("    }\n");
 
+        /* Always Hook #btn-voice-toggle (Even if Web_Server_User_HTML.htm Created It First!) */
         js.append("    var ledsLeft = document.querySelector('.top-leds-left');\n");
-        js.append("    if (ledsLeft && !document.getElementById('btn-voice-toggle')) {\n");
-        js.append("      window.__voiceReadoutEnabled = false; window.__lastSpokenRowKey = '';\n");
-        js.append("      var rxWaitTimer = null;\n");
-        js.append("      window.__speakTextAfterRx = function(txt, immediate) {\n");
-        js.append("        if (!window.AndroidApp) return;\n");
-        js.append("        if (immediate) { window.AndroidApp.speakChannel(txt); return; }\n");
-        js.append("        clearTimeout(rxWaitTimer);\n");
-        js.append("        var tries = 0;\n");
-        js.append("        (function waitRxOff() {\n");
-        js.append("          var rx = document.getElementById('rx-led');\n");
-        js.append("          if (rx && rx.classList.contains('active') && tries++ < 30) {\n");
-        js.append("            rxWaitTimer = setTimeout(waitRxOff, 220);\n");
-        js.append("          } else {\n");
-        js.append("            rxWaitTimer = setTimeout(function() { window.AndroidApp.speakChannel(txt); }, 150);\n");
-        js.append("          }\n");
-        js.append("        })();\n");
-        js.append("      };\n");
-        js.append("      var vBtn = document.createElement('button');\n");
-        js.append("      vBtn.id = 'btn-voice-toggle'; vBtn.type = 'button';\n");
-        js.append("      vBtn.innerHTML = '<div class=\"sq-hw-cap\"></div><span class=\"sq-hw-lbl\">VOICE</span>';\n");
-        js.append("      window.__setVoiceReadoutState = function(enable, showHud) {\n");
-        js.append("        window.__voiceReadoutEnabled = Boolean(enable);\n");
-        js.append("        var vb = document.getElementById('btn-voice-toggle');\n");
-        js.append("        if (vb) vb.classList.toggle('active', window.__voiceReadoutEnabled);\n");
-        js.append("        if (!window.__voiceReadoutEnabled) {\n");
-        js.append("          clearTimeout(rxWaitTimer);\n");
-        js.append("        }\n");
-        js.append("        if (showHud && typeof showDisplayHud === 'function') {\n");
-        js.append("          showDisplayHud('VOICE READOUT: ' + (window.__voiceReadoutEnabled ? 'ON' : 'OFF'), 1400);\n");
-        js.append("        }\n");
-        js.append("      };\n");
-        js.append("      vBtn.addEventListener('click', function() {\n");
-        js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
-        js.append("        window.__setVoiceReadoutState(!window.__voiceReadoutEnabled, true);\n");
-        js.append("        if (window.__voiceReadoutEnabled) {\n");
-        js.append("          window.__speakTextAfterRx('Voice readout on', true);\n");
-        js.append("        }\n");
-        js.append("      });\n");
-        js.append("      ledsLeft.appendChild(vBtn);\n");
+        js.append("    if (ledsLeft) {\n");
+        js.append("      var existingVBtn = document.getElementById('btn-voice-toggle');\n");
+        js.append("      if (!existingVBtn) {\n");
+        js.append("        existingVBtn = document.createElement('button');\n");
+        js.append("        existingVBtn.id = 'btn-voice-toggle'; existingVBtn.type = 'button';\n");
+        js.append("        ledsLeft.appendChild(existingVBtn);\n");
+        js.append("      }\n");
+        js.append("      if (!existingVBtn.__nativeVoiceHooked) {\n");
+        js.append("        var freshVBtn = existingVBtn.cloneNode(false);\n");
+        js.append("        freshVBtn.id = 'btn-voice-toggle'; freshVBtn.type = 'button';\n");
+        js.append("        freshVBtn.innerHTML = '<div class=\"sq-hw-cap\"></div><span class=\"sq-hw-lbl\">VOICE</span>';\n");
+        js.append("        freshVBtn.__nativeVoiceHooked = true;\n");
+        js.append("        existingVBtn.parentNode.replaceChild(freshVBtn, existingVBtn);\n");
+        js.append("        window.__voiceReadoutEnabled = Boolean(window.__voiceReadoutEnabled || window.__vOn);\n");
+        js.append("        freshVBtn.classList.toggle('active', window.__voiceReadoutEnabled);\n");
 
+        js.append("        window.__setVoiceReadoutState = function(enable, showHud) {\n");
+        js.append("          window.__voiceReadoutEnabled = Boolean(enable);\n");
+        js.append("          window.__vOn = window.__voiceReadoutEnabled;\n");
+        js.append("          var vb = document.getElementById('btn-voice-toggle');\n");
+        js.append("          if (vb) vb.classList.toggle('active', window.__voiceReadoutEnabled);\n");
+        js.append("          if (!window.__voiceReadoutEnabled) {\n");
+        js.append("            clearTimeout(window.__rxTtsWaitTimer);\n");
+        js.append("          }\n");
+        js.append("          if (showHud && typeof showDisplayHud === 'function') {\n");
+        js.append("            showDisplayHud('VOICE READOUT: ' + (window.__voiceReadoutEnabled ? 'ON' : 'OFF'), 1400);\n");
+        js.append("          }\n");
+        js.append("        };\n");
+
+        js.append("        freshVBtn.addEventListener('click', function() {\n");
+        js.append("          if (navigator.vibrate) navigator.vibrate(25);\n");
+        js.append("          window.__setVoiceReadoutState(!window.__voiceReadoutEnabled, true);\n");
+        js.append("          if (window.__voiceReadoutEnabled) {\n");
+        js.append("            window.__speakTextAfterRx('Voice readout on', true);\n");
+        js.append("          }\n");
+        js.append("        });\n");
+        js.append("      }\n");
+
+        js.append("      var logBody = document.getElementById('mini-log-data');\n");
+        js.append("      if (logBody && !logBody.__nativeTtsObserverHooked) {\n");
+        js.append("        logBody.__nativeTtsObserverHooked = true;\n");
+        js.append("        new MutationObserver(function() {\n");
+        js.append("          if (!window.__voiceReadoutEnabled && !window.__vOn) return;\n");
+        js.append("          var topRow = logBody.querySelector('tr.new-log-row') || logBody.querySelector('tr');\n");
+        js.append("          if (!topRow || topRow.children.length < 5) return;\n");
+        js.append("          var timeStr = (topRow.children[0].textContent || '').trim();\n");
+        js.append("          var freqStr = (topRow.children[1].textContent || '').trim();\n");
+        js.append("          var nameTd = topRow.children[4];\n");
+        js.append("          var rawTitle = nameTd.getAttribute('title') || nameTd.textContent || '';\n");
+        js.append("          var closeParen = rawTitle.indexOf(')');\n");
+        js.append("          var chName = (closeParen !== -1 ? rawTitle.slice(closeParen + 1) : rawTitle).replace(/^[×xX]\\s*\\d+\\s*/, '').trim();\n");
+        js.append("          if (!chName || chName === '---') chName = freqStr;\n");
+        js.append("          if (!chName || chName.indexOf('OFF LINE') !== -1 || chName.indexOf('Waiting') !== -1) return;\n");
+        js.append("          var rowKey = topRow.getAttribute('data-line-key') || (timeStr + '|' + freqStr + '|' + chName);\n");
+        js.append("          if (rowKey !== window.__lastSpokenRowKey) {\n");
+        js.append("            window.__lastSpokenRowKey = rowKey;\n");
+        js.append("            window.__speakTextAfterRx(chName, false);\n");
+        js.append("          }\n");
+        js.append("        }).observe(logBody, { childList: true });\n");
+        js.append("      }\n");
+        js.append("    }\n");
+
+        js.append("    if (!window.__audioBufferCatchupHooked) {\n");
+        js.append("      window.__audioBufferCatchupHooked = true;\n");
         js.append("      setInterval(function() {\n");
         js.append("        try {\n");
         js.append("          var p = document.getElementById('audio_player'), rx = document.getElementById('rx-led');\n");
