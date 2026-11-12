@@ -67,6 +67,8 @@ import java.net.Socket;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -476,7 +478,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 int code = conn.getResponseCode();
                 if (code == 200) {
                     BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
-                    List<String> tailLines = new java.util.LinkedList<>();
+                    List<String> tailLines = new LinkedList<>();
                     String line;
                     while ((line = reader.readLine()) != null) {
                         if (line.contains(",") || line.contains("\t")) {
