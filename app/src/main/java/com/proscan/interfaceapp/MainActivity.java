@@ -770,6 +770,9 @@ public class MainActivity extends Activity implements SensorEventListener {
                 if ((injectorTickCount++ % 5) == 0) {
                     injectEnhancements();
                 }
+                if (System.currentTimeMillis() - lastNativeLogPollMs >= 1300L) {
+                    pollHistoryLogNatively();
+                }
                 if (scannerAudioConnected || PriorityRadioEngine.isRadioPlaying()) {
                     webView.evaluateJavascript(
                             "try{if(window.__bgTickSquelchAndLog)window.__bgTickSquelchAndLog();}catch(e){}",
@@ -1591,7 +1594,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        var nowWall = Date.now();\n");
         js.append("        var led = document.getElementById('rx-led');\n");
         js.append("        var isRxCurrentlyLit = Boolean(led && led.classList.contains('active'));\n");
-        js.append("        if ((isDisplayOn || isConnected) && !isRxCurrentlyLit && (nowWall - window.__lastLogPollMs >= 3200)) {\n");
+        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1300)) {\n");
         js.append("          window.__lastLogPollMs = nowWall;\n");
         js.append("          window.updateMiniLog();\n");
         js.append("        }\n");
