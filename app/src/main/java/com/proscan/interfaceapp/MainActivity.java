@@ -395,7 +395,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-private WebView webView;
+    private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
     private SensorManager sensorManager;
@@ -1322,7 +1322,7 @@ private WebView webView;
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 200);
     }
-private void injectEnhancements() {
+    private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -1661,7 +1661,7 @@ private void injectEnhancements() {
         js.append("      };\n");
         js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
         js.append("    }\n");
-/* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
+        /* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
         js.append("      window.renderCustomBrand = function() {};\n");
