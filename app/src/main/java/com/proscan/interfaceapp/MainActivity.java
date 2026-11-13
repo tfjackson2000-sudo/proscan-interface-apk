@@ -140,6 +140,13 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         private static SharedPreferences cachedPrefs = null;
 
+        public static boolean isScannerCurrentlyReceiving() {
+            if (isScannerRxActive && (System.currentTimeMillis() - lastRxHeartbeatMs > 1500L)) {
+                isScannerRxActive = false;
+            }
+            return isScannerRxActive;
+        }
+
         public static boolean isAutoDuckEnabled(SharedPreferences prefs) {
             if (prefs != null) cachedPrefs = prefs;
             return cachedPrefs == null || cachedPrefs.getBoolean("simple_auto_duck_on", true);
@@ -388,7 +395,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-    private WebView webView;
+private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
     private SensorManager sensorManager;
@@ -405,6 +412,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private volatile boolean nativeLogPollInFlight = false;
     private volatile long lastNativeLogPollMs = 0L;
+    private volatile long lastRxEndedMs = 0L;
 
     private boolean userWakeLockEnabled = false;
     private boolean scannerAudioConnected = false;
@@ -447,12 +455,16 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     /**
      * Native Uncached Java Log Poller:
-     * Requests "/History%20Log.txt" (without query strings that ProScan 404s) with
-     * "Connection: close" and setUseCaches(false), and numbers every line so back-to-back hits never get skipped!
+     * Never polls while scanner RX is active or during the 550ms post-squelch write window,
+     * so ProScan on Windows NEVER hits a file-sharing lock when writing History Log.txt!
      */
     private void pollHistoryLogNatively() {
         long now = System.currentTimeMillis();
-        if (nativeLogPollInFlight || (now - lastNativeLogPollMs < 400L)) return;
+        if (nativeLogPollInFlight) return;
+        if (PriorityRadioEngine.isScannerCurrentlyReceiving()) return;
+        if (now - lastRxEndedMs < 550L) return;
+        if (now - lastNativeLogPollMs < 450L) return;
+
         String base = activeServerUrl;
         if ((base == null || base.isEmpty()) && webView != null) {
             base = webView.getUrl();
@@ -484,9 +496,11 @@ public class MainActivity extends Activity implements SensorEventListener {
                     int totalValidLines = 0;
                     String line;
                     while ((line = reader.readLine()) != null) {
-                        if (line.contains(",") && !line.toLowerCase(Locale.ROOT).contains("frequency")) {
+                        String trimmed = line.trim();
+                        if ((trimmed.contains(",") || trimmed.contains("\t"))
+                                && !trimmed.toLowerCase(Locale.ROOT).startsWith("frequency")) {
                             totalValidLines++;
-                            tailLines.add(totalValidLines + "\t" + line);
+                            tailLines.add(totalValidLines + "\t" + trimmed);
                             if (tailLines.size() > 160) {
                                 tailLines.remove(0);
                             }
@@ -769,9 +783,6 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (webView != null) {
                 if ((injectorTickCount++ % 5) == 0) {
                     injectEnhancements();
-                }
-                if (System.currentTimeMillis() - lastNativeLogPollMs >= 1300L) {
-                    pollHistoryLogNatively();
                 }
                 if (scannerAudioConnected || PriorityRadioEngine.isRadioPlaying()) {
                     webView.evaluateJavascript(
@@ -1114,9 +1125,9 @@ public class MainActivity extends Activity implements SensorEventListener {
         public void notifyScannerRx(final boolean rxActive, final boolean voiceReadoutEnabled) {
             PriorityRadioEngine.onScannerRxStateChanged(prefs, rxActive, voiceReadoutEnabled);
             if (!rxActive) {
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 350);
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 1100);
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 2200);
+                lastRxEndedMs = System.currentTimeMillis();
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 650);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 1850);
             }
         }
 
@@ -1311,7 +1322,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 200);
     }
-    private void injectEnhancements() {
+private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -1472,7 +1483,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Global Native TTS Helper + Event-Driven Log Receiver */
+        /* Global Native TTS Helper + Event-Driven Log Receiver (With Protected Post-Squelch Write Window) */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
         js.append("      window.__knownRowAddedTime = {};\n");
@@ -1508,7 +1519,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      window.__onNativeHistoryLogText = function(text) {\n");
         js.append("        isLogFetchInFlight = false;\n");
         js.append("        if (!text || text.toLowerCase().indexOf('<html') !== -1) return;\n");
-        js.append("        var rawLines = text.trim().split('\\n').filter(function(l) { return l.indexOf(',') !== -1 && l.toLowerCase().indexOf('frequency') === -1; });\n");
+        js.append("        var rawLines = text.trim().split('\\n').filter(function(l) { return (l.indexOf(',') !== -1 || l.indexOf('\\t') !== -1) && !l.trim().toLowerCase().startsWith('frequency'); });\n");
         js.append("        if (!rawLines.length) return;\n");
         js.append("        var counts = {}, hits = new Array(rawLines.length), lineNums = new Array(rawLines.length), dataLines = new Array(rawLines.length);\n");
         js.append("        for (var k = 0; k < rawLines.length; k++) {\n");
@@ -1589,12 +1600,11 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      window.detectAudio = function() {};\n");
         js.append("      window.__lastLogPollMs = 0;\n");
         js.append("      window.__lastActiveRxPushMs = 0;\n");
-        js.append("      window.__rxStartLoggedOnce = false;\n");
         js.append("      window.__bgTickSquelchAndLog = function() {\n");
         js.append("        var nowWall = Date.now();\n");
         js.append("        var led = document.getElementById('rx-led');\n");
         js.append("        var isRxCurrentlyLit = Boolean(led && led.classList.contains('active'));\n");
-        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 1300)) {\n");
+        js.append("        if ((isDisplayOn || isConnected) && !isRxCurrentlyLit && (nowWall - window.__lastLogPollMs >= 3500)) {\n");
         js.append("          window.__lastLogPollMs = nowWall;\n");
         js.append("          window.updateMiniLog();\n");
         js.append("        }\n");
@@ -1621,16 +1631,11 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        var now = performance.now();\n");
         js.append("        if (maxDev > 2) {\n");
         js.append("          var isKey = (now - lastScannerKeyTime) < 2200;\n");
-        js.append("          if (rxSignalStartTime === 0) { rxSignalStartTime = now; window.__rxStartLoggedOnce = false; }\n");
+        js.append("          if (rxSignalStartTime === 0) rxSignalStartTime = now;\n");
         js.append("          rxLastActiveTime = now;\n");
         js.append("          var reqMs = isKey ? 240 : 20;\n");
         js.append("          if (!isKey || (now - rxSignalStartTime) >= reqMs) {\n");
         js.append("            if (led && !led.classList.contains('active')) led.classList.add('active');\n");
-        js.append("            if (!window.__rxStartLoggedOnce && (now - rxSignalStartTime) >= 650) {\n");
-        js.append("              window.__rxStartLoggedOnce = true;\n");
-        js.append("              window.__lastLogPollMs = nowWall;\n");
-        js.append("              window.updateMiniLog();\n");
-        js.append("            }\n");
         js.append("            if (!window.__lastNotifiedRxState || (nowWall - window.__lastActiveRxPushMs > 350)) {\n");
         js.append("              window.__lastNotifiedRxState = true;\n");
         js.append("              window.__lastActiveRxPushMs = nowWall;\n");
@@ -1656,7 +1661,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      };\n");
         js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
         js.append("    }\n");
-        /* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
+/* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
         js.append("      window.renderCustomBrand = function() {};\n");
@@ -1706,7 +1711,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      var smCarrierLvl = 0, smAudioLvl = 0, smAdaptiveMax = 14.0, smPhase = 0;\n");
         js.append("      function renderLiveScannerSignalMeter() {\n");
         js.append("        requestAnimationFrame(renderLiveScannerSignalMeter);\n");
-        js.append("        if (window.__bgTickSquelchAndLog) window.__bgTickSquelchAndLog();\n");
         js.append("        var rawAud = 0;\n");
         js.append("        var rxLedEl = document.getElementById('rx-led');\n");
         js.append("        var isRxVoiceActive = Boolean(rxLedEl && rxLedEl.classList.contains('active'));\n");
