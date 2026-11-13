@@ -1483,13 +1483,14 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Global Native TTS Helper + Event-Driven Log Receiver (With Protected Post-Squelch Write Window) */
+        /* Global Native TTS Helper + Event-Driven Log Receiver (Ignores Silent Carrier Hits!) */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
         js.append("      window.__knownRowAddedTime = {};\n");
         js.append("      window.__lastRenderedIdsSig = '';\n");
         js.append("      window.__lastSpokenRowKey = '';\n");
         js.append("      window.__rxTtsWaitTimer = null;\n");
+        js.append("      window.__lastRealAudioMs = 0;\n");
         js.append("      if (typeof logInterval !== 'undefined') clearInterval(logInterval);\n");
 
         js.append("      window.__speakTextAfterRx = function(txt, immediate) {\n");
@@ -1535,6 +1536,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          if (fk && fk !== '---') { counts[fk] = (counts[fk] || 0) + 1; hits[k] = counts[fk]; } else hits[k] = 1;\n");
         js.append("        }\n");
         js.append("        var html = '', idsSig = '', added = 0, newRow = false, newestSpokenCandidate = '', newestLineKey = '', nowMs = Date.now();\n");
+        js.append("        var rxEl = document.getElementById('rx-led');\n");
+        js.append("        var hadRecentRealAudio = Boolean((rxEl && rxEl.classList.contains('active')) || (nowMs - (window.__lastRealAudioMs || 0) < 5500));\n");
         js.append("        for (var i = dataLines.length - 1; i >= 0 && added < 25; i--) {\n");
         js.append("          var p = dataLines[i].split(',');\n");
         js.append("          if (p.length >= 5) {\n");
@@ -1546,15 +1549,20 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("            }\n");
         js.append("            var tp = tr.split(' '), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
         js.append("            if (du.indexOf('00:') === 0) du = du.slice(3);\n");
+        js.append("            var isZeroDur = (du === '00:00' || du === '00' || du === '00:00:00');\n");
+        js.append("            if (isZeroDur && i < dataLines.length - 1) continue;\n");
+        js.append("            if (isZeroDur && i === dataLines.length - 1 && !hadRecentRealAudio) continue;\n");
         js.append("            var lineKey = lineNums[i] + '|' + tm + '|' + fq + '|' + nm;\n");
         js.append("            var isN = !knownLogLines.has(lineKey);\n");
         js.append("            if (isN) {\n");
         js.append("              knownLogLines.add(lineKey);\n");
-        js.append("              window.__knownRowAddedTime[lineKey] = isFirstLoad ? 0 : nowMs;\n");
-        js.append("              newRow = true;\n");
-        js.append("              if (!newestSpokenCandidate && fq !== '---' && fq !== '') {\n");
-        js.append("                newestSpokenCandidate = (nm && nm !== '---') ? nm : fq;\n");
-        js.append("                newestLineKey = lineKey;\n");
+        js.append("              window.__knownRowAddedTime[lineKey] = (!isFirstLoad && hadRecentRealAudio) ? nowMs : 0;\n");
+        js.append("              if (hadRecentRealAudio) {\n");
+        js.append("                newRow = true;\n");
+        js.append("                if (!newestSpokenCandidate && fq !== '---' && fq !== '' && !isZeroDur) {\n");
+        js.append("                  newestSpokenCandidate = (nm && nm !== '---') ? nm : fq;\n");
+        js.append("                  newestLineKey = lineKey;\n");
+        js.append("                }\n");
         js.append("              }\n");
         js.append("            }\n");
         js.append("            var rowAge = nowMs - (window.__knownRowAddedTime[lineKey] || 0);\n");
@@ -1574,7 +1582,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("            tb.innerHTML = html;\n");
         js.append("          }\n");
         js.append("        }\n");
-        js.append("        if (newRow && !isFirstLoad) {\n");
+        js.append("        if (newRow && !isFirstLoad && hadRecentRealAudio) {\n");
         js.append("          if (typeof triggerLogLight === 'function') triggerLogLight();\n");
         js.append("          if ((window.__voiceReadoutEnabled || window.__vOn) && newestSpokenCandidate && newestLineKey !== window.__lastSpokenRowKey) {\n");
         js.append("            window.__lastSpokenRowKey = newestLineKey;\n");
@@ -1629,12 +1637,13 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          if (d > maxDev) maxDev = d;\n");
         js.append("        }\n");
         js.append("        var now = performance.now();\n");
-        js.append("        if (maxDev > 2) {\n");
+        js.append("        if (maxDev > 3) {\n");
         js.append("          var isKey = (now - lastScannerKeyTime) < 2200;\n");
         js.append("          if (rxSignalStartTime === 0) rxSignalStartTime = now;\n");
         js.append("          rxLastActiveTime = now;\n");
-        js.append("          var reqMs = isKey ? 240 : 20;\n");
-        js.append("          if (!isKey || (now - rxSignalStartTime) >= reqMs) {\n");
+        js.append("          var reqMs = isKey ? 320 : 180;\n");
+        js.append("          if ((now - rxSignalStartTime) >= reqMs) {\n");
+        js.append("            window.__lastRealAudioMs = nowWall;\n");
         js.append("            if (led && !led.classList.contains('active')) led.classList.add('active');\n");
         js.append("            if (!window.__lastNotifiedRxState || (nowWall - window.__lastActiveRxPushMs > 350)) {\n");
         js.append("              window.__lastNotifiedRxState = true;\n");
@@ -1651,6 +1660,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("            if (led && led.classList.contains('active')) led.classList.remove('active');\n");
         js.append("            if (window.__lastNotifiedRxState) {\n");
         js.append("              window.__lastNotifiedRxState = false;\n");
+        js.append("              window.__lastRealAudioMs = nowWall;\n");
         js.append("              window.__lastLogPollMs = nowWall;\n");
         js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
         js.append("                window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled || window.__vOn));\n");
@@ -2109,10 +2119,15 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        logBody.__nativeTtsObserverHooked = true;\n");
         js.append("        new MutationObserver(function() {\n");
         js.append("          if (!window.__voiceReadoutEnabled && !window.__vOn) return;\n");
-        js.append("          var topRow = logBody.querySelector('tr.new-log-row') || logBody.querySelector('tr');\n");
+        js.append("          var rxEl = document.getElementById('rx-led');\n");
+        js.append("          var hadAudioNow = Boolean((rxEl && rxEl.classList.contains('active')) || (Date.now() - (window.__lastRealAudioMs || 0) < 5500));\n");
+        js.append("          if (!hadAudioNow) return;\n");
+        js.append("          var topRow = logBody.querySelector('tr.new-log-row');\n");
         js.append("          if (!topRow || topRow.children.length < 5) return;\n");
         js.append("          var timeStr = (topRow.children[0].textContent || '').trim();\n");
         js.append("          var freqStr = (topRow.children[1].textContent || '').trim();\n");
+        js.append("          var durStr = (topRow.children[3].textContent || '').trim();\n");
+        js.append("          if (durStr === '00:00' || durStr === '00' || durStr === '00:00:00') return;\n");
         js.append("          var nameTd = topRow.children[4];\n");
         js.append("          var rawTitle = nameTd.getAttribute('title') || nameTd.textContent || '';\n");
         js.append("          var closeParen = rawTitle.indexOf(')');\n");
