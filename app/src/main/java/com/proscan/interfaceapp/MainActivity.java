@@ -1483,7 +1483,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Global Native TTS Helper + Event-Driven Log Receiver (Ignores Silent Carrier Hits!) */
+        /* Global Native TTS Helper + True Voice Energy Gate (Ignores Silent Carriers!) */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
         js.append("      window.__knownRowAddedTime = {};\n");
@@ -1491,6 +1491,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      window.__lastSpokenRowKey = '';\n");
         js.append("      window.__rxTtsWaitTimer = null;\n");
         js.append("      window.__lastRealAudioMs = 0;\n");
+        js.append("      window.__voiceEnergyFrames = 0;\n");
         js.append("      if (typeof logInterval !== 'undefined') clearInterval(logInterval);\n");
 
         js.append("      window.__speakTextAfterRx = function(txt, immediate) {\n");
@@ -1537,7 +1538,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        }\n");
         js.append("        var html = '', idsSig = '', added = 0, newRow = false, newestSpokenCandidate = '', newestLineKey = '', nowMs = Date.now();\n");
         js.append("        var rxEl = document.getElementById('rx-led');\n");
-        js.append("        var hadRecentRealAudio = Boolean((rxEl && rxEl.classList.contains('active')) || (nowMs - (window.__lastRealAudioMs || 0) < 5500));\n");
+        js.append("        var hadRecentRealAudio = Boolean((rxEl && rxEl.classList.contains('active')) || (nowMs - (window.__lastRealAudioMs || 0) < 4200));\n");
         js.append("        for (var i = dataLines.length - 1; i >= 0 && added < 25; i--) {\n");
         js.append("          var p = dataLines[i].split(',');\n");
         js.append("          if (p.length >= 5) {\n");
@@ -1549,24 +1550,28 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("            }\n");
         js.append("            var tp = tr.split(' '), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
         js.append("            if (du.indexOf('00:') === 0) du = du.slice(3);\n");
-        js.append("            var isZeroDur = (du === '00:00' || du === '00' || du === '00:00:00');\n");
-        js.append("            if (isZeroDur && i < dataLines.length - 1) continue;\n");
-        js.append("            if (isZeroDur && i === dataLines.length - 1 && !hadRecentRealAudio) continue;\n");
+        js.append("            var durSec = 0;\n");
+        js.append("            var dp = du.split(':');\n");
+        js.append("            if (dp.length === 2) durSec = (parseInt(dp[0], 10) || 0) * 60 + (parseInt(dp[1], 10) || 0);\n");
+        js.append("            else if (dp.length === 3) durSec = (parseInt(dp[0], 10) || 0) * 3600 + (parseInt(dp[1], 10) || 0) * 60 + (parseInt(dp[2], 10) || 0);\n");
         js.append("            var lineKey = lineNums[i] + '|' + tm + '|' + fq + '|' + nm;\n");
         js.append("            var isN = !knownLogLines.has(lineKey);\n");
         js.append("            if (isN) {\n");
         js.append("              knownLogLines.add(lineKey);\n");
-        js.append("              window.__knownRowAddedTime[lineKey] = (!isFirstLoad && hadRecentRealAudio) ? nowMs : 0;\n");
-        js.append("              if (hadRecentRealAudio) {\n");
-        js.append("                newRow = true;\n");
-        js.append("                if (!newestSpokenCandidate && fq !== '---' && fq !== '' && !isZeroDur) {\n");
+        js.append("              if (!isFirstLoad && !hadRecentRealAudio) {\n");
+        js.append("                window.__knownRowAddedTime[lineKey] = -1;\n");
+        js.append("              } else {\n");
+        js.append("                window.__knownRowAddedTime[lineKey] = isFirstLoad ? 0 : nowMs;\n");
+        js.append("                if (!isFirstLoad && hadRecentRealAudio && i === dataLines.length - 1 && durSec >= 1) {\n");
+        js.append("                  newRow = true;\n");
         js.append("                  newestSpokenCandidate = (nm && nm !== '---') ? nm : fq;\n");
         js.append("                  newestLineKey = lineKey;\n");
         js.append("                }\n");
         js.append("              }\n");
         js.append("            }\n");
+        js.append("            if (window.__knownRowAddedTime[lineKey] === -1 || (!isFirstLoad && durSec === 0 && !hadRecentRealAudio)) continue;\n");
         js.append("            var rowAge = nowMs - (window.__knownRowAddedTime[lineKey] || 0);\n");
-        js.append("            var showFxClass = (!isFirstLoad && rowAge < 3500);\n");
+        js.append("            var showFxClass = (!isFirstLoad && window.__knownRowAddedTime[lineKey] > 0 && rowAge < 3500);\n");
         js.append("            var h = hits[i] || 1;\n");
         js.append("            if (fq !== '---' && fq !== '') {\n");
         js.append("              idsSig += lineKey + '|' + du + ';';\n");
@@ -1619,6 +1624,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        var activeAn = window.analyser || (typeof analyser !== 'undefined' ? analyser : null);\n");
         js.append("        if (typeof isConnected === 'undefined' || !isConnected || !activeAn || typeof dataArray === 'undefined' || !dataArray) {\n");
         js.append("          if (led && led.classList.contains('active')) led.classList.remove('active');\n");
+        js.append("          window.__voiceEnergyFrames = 0;\n");
         js.append("          if (window.__lastNotifiedRxState) {\n");
         js.append("            window.__lastNotifiedRxState = false;\n");
         js.append("            if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
@@ -1631,18 +1637,21 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          try { window.audioContext.resume(); } catch(e) {}\n");
         js.append("        }\n");
         js.append("        activeAn.getByteTimeDomainData(dataArray);\n");
-        js.append("        var maxDev = 0;\n");
+        js.append("        var maxDev = 0, sumSq = 0;\n");
         js.append("        for (var i = 0; i < dataArray.length; i++) {\n");
         js.append("          var d = Math.abs(dataArray[i] - 128);\n");
         js.append("          if (d > maxDev) maxDev = d;\n");
+        js.append("          sumSq += d * d;\n");
         js.append("        }\n");
+        js.append("        var rms = Math.sqrt(sumSq / dataArray.length);\n");
         js.append("        var now = performance.now();\n");
-        js.append("        if (maxDev > 3) {\n");
+        js.append("        if (maxDev >= 9 && rms >= 2.6) {\n");
+        js.append("          window.__voiceEnergyFrames = (window.__voiceEnergyFrames || 0) + 1;\n");
         js.append("          var isKey = (now - lastScannerKeyTime) < 2200;\n");
         js.append("          if (rxSignalStartTime === 0) rxSignalStartTime = now;\n");
         js.append("          rxLastActiveTime = now;\n");
-        js.append("          var reqMs = isKey ? 320 : 180;\n");
-        js.append("          if ((now - rxSignalStartTime) >= reqMs) {\n");
+        js.append("          var reqMs = isKey ? 450 : 320;\n");
+        js.append("          if ((now - rxSignalStartTime) >= reqMs && window.__voiceEnergyFrames >= 6) {\n");
         js.append("            window.__lastRealAudioMs = nowWall;\n");
         js.append("            if (led && !led.classList.contains('active')) led.classList.add('active');\n");
         js.append("            if (!window.__lastNotifiedRxState || (nowWall - window.__lastActiveRxPushMs > 350)) {\n");
@@ -1655,7 +1664,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          }\n");
         js.append("        } else {\n");
         js.append("          var silentMs = rxLastActiveTime > 0 ? (now - rxLastActiveTime) : 99999;\n");
-        js.append("          if (silentMs > 140) rxSignalStartTime = 0;\n");
+        js.append("          if (silentMs > 160) { rxSignalStartTime = 0; window.__voiceEnergyFrames = 0; }\n");
         js.append("          if (silentMs >= 360) {\n");
         js.append("            if (led && led.classList.contains('active')) led.classList.remove('active');\n");
         js.append("            if (window.__lastNotifiedRxState) {\n");
@@ -2120,7 +2129,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        new MutationObserver(function() {\n");
         js.append("          if (!window.__voiceReadoutEnabled && !window.__vOn) return;\n");
         js.append("          var rxEl = document.getElementById('rx-led');\n");
-        js.append("          var hadAudioNow = Boolean((rxEl && rxEl.classList.contains('active')) || (Date.now() - (window.__lastRealAudioMs || 0) < 5500));\n");
+        js.append("          var hadAudioNow = Boolean((rxEl && rxEl.classList.contains('active')) || (Date.now() - (window.__lastRealAudioMs || 0) < 4200));\n");
         js.append("          if (!hadAudioNow) return;\n");
         js.append("          var topRow = logBody.querySelector('tr.new-log-row');\n");
         js.append("          if (!topRow || topRow.children.length < 5) return;\n");
