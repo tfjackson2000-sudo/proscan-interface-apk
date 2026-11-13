@@ -1486,6 +1486,11 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
+        /* Always Clear Web_Server_User_HTML.htm's Duplicate logInterval Timer! */
+        js.append("    try { if (typeof logInterval !== 'undefined') clearInterval(logInterval); } catch(e) {}\n");
+        js.append("    try { if (typeof rxHoldTimeout !== 'undefined') clearTimeout(rxHoldTimeout); } catch(e) {}\n");
+        js.append("    try { if (typeof rxPostLogTimeout !== 'undefined') clearTimeout(rxPostLogTimeout); } catch(e) {}\n");
+
         /* Global Native TTS Helper + Zero-Duration Filter + Top-Row-Only Animation */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
@@ -1495,7 +1500,22 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      window.__rxTtsWaitTimer = null;\n");
         js.append("      window.__lastRealAudioMs = 0;\n");
         js.append("      window.__voiceEnergyFrames = 0;\n");
-        js.append("      if (typeof logInterval !== 'undefined') clearInterval(logInterval);\n");
+
+        /* Intercept Web_Server_User_HTML.htm's fetch('History Log.txt') so it can NEVER overwrite the log with 00:00 rows! */
+        js.append("      if (window.fetch && !window.__fetchInterceptedForLog) {\n");
+        js.append("        window.__fetchInterceptedForLog = true;\n");
+        js.append("        var origFetch = window.fetch.bind(window);\n");
+        js.append("        window.fetch = function(resource, init) {\n");
+        js.append("          var urlStr = (typeof resource === 'string') ? resource : (resource && resource.url ? resource.url : '');\n");
+        js.append("          if (urlStr.indexOf('History Log.txt') !== -1 || urlStr.indexOf('History%20Log.txt') !== -1) {\n");
+        js.append("            if (window.AndroidApp && window.AndroidApp.requestNativeLogPoll) {\n");
+        js.append("              window.AndroidApp.requestNativeLogPoll();\n");
+        js.append("            }\n");
+        js.append("            return new Promise(function() {});\n");
+        js.append("          }\n");
+        js.append("          return origFetch(resource, init);\n");
+        js.append("        };\n");
+        js.append("      }\n");
 
         js.append("      window.__speakTextAfterRx = function(txt, immediate) {\n");
         js.append("        if (!window.AndroidApp || !txt) return;\n");
@@ -1586,15 +1606,10 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      };\n");
 
         js.append("      window.updateMiniLog = function() {\n");
-        js.append("        if (typeof logInterval !== 'undefined') clearInterval(logInterval);\n");
+        js.append("        try { if (typeof logInterval !== 'undefined') clearInterval(logInterval); } catch(e) {}\n");
         js.append("        if (typeof isDisplayOn !== 'undefined' && !isDisplayOn && (typeof isConnected === 'undefined' || !isConnected)) return;\n");
         js.append("        if (window.AndroidApp && window.AndroidApp.requestNativeLogPoll) {\n");
         js.append("          window.AndroidApp.requestNativeLogPoll();\n");
-        js.append("        } else {\n");
-        js.append("          fetch('History Log.txt', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })\n");
-        js.append("            .then(function(r) { return r.text(); })\n");
-        js.append("            .then(window.__onNativeHistoryLogText)\n");
-        js.append("            .catch(function() { isLogFetchInFlight = false; });\n");
         js.append("        }\n");
         js.append("      };\n");
 
@@ -1605,7 +1620,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        var nowWall = Date.now();\n");
         js.append("        var led = document.getElementById('rx-led');\n");
         js.append("        var isRxCurrentlyLit = Boolean(led && led.classList.contains('active'));\n");
-        js.append("        if ((isDisplayOn || isConnected) && !isRxCurrentlyLit && (nowWall - window.__lastLogPollMs >= 3500)) {\n");
+        js.append("        if ((isDisplayOn || isConnected) && !isRxCurrentlyLit && (nowWall - window.__lastLogPollMs >= 3000)) {\n");
         js.append("          window.__lastLogPollMs = nowWall;\n");
         js.append("          window.updateMiniLog();\n");
         js.append("        }\n");
@@ -1633,13 +1648,13 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        }\n");
         js.append("        var rms = Math.sqrt(sumSq / dataArray.length);\n");
         js.append("        var now = performance.now();\n");
-        js.append("        if (maxDev >= 6 && rms >= 1.8) {\n");
+        js.append("        if (maxDev >= 4 && rms >= 1.2) {\n");
         js.append("          window.__voiceEnergyFrames = (window.__voiceEnergyFrames || 0) + 1;\n");
         js.append("          var isKey = (now - lastScannerKeyTime) < 2200;\n");
         js.append("          if (rxSignalStartTime === 0) rxSignalStartTime = now;\n");
         js.append("          rxLastActiveTime = now;\n");
-        js.append("          var reqMs = isKey ? 350 : 180;\n");
-        js.append("          if ((now - rxSignalStartTime) >= reqMs && window.__voiceEnergyFrames >= 4) {\n");
+        js.append("          var reqMs = isKey ? 320 : 120;\n");
+        js.append("          if ((now - rxSignalStartTime) >= reqMs && window.__voiceEnergyFrames >= 3) {\n");
         js.append("            window.__lastRealAudioMs = nowWall;\n");
         js.append("            if (led && !led.classList.contains('active')) led.classList.add('active');\n");
         js.append("            if (!window.__lastNotifiedRxState || (nowWall - window.__lastActiveRxPushMs > 350)) {\n");
