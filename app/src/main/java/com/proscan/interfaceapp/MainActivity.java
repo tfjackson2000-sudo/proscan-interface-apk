@@ -456,7 +456,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     /**
      * Native Uncached Java Log Poller:
      * Never polls while scanner RX is active or during the 550ms post-squelch write window,
-     * so ProScan on Windows NEVER hits a file-sharing lock when writing History Log.txt!
+     * and strips out 00:00:00 silent kerchunks right at the source!
      */
     private void pollHistoryLogNatively() {
         long now = System.currentTimeMillis();
@@ -500,6 +500,9 @@ public class MainActivity extends Activity implements SensorEventListener {
                         if ((trimmed.contains(",") || trimmed.contains("\t"))
                                 && !trimmed.toLowerCase(Locale.ROOT).startsWith("frequency")) {
                             totalValidLines++;
+                            if (trimmed.contains("00:00:00")) {
+                                continue;
+                            }
                             tailLines.add(totalValidLines + "\t" + trimmed);
                             if (tailLines.size() > 160) {
                                 tailLines.remove(0);
@@ -1483,11 +1486,11 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      document.head.appendChild(existingSt);\n");
         js.append("    }\n");
 
-        /* Global Native TTS Helper + True Voice Energy Gate (Ignores Silent Carriers!) */
+        /* Global Native TTS Helper + Zero-Duration Filter + Top-Row-Only Animation */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
-        js.append("      window.__knownRowAddedTime = {};\n");
         js.append("      window.__lastRenderedIdsSig = '';\n");
+        js.append("      window.__lastTopRowId = '';\n");
         js.append("      window.__lastSpokenRowKey = '';\n");
         js.append("      window.__rxTtsWaitTimer = null;\n");
         js.append("      window.__lastRealAudioMs = 0;\n");
@@ -1523,75 +1526,60 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        if (!text || text.toLowerCase().indexOf('<html') !== -1) return;\n");
         js.append("        var rawLines = text.trim().split('\\n').filter(function(l) { return (l.indexOf(',') !== -1 || l.indexOf('\\t') !== -1) && !l.trim().toLowerCase().startsWith('frequency'); });\n");
         js.append("        if (!rawLines.length) return;\n");
-        js.append("        var counts = {}, hits = new Array(rawLines.length), lineNums = new Array(rawLines.length), dataLines = new Array(rawLines.length);\n");
+        js.append("        var counts = {}, validRows = [];\n");
         js.append("        for (var k = 0; k < rawLines.length; k++) {\n");
         js.append("          var rawL = rawLines[k], tabIdx = rawL.indexOf('\\t');\n");
+        js.append("          var lNum = String(k + 1), dLine = rawL;\n");
         js.append("          if (tabIdx > 0 && /^\\d+$/.test(rawL.slice(0, tabIdx))) {\n");
-        js.append("            lineNums[k] = rawL.slice(0, tabIdx);\n");
-        js.append("            dataLines[k] = rawL.slice(tabIdx + 1);\n");
-        js.append("          } else {\n");
-        js.append("            lineNums[k] = String(k + 1);\n");
-        js.append("            dataLines[k] = rawL;\n");
+        js.append("            lNum = rawL.slice(0, tabIdx);\n");
+        js.append("            dLine = rawL.slice(tabIdx + 1);\n");
         js.append("          }\n");
-        js.append("          var fc = dataLines[k].indexOf(','), fk = fc > 0 ? dataLines[k].slice(0, fc).trim() : '';\n");
-        js.append("          if (fk && fk !== '---') { counts[fk] = (counts[fk] || 0) + 1; hits[k] = counts[fk]; } else hits[k] = 1;\n");
+        js.append("          var p = dLine.split(',');\n");
+        js.append("          if (p.length < 5) continue;\n");
+        js.append("          var fq = (p[0] || '---').trim(), tn = (p[1] || '').trim(), nm = (p[p.length - 1] || '---').trim(), du = '---', tr = '---';\n");
+        js.append("          if (!fq || fq === '---') continue;\n");
+        js.append("          for (var j = 0; j < p.length; j++) {\n");
+        js.append("            var v = p[j].trim();\n");
+        js.append("            if (/^\\d{2}:\\d{2}:\\d{2}$/.test(v)) du = v;\n");
+        js.append("            else if (/^\\d{1,4}[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,4}\\s+\\d{1,2}:\\d{2}(:\\d{2})?$/.test(v)) tr = v;\n");
+        js.append("          }\n");
+        js.append("          if (du.indexOf('00:') === 0) du = du.slice(3);\n");
+        js.append("          var durSec = 0, dp = du.split(':');\n");
+        js.append("          if (dp.length === 2) durSec = (parseInt(dp[0], 10) || 0) * 60 + (parseInt(dp[1], 10) || 0);\n");
+        js.append("          else if (dp.length === 3) durSec = (parseInt(dp[0], 10) || 0) * 3600 + (parseInt(dp[1], 10) || 0) * 60 + (parseInt(dp[2], 10) || 0);\n");
+        js.append("          if (durSec <= 0) continue;\n");
+        js.append("          counts[fq] = (counts[fq] || 0) + 1;\n");
+        js.append("          var tp = tr.split(' '), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
+        js.append("          validRows.push({\n");
+        js.append("            lineKey: lNum + '|' + tm + '|' + fq + '|' + nm,\n");
+        js.append("            tm: tm, fq: fq, tn: tn, du: du, nm: nm, hit: counts[fq]\n");
+        js.append("          });\n");
         js.append("        }\n");
-        js.append("        var html = '', idsSig = '', added = 0, newRow = false, newestSpokenCandidate = '', newestLineKey = '', nowMs = Date.now();\n");
-        js.append("        var rxEl = document.getElementById('rx-led');\n");
-        js.append("        var hadRecentRealAudio = Boolean((rxEl && rxEl.classList.contains('active')) || (nowMs - (window.__lastRealAudioMs || 0) < 4200));\n");
-        js.append("        for (var i = dataLines.length - 1; i >= 0 && added < 25; i--) {\n");
-        js.append("          var p = dataLines[i].split(',');\n");
-        js.append("          if (p.length >= 5) {\n");
-        js.append("            var fq = (p[0] || '---').trim(), tn = (p[1] || '').trim(), nm = (p[p.length - 1] || '---').trim(), du = '---', tr = '---';\n");
-        js.append("            for (var j = 0; j < p.length; j++) {\n");
-        js.append("              var v = p[j].trim();\n");
-        js.append("              if (/^\\d{2}:\\d{2}:\\d{2}$/.test(v)) du = v;\n");
-        js.append("              else if (/^\\d{1,4}[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,4}\\s+\\d{1,2}:\\d{2}(:\\d{2})?$/.test(v)) tr = v;\n");
-        js.append("            }\n");
-        js.append("            var tp = tr.split(' '), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
-        js.append("            if (du.indexOf('00:') === 0) du = du.slice(3);\n");
-        js.append("            var durSec = 0;\n");
-        js.append("            var dp = du.split(':');\n");
-        js.append("            if (dp.length === 2) durSec = (parseInt(dp[0], 10) || 0) * 60 + (parseInt(dp[1], 10) || 0);\n");
-        js.append("            else if (dp.length === 3) durSec = (parseInt(dp[0], 10) || 0) * 3600 + (parseInt(dp[1], 10) || 0) * 60 + (parseInt(dp[2], 10) || 0);\n");
-        js.append("            var lineKey = lineNums[i] + '|' + tm + '|' + fq + '|' + nm;\n");
-        js.append("            var isN = !knownLogLines.has(lineKey);\n");
-        js.append("            if (isN) {\n");
-        js.append("              knownLogLines.add(lineKey);\n");
-        js.append("              if (!isFirstLoad && !hadRecentRealAudio) {\n");
-        js.append("                window.__knownRowAddedTime[lineKey] = -1;\n");
-        js.append("              } else {\n");
-        js.append("                window.__knownRowAddedTime[lineKey] = isFirstLoad ? 0 : nowMs;\n");
-        js.append("                if (!isFirstLoad && hadRecentRealAudio && i === dataLines.length - 1 && durSec >= 1) {\n");
-        js.append("                  newRow = true;\n");
-        js.append("                  newestSpokenCandidate = (nm && nm !== '---') ? nm : fq;\n");
-        js.append("                  newestLineKey = lineKey;\n");
-        js.append("                }\n");
-        js.append("              }\n");
-        js.append("            }\n");
-        js.append("            if (window.__knownRowAddedTime[lineKey] === -1 || (!isFirstLoad && durSec === 0 && !hadRecentRealAudio)) continue;\n");
-        js.append("            var rowAge = nowMs - (window.__knownRowAddedTime[lineKey] || 0);\n");
-        js.append("            var showFxClass = (!isFirstLoad && window.__knownRowAddedTime[lineKey] > 0 && rowAge < 3500);\n");
-        js.append("            var h = hits[i] || 1;\n");
-        js.append("            if (fq !== '---' && fq !== '') {\n");
-        js.append("              idsSig += lineKey + '|' + du + ';';\n");
-        js.append("              html += '<tr class=\"' + (showFxClass ? 'new-log-row' : '') + '\" data-line-key=\"' + lineKey + '\"><td title=\"' + tm + '\">' + tm + '</td><td title=\"' + fq + '\">' + fq + '</td><td title=\"' + tn + '\">' + tn + '</td><td title=\"' + du + '\">' + du + '</td><td title=\"(Hit #' + h + ') ' + nm + '\" data-hit-count=\"' + h + '\"><span class=\"freq-hit-badge\" style=\"display:none\">×' + h + '</span>' + nm + '</td></tr>';\n");
-        js.append("              added++;\n");
-        js.append("            }\n");
-        js.append("          }\n");
+        js.append("        if (!validRows.length) return;\n");
+        js.append("        var topRowObj = validRows[validRows.length - 1];\n");
+        js.append("        var isNewTopHit = (!isFirstLoad && window.__lastTopRowId !== '' && topRowObj.lineKey !== window.__lastTopRowId);\n");
+        js.append("        window.__lastTopRowId = topRowObj.lineKey;\n");
+        js.append("        var html = '', idsSig = '', added = 0;\n");
+        js.append("        for (var i = validRows.length - 1; i >= 0 && added < 25; i--) {\n");
+        js.append("          var r = validRows[i];\n");
+        js.append("          var showFxClass = (added === 0 && isNewTopHit);\n");
+        js.append("          idsSig += r.lineKey + '|' + r.du + ';';\n");
+        js.append("          html += '<tr class=\"' + (showFxClass ? 'new-log-row' : '') + '\" data-line-key=\"' + r.lineKey + '\"><td title=\"' + r.tm + '\">' + r.tm + '</td><td title=\"' + r.fq + '\">' + r.fq + '</td><td title=\"' + r.tn + '\">' + r.tn + '</td><td title=\"' + r.du + '\">' + r.du + '</td><td title=\"(Hit #' + r.hit + ') ' + r.nm + '\" data-hit-count=\"' + r.hit + '\"><span class=\"freq-hit-badge\" style=\"display:none\">×' + r.hit + '</span>' + r.nm + '</td></tr>';\n");
+        js.append("          added++;\n");
         js.append("        }\n");
         js.append("        if (html && isDisplayOn) {\n");
         js.append("          var tb = document.getElementById('mini-log-data');\n");
-        js.append("          if (tb && (newRow || window.__lastRenderedIdsSig !== idsSig || !tb.children.length)) {\n");
+        js.append("          if (tb && (isNewTopHit || window.__lastRenderedIdsSig !== idsSig || !tb.children.length)) {\n");
         js.append("            window.__lastRenderedIdsSig = idsSig;\n");
         js.append("            tb.innerHTML = html;\n");
         js.append("          }\n");
         js.append("        }\n");
-        js.append("        if (newRow && !isFirstLoad && hadRecentRealAudio) {\n");
+        js.append("        if (isNewTopHit) {\n");
         js.append("          if (typeof triggerLogLight === 'function') triggerLogLight();\n");
-        js.append("          if ((window.__voiceReadoutEnabled || window.__vOn) && newestSpokenCandidate && newestLineKey !== window.__lastSpokenRowKey) {\n");
-        js.append("            window.__lastSpokenRowKey = newestLineKey;\n");
-        js.append("            window.__speakTextAfterRx(newestSpokenCandidate, false);\n");
+        js.append("          var spkName = (topRowObj.nm && topRowObj.nm !== '---') ? topRowObj.nm : topRowObj.fq;\n");
+        js.append("          if ((window.__voiceReadoutEnabled || window.__vOn) && spkName && topRowObj.lineKey !== window.__lastSpokenRowKey) {\n");
+        js.append("            window.__lastSpokenRowKey = topRowObj.lineKey;\n");
+        js.append("            window.__speakTextAfterRx(spkName, false);\n");
         js.append("          }\n");
         js.append("        }\n");
         js.append("        isFirstLoad = false;\n");
@@ -1645,13 +1633,13 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        }\n");
         js.append("        var rms = Math.sqrt(sumSq / dataArray.length);\n");
         js.append("        var now = performance.now();\n");
-        js.append("        if (maxDev >= 9 && rms >= 2.6) {\n");
+        js.append("        if (maxDev >= 6 && rms >= 1.8) {\n");
         js.append("          window.__voiceEnergyFrames = (window.__voiceEnergyFrames || 0) + 1;\n");
         js.append("          var isKey = (now - lastScannerKeyTime) < 2200;\n");
         js.append("          if (rxSignalStartTime === 0) rxSignalStartTime = now;\n");
         js.append("          rxLastActiveTime = now;\n");
-        js.append("          var reqMs = isKey ? 450 : 320;\n");
-        js.append("          if ((now - rxSignalStartTime) >= reqMs && window.__voiceEnergyFrames >= 6) {\n");
+        js.append("          var reqMs = isKey ? 350 : 180;\n");
+        js.append("          if ((now - rxSignalStartTime) >= reqMs && window.__voiceEnergyFrames >= 4) {\n");
         js.append("            window.__lastRealAudioMs = nowWall;\n");
         js.append("            if (led && !led.classList.contains('active')) led.classList.add('active');\n");
         js.append("            if (!window.__lastNotifiedRxState || (nowWall - window.__lastActiveRxPushMs > 350)) {\n");
@@ -2121,34 +2109,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("            window.__speakTextAfterRx('Voice readout on', true);\n");
         js.append("          }\n");
         js.append("        });\n");
-        js.append("      }\n");
-
-        js.append("      var logBody = document.getElementById('mini-log-data');\n");
-        js.append("      if (logBody && !logBody.__nativeTtsObserverHooked) {\n");
-        js.append("        logBody.__nativeTtsObserverHooked = true;\n");
-        js.append("        new MutationObserver(function() {\n");
-        js.append("          if (!window.__voiceReadoutEnabled && !window.__vOn) return;\n");
-        js.append("          var rxEl = document.getElementById('rx-led');\n");
-        js.append("          var hadAudioNow = Boolean((rxEl && rxEl.classList.contains('active')) || (Date.now() - (window.__lastRealAudioMs || 0) < 4200));\n");
-        js.append("          if (!hadAudioNow) return;\n");
-        js.append("          var topRow = logBody.querySelector('tr.new-log-row');\n");
-        js.append("          if (!topRow || topRow.children.length < 5) return;\n");
-        js.append("          var timeStr = (topRow.children[0].textContent || '').trim();\n");
-        js.append("          var freqStr = (topRow.children[1].textContent || '').trim();\n");
-        js.append("          var durStr = (topRow.children[3].textContent || '').trim();\n");
-        js.append("          if (durStr === '00:00' || durStr === '00' || durStr === '00:00:00') return;\n");
-        js.append("          var nameTd = topRow.children[4];\n");
-        js.append("          var rawTitle = nameTd.getAttribute('title') || nameTd.textContent || '';\n");
-        js.append("          var closeParen = rawTitle.indexOf(')');\n");
-        js.append("          var chName = (closeParen !== -1 ? rawTitle.slice(closeParen + 1) : rawTitle).replace(/^[×xX]\\s*\\d+\\s*/, '').trim();\n");
-        js.append("          if (!chName || chName === '---') chName = freqStr;\n");
-        js.append("          if (!chName || chName.indexOf('OFF LINE') !== -1 || chName.indexOf('Waiting') !== -1) return;\n");
-        js.append("          var rowKey = topRow.getAttribute('data-line-key') || (timeStr + '|' + freqStr + '|' + chName);\n");
-        js.append("          if (rowKey !== window.__lastSpokenRowKey) {\n");
-        js.append("            window.__lastSpokenRowKey = rowKey;\n");
-        js.append("            window.__speakTextAfterRx(chName, false);\n");
-        js.append("          }\n");
-        js.append("        }).observe(logBody, { childList: true });\n");
         js.append("      }\n");
         js.append("    }\n");
 
