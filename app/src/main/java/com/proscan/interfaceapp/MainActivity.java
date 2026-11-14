@@ -395,7 +395,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-    private WebView webView;
+private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
     private SensorManager sensorManager;
@@ -456,7 +456,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     /**
      * Native Uncached Java Log Poller:
      * Never polls while scanner RX is active or during the 550ms post-squelch write window,
-     * and strips out 00:00:00 silent kerchunks right at the source!
+     * and strips out 00:00:00 and 00:00:01 (<=1s) silent kerchunks right at the source!
      */
     private void pollHistoryLogNatively() {
         long now = System.currentTimeMillis();
@@ -500,7 +500,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                         if ((trimmed.contains(",") || trimmed.contains("\t"))
                                 && !trimmed.toLowerCase(Locale.ROOT).startsWith("frequency")) {
                             totalValidLines++;
-                            if (trimmed.contains("00:00:00")) {
+                            if (trimmed.contains("00:00:00") || trimmed.contains("00:00:01")) {
                                 continue;
                             }
                             tailLines.add(totalValidLines + "\t" + trimmed);
@@ -1325,7 +1325,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 200);
     }
-    private void injectEnhancements() {
+private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -1491,7 +1491,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("    try { if (typeof rxHoldTimeout !== 'undefined') clearTimeout(rxHoldTimeout); } catch(e) {}\n");
         js.append("    try { if (typeof rxPostLogTimeout !== 'undefined') clearTimeout(rxPostLogTimeout); } catch(e) {}\n");
 
-        /* Global Native TTS Helper + Zero-Duration Filter + Top-Row-Only Animation */
+        /* Global Native TTS Helper + <=1s Filter + Top-Row-Only Animation */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
         js.append("      window.__lastRenderedIdsSig = '';\n");
@@ -1501,7 +1501,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      window.__lastRealAudioMs = 0;\n");
         js.append("      window.__voiceEnergyFrames = 0;\n");
 
-        /* Intercept Web_Server_User_HTML.htm's fetch('History Log.txt') so it can NEVER overwrite the log with 00:00 rows! */
+        /* Intercept Web_Server_User_HTML.htm's fetch('History Log.txt') so it can NEVER overwrite the log! */
         js.append("      if (window.fetch && !window.__fetchInterceptedForLog) {\n");
         js.append("        window.__fetchInterceptedForLog = true;\n");
         js.append("        var origFetch = window.fetch.bind(window);\n");
@@ -1567,7 +1567,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          var durSec = 0, dp = du.split(':');\n");
         js.append("          if (dp.length === 2) durSec = (parseInt(dp[0], 10) || 0) * 60 + (parseInt(dp[1], 10) || 0);\n");
         js.append("          else if (dp.length === 3) durSec = (parseInt(dp[0], 10) || 0) * 3600 + (parseInt(dp[1], 10) || 0) * 60 + (parseInt(dp[2], 10) || 0);\n");
-        js.append("          if (durSec <= 0) continue;\n");
+        js.append("          if (durSec <= 1) continue;\n");
         js.append("          counts[fq] = (counts[fq] || 0) + 1;\n");
         js.append("          var tp = tr.split(' '), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
         js.append("          validRows.push({\n");
@@ -1683,7 +1683,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      };\n");
         js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
         js.append("    }\n");
-        /* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
+/* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
         js.append("      window.renderCustomBrand = function() {};\n");
