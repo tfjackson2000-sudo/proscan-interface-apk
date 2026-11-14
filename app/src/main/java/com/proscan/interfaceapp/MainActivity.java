@@ -395,402 +395,935 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-package com.proscan.interfaceapp;
+private WebView webView;
+    private SharedPreferences prefs;
+    private AudioManager audioManager;
+    private SensorManager sensorManager;
+    private Sensor tiltSensor;
+    private float smoothTiltX = 0f;
+    private float smoothTiltY = 0f;
+    private long lastTiltPushMs = 0L;
 
-import android.app.Activity;
-import android.app.AlertDialog;
-import android.content.BroadcastReceiver;
-import android.content.ContentValues;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.content.SharedPreferences;
-import android.graphics.Color;
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
-import android.hardware.SensorManager;
-import android.media.AudioAttributes;
-import android.media.AudioDeviceCallback;
-import android.media.AudioDeviceInfo;
-import android.media.AudioFocusRequest;
-import android.media.AudioManager;
-import android.media.MediaPlayer;
-import android.net.ConnectivityManager;
-import android.net.Network;
-import android.net.NetworkCapabilities;
-import android.net.Uri;
-import android.net.wifi.WifiManager;
-import android.os.BatteryManager;
-import android.os.Build;
-import android.os.Bundle;
-import android.os.Environment;
-import android.os.Handler;
-import android.os.Looper;
-import android.os.PowerManager;
-import android.provider.MediaStore;
-import android.speech.tts.TextToSpeech;
-import android.speech.tts.UtteranceProgressListener;
-import android.text.InputType;
-import android.view.View;
-import android.view.Window;
-import android.view.WindowInsets;
-import android.view.WindowInsetsController;
-import android.view.WindowManager;
-import android.webkit.CookieManager;
-import android.webkit.JavascriptInterface;
-import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import android.widget.EditText;
-import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-import android.widget.Toast;
+    private AudioFocusRequest scannerAudioFocusReq = null;
+    private PowerManager.WakeLock scannerCpuLock = null;
+    private WifiManager.WifiLock scannerWifiLock = null;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService logPollExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private volatile boolean nativeLogPollInFlight = false;
+    private volatile long lastNativeLogPollMs = 0L;
+    private volatile long lastRxEndedMs = 0L;
 
-import org.json.JSONObject;
+    private boolean userWakeLockEnabled = false;
+    private boolean scannerAudioConnected = false;
+    private boolean bgAudioModeEnabled = false;
+    private boolean bedroomLampOn = false;
+    private String activeServerUrl = "";
+    private TextToSpeech tts = null;
+    private volatile boolean ttsReady = false;
+    private volatile String activeTtsUtteranceId = "";
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.InetSocketAddress;
-import java.net.Socket;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+    private String lastSpokenText = "";
+    private long lastSpokenTimestamp = 0;
 
-public class MainActivity extends Activity implements SensorEventListener {
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (event == null || event.values == null || event.values.length < 2 || webView == null) return;
+        long now = System.currentTimeMillis();
+        if (now - lastTiltPushMs < 35) return;
+        lastTiltPushMs = now;
+        float rawX = Math.max(-7f, Math.min(7f, event.values[0])) / 7f;
+        float rawY = Math.max(-7f, Math.min(7f, event.values[1] - 4.5f)) / 7f;
+        smoothTiltX += (rawX - smoothTiltX) * 0.28f;
+        smoothTiltY += (rawY - smoothTiltY) * 0.28f;
+        int deg = Math.round(125f - smoothTiltX * 38f + smoothTiltY * 22f);
+        int posPct = Math.round(38f + smoothTiltX * 28f - smoothTiltY * 20f);
+        int bx = Math.round(-smoothTiltX * 14f);
+        int by = Math.round(smoothTiltY * 14f);
+        webView.evaluateJavascript(
+                "try{var r=document.documentElement.style;" +
+                "r.setProperty('--gloss-deg','" + deg + "deg');" +
+                "r.setProperty('--gloss-pos','" + posPct + "%');" +
+                "r.setProperty('--tilt-x','" + bx + "px');" +
+                "r.setProperty('--tilt-y','" + by + "px');}catch(e){}",
+                null
+        );
+    }
 
-    private static final int REQ_LOAD_JSON = 901;
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
-    public static final class PriorityRadioEngine {
-        private static MediaPlayer radioPlayer = null;
-        private static String activeStationUrl = "";
-        private static String activeStationName = "";
-        private static int activeSessionId = 0;
-        private static volatile boolean isPlaying = false;
-        private static volatile boolean isScannerRxActive = false;
-        private static volatile boolean isTtsSpeaking = false;
-        private static volatile boolean isWaitingForPendingTts = false;
-        private static volatile long lastRxHeartbeatMs = 0L;
-        private static volatile long lastTtsStartMs = 0L;
-        private static volatile boolean restoreScheduled = false;
-        private static final Handler handler = new Handler(Looper.getMainLooper());
-        private static final ExecutorService radioExecutor = Executors.newSingleThreadExecutor();
+    /**
+     * Native Uncached Java Log Poller:
+     * Never polls while scanner RX is active or during the 550ms post-squelch write window,
+     * and strips out 00:00:00 and 00:00:01 (<=1s) silent kerchunks right at the source!
+     */
+    private void pollHistoryLogNatively() {
+        long now = System.currentTimeMillis();
+        if (nativeLogPollInFlight) return;
+        if (PriorityRadioEngine.isScannerCurrentlyReceiving()) return;
+        if (now - lastRxEndedMs < 550L) return;
+        if (now - lastNativeLogPollMs < 450L) return;
 
-        private static final Runnable restoreVolumeRunnable = new Runnable() {
-            @Override
-            public void run() {
-                synchronized (PriorityRadioEngine.class) {
-                    restoreScheduled = false;
-                    if (radioPlayer == null || !isPlaying) return;
-                    if (isScannerRxActive || isTtsSpeaking || isWaitingForPendingTts) return;
-                    applyCurrentVolumeLocked(cachedPrefs);
-                }
-            }
-        };
-
-        private static final Runnable clearPendingTtsWaitRunnable = new Runnable() {
-            @Override
-            public void run() {
-                synchronized (PriorityRadioEngine.class) {
-                    isWaitingForPendingTts = false;
-                    if (!isScannerRxActive && !isTtsSpeaking) {
-                        scheduleRestoreAfter2500msLocked();
-                    }
-                }
-            }
-        };
-
-        private static final Runnable duckWatchdogRunnable = new Runnable() {
-            @Override
-            public void run() {
-                synchronized (PriorityRadioEngine.class) {
-                    if (radioPlayer != null && isPlaying) {
-                        long now = System.currentTimeMillis();
-                        if (isScannerRxActive && (now - lastRxHeartbeatMs > 1500L)) {
-                            isScannerRxActive = false;
-                        }
-                        if (isTtsSpeaking && (now - lastTtsStartMs > 7000L)) {
-                            isTtsSpeaking = false;
-                        }
-                        if (!isScannerRxActive && !isTtsSpeaking && !isWaitingForPendingTts && !restoreScheduled) {
-                            applyCurrentVolumeLocked(cachedPrefs);
-                        }
-                        handler.postDelayed(this, 500);
-                    }
-                }
-            }
-        };
-
-        private static SharedPreferences cachedPrefs = null;
-
-        public static boolean isScannerCurrentlyReceiving() {
-            if (isScannerRxActive && (System.currentTimeMillis() - lastRxHeartbeatMs > 1500L)) {
-                isScannerRxActive = false;
-            }
-            return isScannerRxActive;
+        String base = activeServerUrl;
+        if ((base == null || base.isEmpty()) && webView != null) {
+            base = webView.getUrl();
         }
-
-        public static boolean isAutoDuckEnabled(SharedPreferences prefs) {
-            if (prefs != null) cachedPrefs = prefs;
-            return cachedPrefs == null || cachedPrefs.getBoolean("simple_auto_duck_on", true);
-        }
-
-        public static boolean toggleAutoDuck(SharedPreferences prefs) {
-            if (prefs != null) cachedPrefs = prefs;
-            boolean next = !isAutoDuckEnabled(cachedPrefs);
-            if (cachedPrefs != null) {
-                cachedPrefs.edit().putBoolean("simple_auto_duck_on", next).apply();
-            }
-            synchronized (PriorityRadioEngine.class) {
-                handler.removeCallbacks(restoreVolumeRunnable);
-                restoreScheduled = false;
-                applyCurrentVolumeLocked(cachedPrefs);
-            }
-            return next;
-        }
-
-        public static int getRadioVolumePct(SharedPreferences prefs) {
-            if (prefs != null) cachedPrefs = prefs;
-            return cachedPrefs != null ? cachedPrefs.getInt("radio_independent_vol_pct", 50) : 50;
-        }
-
-        public static void setRadioVolumePct(SharedPreferences prefs, int pct) {
-            if (prefs != null) cachedPrefs = prefs;
-            int clamped = Math.max(0, Math.min(100, pct));
-            if (cachedPrefs != null) {
-                cachedPrefs.edit().putInt("radio_independent_vol_pct", clamped).apply();
-            }
-            synchronized (PriorityRadioEngine.class) {
-                applyCurrentVolumeLocked(cachedPrefs);
-            }
-        }
-
-        public static float getUserRadioVolumeScalar(SharedPreferences prefs) {
-            int pct = getRadioVolumePct(prefs);
-            return Math.max(0f, Math.min(1f, pct / 100f));
-        }
-
-        private static synchronized void applyCurrentVolumeLocked(SharedPreferences prefs) {
-            if (radioPlayer == null || !isPlaying) return;
-            boolean ducked = isAutoDuckEnabled(prefs) && (isScannerRxActive || isTtsSpeaking || isWaitingForPendingTts);
-            float target = ducked ? 0.0f : getUserRadioVolumeScalar(prefs);
+        if (base == null || base.isEmpty()) return;
+        final String cleanBase = base.replaceAll("/+$", "");
+        nativeLogPollInFlight = true;
+        lastNativeLogPollMs = now;
+        logPollExecutor.execute(() -> {
+            HttpURLConnection conn = null;
             try {
-                radioPlayer.setVolume(target, target);
-            } catch (Exception ignored) {}
-        }
-
-        private static synchronized void scheduleRestoreAfter2500msLocked() {
-            handler.removeCallbacks(restoreVolumeRunnable);
-            restoreScheduled = false;
-            if (!isScannerRxActive && !isTtsSpeaking && !isWaitingForPendingTts) {
-                restoreScheduled = true;
-                handler.postDelayed(restoreVolumeRunnable, 2500);
-            }
-        }
-
-        public static void onScannerRxStateChanged(final SharedPreferences prefs, final boolean rxActive, final boolean voiceReadoutEnabled) {
-            if (prefs != null) cachedPrefs = prefs;
-            synchronized (PriorityRadioEngine.class) {
-                if (rxActive) {
-                    lastRxHeartbeatMs = System.currentTimeMillis();
-                    isScannerRxActive = true;
-                    isWaitingForPendingTts = false;
-                    restoreScheduled = false;
-                    handler.removeCallbacks(restoreVolumeRunnable);
-                    handler.removeCallbacks(clearPendingTtsWaitRunnable);
-                    applyCurrentVolumeLocked(cachedPrefs);
-                } else {
-                    if (isScannerRxActive) {
-                        isScannerRxActive = false;
-                        handler.removeCallbacks(restoreVolumeRunnable);
-                        restoreScheduled = false;
-                        if (voiceReadoutEnabled) {
-                            isWaitingForPendingTts = true;
-                            handler.removeCallbacks(clearPendingTtsWaitRunnable);
-                            handler.postDelayed(clearPendingTtsWaitRunnable, 1300);
-                        } else {
-                            isWaitingForPendingTts = false;
-                            scheduleRestoreAfter2500msLocked();
-                        }
-                    } else if (!isTtsSpeaking && !isWaitingForPendingTts && !restoreScheduled) {
-                        scheduleRestoreAfter2500msLocked();
-                    }
+                URL url = new URL(cleanBase + "/History%20Log.txt");
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(4000);
+                conn.setReadTimeout(4000);
+                conn.setUseCaches(false);
+                conn.setRequestMethod("GET");
+                conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
+                conn.setRequestProperty("Pragma", "no-cache");
+                conn.setRequestProperty("Connection", "close");
+                String cookie = CookieManager.getInstance().getCookie(cleanBase);
+                if (cookie != null && !cookie.isEmpty()) {
+                    conn.setRequestProperty("Cookie", cookie);
                 }
-            }
-        }
-
-        public static void notifyScannerRx(final SharedPreferences prefs, final boolean rxActive, final boolean voiceReadoutEnabled) {
-            onScannerRxStateChanged(prefs, rxActive, voiceReadoutEnabled);
-        }
-
-        public static void notifyScannerRx(final SharedPreferences prefs, final boolean rxActive) {
-            onScannerRxStateChanged(prefs, rxActive, false);
-        }
-
-        public static void onTtsSpeechStateChanged(final SharedPreferences prefs, final boolean speaking) {
-            if (prefs != null) cachedPrefs = prefs;
-            synchronized (PriorityRadioEngine.class) {
-                handler.removeCallbacks(clearPendingTtsWaitRunnable);
-                isWaitingForPendingTts = false;
-                if (speaking) {
-                    lastTtsStartMs = System.currentTimeMillis();
-                    isTtsSpeaking = true;
-                    restoreScheduled = false;
-                    handler.removeCallbacks(restoreVolumeRunnable);
-                    applyCurrentVolumeLocked(cachedPrefs);
-                } else {
-                    isTtsSpeaking = false;
-                    if (!isScannerRxActive) {
-                        scheduleRestoreAfter2500msLocked();
-                    }
-                }
-            }
-        }
-
-        public static void notifyTtsSpeaking(final SharedPreferences prefs, final boolean speaking) {
-            onTtsSpeechStateChanged(prefs, speaking);
-        }
-
-        public static synchronized boolean isRadioPlaying() {
-            try {
-                return isPlaying && radioPlayer != null && radioPlayer.isPlaying();
-            } catch (Exception e) {
-                return false;
-            }
-        }
-
-        public static synchronized String getActiveStationUrl() {
-            return activeStationUrl != null ? activeStationUrl : "";
-        }
-
-        public static synchronized String getActiveStationName() {
-            return activeStationName != null ? activeStationName : "";
-        }
-
-        public static synchronized int getAudioSessionId() {
-            return activeSessionId;
-        }
-
-        public static void startStation(final Context context, final SharedPreferences prefs, final String streamUrl, final String stationName, final Runnable onStarted, final Runnable onError) {
-            if (prefs != null) cachedPrefs = prefs;
-            stopStation();
-            activeStationUrl = streamUrl != null ? streamUrl : "";
-            activeStationName = stationName != null ? stationName : "RADIO";
-            radioExecutor.execute(() -> {
-                final String resolved = resolveRedirectsStatic(activeStationUrl);
-                handler.post(() -> {
-                    try {
-                        stopStationInternalOnly();
-                        radioPlayer = new MediaPlayer();
-                        radioPlayer.setWakeMode(context.getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
-                        if (Build.VERSION.SDK_INT >= 21) {
-                            radioPlayer.setAudioAttributes(new AudioAttributes.Builder()
-                                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                                    .build());
-                        }
-                        Map<String, String> headers = new HashMap<>();
-                        headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                        radioPlayer.setDataSource(context.getApplicationContext(), Uri.parse(resolved), headers);
-                        radioPlayer.setOnPreparedListener(mp -> {
-                            synchronized (PriorityRadioEngine.class) {
-                                isPlaying = true;
-                                activeSessionId = mp.getAudioSessionId();
-                                applyCurrentVolumeLocked(cachedPrefs);
-                                mp.start();
-                                handler.removeCallbacks(duckWatchdogRunnable);
-                                handler.postDelayed(duckWatchdogRunnable, 500);
+                int code = conn.getResponseCode();
+                if (code == 200) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                    List<String> tailLines = new LinkedList<>();
+                    int totalValidLines = 0;
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        String trimmed = line.trim();
+                        if ((trimmed.contains(",") || trimmed.contains("\t"))
+                                && !trimmed.toLowerCase(Locale.ROOT).startsWith("frequency")) {
+                            totalValidLines++;
+                            if (trimmed.contains("00:00:00") || trimmed.contains("00:00:01")) {
+                                continue;
                             }
-                            if (onStarted != null) onStarted.run();
-                        });
-                        radioPlayer.setOnErrorListener((mp, what, extra) -> {
-                            if (onError != null) onError.run();
-                            return true;
-                        });
-                        radioPlayer.prepareAsync();
-                    } catch (Exception e) {
-                        if (onError != null) onError.run();
+                            tailLines.add(totalValidLines + "\t" + trimmed);
+                            if (tailLines.size() > 160) {
+                                tailLines.remove(0);
+                            }
+                        }
                     }
-                });
-            });
-        }
-
-        public static synchronized void togglePause(SharedPreferences prefs) {
-            if (prefs != null) cachedPrefs = prefs;
-            if (radioPlayer == null) return;
-            try {
-                if (radioPlayer.isPlaying()) {
-                    radioPlayer.pause();
-                    isPlaying = false;
-                } else {
-                    isPlaying = true;
-                    applyCurrentVolumeLocked(cachedPrefs);
-                    radioPlayer.start();
-                    handler.removeCallbacks(duckWatchdogRunnable);
-                    handler.postDelayed(duckWatchdogRunnable, 500);
+                    reader.close();
+                    if (!tailLines.isEmpty()) {
+                        StringBuilder sb = new StringBuilder();
+                        for (String l : tailLines) {
+                            sb.append(l).append("\n");
+                        }
+                        final String quotedLog = JSONObject.quote(sb.toString());
+                        mainHandler.post(() -> {
+                            if (webView != null) {
+                                webView.evaluateJavascript("if(window.__onNativeHistoryLogText)window.__onNativeHistoryLogText(" + quotedLog + ");", null);
+                            }
+                        });
+                    }
                 }
-            } catch (Exception ignored) {}
-        }
+            } catch (Exception ignored) {
+            } finally {
+                if (conn != null) {
+                    try { conn.disconnect(); } catch (Exception ignored) {}
+                }
+                nativeLogPollInFlight = false;
+            }
+        });
+    }
 
-        private static synchronized void stopStationInternalOnly() {
-            handler.removeCallbacks(restoreVolumeRunnable);
-            handler.removeCallbacks(clearPendingTtsWaitRunnable);
-            handler.removeCallbacks(duckWatchdogRunnable);
-            restoreScheduled = false;
-            isPlaying = false;
-            activeSessionId = 0;
-            if (radioPlayer != null) {
-                try { if (radioPlayer.isPlaying()) radioPlayer.stop(); } catch (Exception ignored) {}
-                try { radioPlayer.reset(); radioPlayer.release(); } catch (Exception ignored) {}
-                radioPlayer = null;
+    private synchronized void acquireScannerWakeAndWifiLocks() {
+        try {
+            if (audioManager != null) {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    if (scannerAudioFocusReq == null) {
+                        scannerAudioFocusReq = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                                .setAudioAttributes(new AudioAttributes.Builder()
+                                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                        .build())
+                                .setAcceptsDelayedFocusGain(true)
+                                .setWillPauseWhenDucked(false)
+                                .setOnAudioFocusChangeListener(fc -> {}, mainHandler)
+                                .build();
+                    }
+                    audioManager.requestAudioFocus(scannerAudioFocusReq);
+                } else {
+                    audioManager.requestAudioFocus(fc -> {}, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+                }
+            }
+            if (scannerCpuLock == null) {
+                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (pm != null) {
+                    scannerCpuLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "proscan:main_scanner_cpu");
+                    scannerCpuLock.setReferenceCounted(false);
+                }
+            }
+            if (scannerCpuLock != null && !scannerCpuLock.isHeld()) {
+                scannerCpuLock.acquire();
+            }
+            if (scannerWifiLock == null) {
+                WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                if (wm != null) {
+                    int mode = Build.VERSION.SDK_INT >= 29 ? WifiManager.WIFI_MODE_FULL_LOW_LATENCY : WifiManager.WIFI_MODE_FULL_HIGH_PERF;
+                    scannerWifiLock = wm.createWifiLock(mode, "proscan:main_scanner_wifi");
+                    scannerWifiLock.setReferenceCounted(false);
+                }
+            }
+            if (scannerWifiLock != null && !scannerWifiLock.isHeld()) {
+                scannerWifiLock.acquire();
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private synchronized void releaseScannerWakeAndWifiLocks() {
+        if (PriorityRadioEngine.isRadioPlaying()) return;
+        try {
+            if (scannerCpuLock != null && scannerCpuLock.isHeld()) scannerCpuLock.release();
+            if (scannerWifiLock != null && scannerWifiLock.isHeld()) scannerWifiLock.release();
+        } catch (Exception ignored) {}
+    }
+
+    private void triggerAlexaWebhook(final boolean turnOn) {
+        final String offUrl = prefs.getString("alexa_lamp_off_url", "").trim();
+        final String onUrl = prefs.getString("alexa_lamp_on_url", "").trim();
+        if (offUrl.isEmpty() && onUrl.isEmpty()) {
+            showAlexaLampSetupDialog();
+            return;
+        }
+        final String targetUrl;
+        final String actionLabel;
+        if (!offUrl.isEmpty() && !onUrl.isEmpty()) {
+            bedroomLampOn = turnOn;
+            targetUrl = bedroomLampOn ? onUrl : offUrl;
+            actionLabel = bedroomLampOn ? "BEDROOM LIGHTS: ON" : "BEDROOM LIGHTS: OFF";
+        } else {
+            bedroomLampOn = !bedroomLampOn;
+            targetUrl = !offUrl.isEmpty() ? offUrl : onUrl;
+            actionLabel = "BEDROOM LIGHTS: TRIGGERED";
+        }
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "if(typeof showDisplayHud==='function')showDisplayHud('" + actionLabel + "',1500);",
+                    null
+            );
+        }
+        Toast.makeText(this, actionLabel, Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
+            try {
+                HttpURLConnection conn = (HttpURLConnection) new URL(targetUrl).openConnection();
+                conn.setConnectTimeout(6000);
+                conn.setReadTimeout(6000);
+                conn.setRequestMethod("GET");
+                conn.setRequestProperty("Cache-Control", "no-cache");
+                int code = conn.getResponseCode();
+                conn.disconnect();
+                if (code < 200 || code >= 400) {
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this, "Routine HTTP " + code, Toast.LENGTH_SHORT).show());
+                }
+            } catch (Exception e) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Routine failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private void showAlexaLampSetupDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        layout.setPadding(pad, pad, pad, pad);
+
+        TextView l1 = new TextView(this);
+        l1.setText("Lights Toggle / OFF Alexa Routine URL (Virtual Buttons / Voice Monkey):");
+        layout.addView(l1);
+        final EditText offInput = new EditText(this);
+        offInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        offInput.setHint("https://api.virtualbuttons.com/v1?...");
+        offInput.setText(prefs.getString("alexa_lamp_off_url", ""));
+        layout.addView(offInput);
+
+        TextView l2 = new TextView(this);
+        l2.setText("\nSecond Routine URL (Optional - leave blank for single toggle URL):");
+        layout.addView(l2);
+        final EditText onInput = new EditText(this);
+        onInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        onInput.setHint("Optional second routine URL");
+        onInput.setText(prefs.getString("alexa_lamp_on_url", ""));
+        layout.addView(onInput);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Bedroom Lights (Alexa Routine)")
+                .setView(layout)
+                .setPositiveButton("Save", (d, w) -> {
+                    prefs.edit()
+                            .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
+                            .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
+                            .apply();
+                    Toast.makeText(MainActivity.this, "Bedroom Light Routine Saved! Tap LAMP to trigger.", Toast.LENGTH_SHORT).show();
+                })
+                .setNeutralButton("Test Now", (d, w) -> {
+                    prefs.edit()
+                            .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
+                            .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
+                            .apply();
+                    triggerAlexaWebhook(false);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private synchronized void initTTS() {
+        try {
+            if (tts != null) {
+                try { tts.stop(); tts.shutdown(); } catch (Exception ignored) {}
+                tts = null;
+            }
+            ttsReady = false;
+            tts = new TextToSpeech(getApplicationContext(), status -> {
+                if (status == TextToSpeech.SUCCESS && tts != null) {
+                    tts.setLanguage(Locale.UK);
+                    tts.setSpeechRate(1.05f);
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        tts.setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .build());
+                    }
+                    tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                        @Override
+                        public void onStart(String utteranceId) {
+                            PriorityRadioEngine.onTtsSpeechStateChanged(prefs, true);
+                        }
+
+                        @Override
+                        public void onDone(String utteranceId) {
+                            if (utteranceId == null || utteranceId.equals(activeTtsUtteranceId)) {
+                                PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
+                            }
+                        }
+
+                        @Override
+                        public void onError(String utteranceId) {
+                            if (utteranceId == null || utteranceId.equals(activeTtsUtteranceId)) {
+                                PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
+                            }
+                        }
+
+                        @Override
+                        public void onStop(String utteranceId, boolean interrupted) {
+                            if (utteranceId == null || utteranceId.equals(activeTtsUtteranceId)) {
+                                PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
+                            }
+                        }
+                    });
+                    ttsReady = true;
+                }
+            });
+        } catch (Exception ignored) {}
+    }
+
+    private void forceStopScannerOnHeadphoneDisconnect() {
+        scannerAudioConnected = false;
+        PriorityRadioEngine.stopStation();
+        setBgServiceRunning(false);
+        releaseScannerWakeAndWifiLocks();
+        Runnable stopJs = () -> {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                        "try{if(window.__stopScannerAudioFromBt)window.__stopScannerAudioFromBt();" +
+                        "var p=document.getElementById('audio_player');if(p){p.pause();}" +
+                        "isConnected=false;var b=document.getElementById('btn-audio-toggle');if(b)b.classList.remove('active');" +
+                        "window.__voiceReadoutEnabled=false;window.__vOn=false;var vb=document.getElementById('btn-voice-toggle');if(vb)vb.classList.remove('active');}catch(e){}",
+                        null
+                );
+            }
+        };
+        mainHandler.post(stopJs);
+        mainHandler.postDelayed(stopJs, 200);
+        mainHandler.postDelayed(stopJs, 500);
+        mainHandler.post(() -> Toast.makeText(MainActivity.this, "Headphones disconnected — Audio stopped", Toast.LENGTH_SHORT).show());
+    }
+
+    private final BroadcastReceiver noisyAudioReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent == null) return;
+            if (isInitialStickyBroadcast()) return;
+            String act = intent.getAction();
+            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(act)
+                    || (Intent.ACTION_HEADSET_PLUG.equals(act) && intent.getIntExtra("state", -1) == 0)) {
+                forceStopScannerOnHeadphoneDisconnect();
             }
         }
+    };
 
-        public static synchronized void stopStation() {
-            activeStationUrl = "";
-            activeStationName = "";
-            stopStationInternalOnly();
-        }
-
-        private static String resolveRedirectsStatic(String urlStr) {
-            String current = urlStr;
-            for (int hop = 0; hop < 6; hop++) {
-                try {
-                    HttpURLConnection conn = (HttpURLConnection) new URL(current).openConnection();
-                    conn.setInstanceFollowRedirects(false);
-                    conn.setConnectTimeout(5000);
-                    conn.setReadTimeout(5000);
-                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                    int code = conn.getResponseCode();
-                    if (code >= 300 && code < 400) {
-                        String loc = conn.getHeaderField("Location");
-                        conn.disconnect();
-                        if (loc == null || loc.isEmpty()) break;
-                        current = new URL(new URL(current), loc).toString();
-                    } else {
-                        conn.disconnect();
-                        break;
-                    }
-                } catch (Exception e) {
+    private final AudioDeviceCallback btDeviceCallback = new AudioDeviceCallback() {
+        @Override
+        public void onAudioDevicesRemoved(AudioDeviceInfo[] removedDevices) {
+            if (removedDevices == null) return;
+            for (AudioDeviceInfo dev : removedDevices) {
+                int t = dev.getType();
+                if (t == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                        || t == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                        || t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                        || t == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                        || t == AudioDeviceInfo.TYPE_USB_HEADSET
+                        || t == 26
+                        || t == 27) {
+                    forceStopScannerOnHeadphoneDisconnect();
                     break;
                 }
             }
-            return current;
         }
+    };
+
+    private int injectorTickCount = 0;
+
+    private final Runnable periodicInjector = new Runnable() {
+        @Override
+        public void run() {
+            if (webView != null) {
+                if ((injectorTickCount++ % 5) == 0) {
+                    injectEnhancements();
+                }
+                if (scannerAudioConnected || PriorityRadioEngine.isRadioPlaying()) {
+                    webView.evaluateJavascript(
+                            "try{if(window.__bgTickSquelchAndLog)window.__bgTickSquelchAndLog();}catch(e){}",
+                            null
+                    );
+                }
+            }
+            mainHandler.postDelayed(this, 120);
+        }
+    };
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        hideSystemUI();
+
+        if (Build.VERSION.SDK_INT >= 33) {
+            try {
+                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS", "android.permission.RECORD_AUDIO"}, 101);
+            } catch (Exception ignored) {}
+        } else if (Build.VERSION.SDK_INT >= 23) {
+            try {
+                requestPermissions(new String[]{"android.permission.RECORD_AUDIO"}, 101);
+            } catch (Exception ignored) {}
+        }
+
+        try {
+            IntentFilter f = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+            f.addAction(Intent.ACTION_HEADSET_PLUG);
+            registerReceiver(noisyAudioReceiver, f);
+        } catch (Exception ignored) {}
+
+        try {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
+                audioManager.registerAudioDeviceCallback(btDeviceCallback, mainHandler);
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+            if (sensorManager != null) {
+                tiltSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY);
+                if (tiltSensor == null) {
+                    tiltSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+                }
+            }
+        } catch (Exception ignored) {}
+
+        prefs = getSharedPreferences("proscan_prefs", MODE_PRIVATE);
+
+        initTTS();
+
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.BLACK);
+
+        webView = new WebView(this) {
+            @Override
+            public void setKeepScreenOn(boolean keepScreenOn) {
+                super.setKeepScreenOn(userWakeLockEnabled);
+            }
+
+            @Override
+            protected void onWindowVisibilityChanged(int visibility) {
+                super.onWindowVisibilityChanged(View.VISIBLE);
+            }
+
+            @Override
+            public void onWindowFocusChanged(boolean hasWindowFocus) {
+                super.onWindowFocusChanged(true);
+            }
+
+            @Override
+            public void onPause() {
+            }
+
+            @Override
+            public void pauseTimers() {
+            }
+        };
+        webView.setKeepScreenOn(false);
+        setupWebView();
+        root.addView(webView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
+        setContentView(root);
+
+        userWakeLockEnabled = prefs.getBoolean("wake_lock_on", true);
+        if (userWakeLockEnabled) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            webView.setKeepScreenOn(true);
+        }
+
+        String localUrl = prefs.getString("local_url", "");
+        String tailscaleUrl = prefs.getString("tailscale_url", "");
+
+        if (localUrl.isEmpty() && tailscaleUrl.isEmpty()) {
+            showSetupDialog(true);
+        } else {
+            connectSmart(localUrl, tailscaleUrl);
+        }
+    }
+
+    private String getNativeBatteryStatus() {
+        try {
+            IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+            Intent b = registerReceiver(null, ifilter);
+            if (b != null) {
+                int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+                int status = b.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+                boolean charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
+                if (level >= 0 && scale > 0) {
+                    int pct = Math.round((level * 100f) / scale);
+                    return (charging ? "⚡" : "") + pct + "%";
+                }
+            }
+        } catch (Exception ignored) {}
+        return "";
+    }
+
+    private void setBgServiceRunning(boolean enable) {
+        bgAudioModeEnabled = enable;
+        Intent svc = new Intent(this, AudioKeepAliveService.class);
+        try {
+            if (enable || scannerAudioConnected || PriorityRadioEngine.isRadioPlaying()) {
+                acquireScannerWakeAndWifiLocks();
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(svc);
+                else startService(svc);
+            } else {
+                releaseScannerWakeAndWifiLocks();
+                stopService(svc);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void saveBackupJsonToDownloads(String webStorageJson, boolean showToast) {
+        try {
+            JSONObject root = new JSONObject();
+            root.put("local_url", prefs.getString("local_url", ""));
+            root.put("tailscale_url", prefs.getString("tailscale_url", ""));
+            root.put("alexa_lamp_off_url", prefs.getString("alexa_lamp_off_url", ""));
+            root.put("alexa_lamp_on_url", prefs.getString("alexa_lamp_on_url", ""));
+            JSONObject ws = webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject();
+            String rad = prefs.getString("radio_stations_json", "");
+            if (!rad.isEmpty() && !ws.has("proscan_radio_stations_v3")) {
+                ws.put("proscan_radio_stations_v3", rad);
+            }
+            root.put("web_storage", ws);
+            byte[] bytes = root.toString(2).getBytes(StandardCharsets.UTF_8);
+
+            prefs.edit().putString("last_backup_json", root.toString()).apply();
+
+            if (Build.VERSION.SDK_INT >= 29) {
+                try {
+                    getContentResolver().delete(
+                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            MediaStore.MediaColumns.DISPLAY_NAME + "=?",
+                            new String[]{"proscan_presets_backup.json"}
+                    );
+                } catch (Exception ignored) {}
+
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, "proscan_presets_backup.json");
+                values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+
+                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri != null) {
+                    OutputStream os = getContentResolver().openOutputStream(uri);
+                    if (os != null) {
+                        os.write(bytes);
+                        os.close();
+                    }
+                }
+            } else {
+                File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                File file = new File(dir, "proscan_presets_backup.json");
+                FileOutputStream fos = new FileOutputStream(file);
+                fos.write(bytes);
+                fos.close();
+            }
+
+            if (showToast) {
+                Toast.makeText(this, "Saved to Downloads/proscan_presets_backup.json", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            if (showToast) {
+                Toast.makeText(this, "Backup error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void restoreFromJsonString(String jsonStr) {
+        try {
+            JSONObject root = new JSONObject(jsonStr);
+            String loc = root.optString("local_url", "");
+            String ts = root.optString("tailscale_url", "");
+            String lampOff = root.optString("alexa_lamp_off_url", "");
+            String lampOn = root.optString("alexa_lamp_on_url", "");
+            JSONObject webStorage = root.optJSONObject("web_storage");
+
+            if (!loc.isEmpty() || !ts.isEmpty()) {
+                prefs.edit().putString("local_url", loc).putString("tailscale_url", ts).apply();
+            }
+            if (!lampOff.isEmpty() || !lampOn.isEmpty()) {
+                prefs.edit().putString("alexa_lamp_off_url", lampOff).putString("alexa_lamp_on_url", lampOn).apply();
+            }
+            if (webStorage != null) {
+                if (webStorage.has("proscan_radio_stations_v3")) {
+                    prefs.edit().putString("radio_stations_json", webStorage.optString("proscan_radio_stations_v3", "")).apply();
+                }
+                prefs.edit().putString("shared_web_storage", webStorage.toString()).putString("last_backup_json", root.toString()).apply();
+            }
+
+            Toast.makeText(this, "Presets & IPs Restored! Loading...", Toast.LENGTH_SHORT).show();
+            String activeLoc = prefs.getString("local_url", "");
+            String activeTs = prefs.getString("tailscale_url", "");
+            if (!activeLoc.isEmpty() || !activeTs.isEmpty()) {
+                connectSmart(activeLoc, activeTs);
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Invalid backup JSON file", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_LOAD_JSON && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            try {
+                InputStream is = getContentResolver().openInputStream(data.getData());
+                if (is != null) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) sb.append(line);
+                    reader.close();
+                    restoreFromJsonString(sb.toString());
+                }
+            } catch (Exception e) {
+                Toast.makeText(this, "Failed to read backup file", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void openPlayerActivityMode(final String mode) {
+        mainHandler.post(() -> {
+            String base = activeServerUrl;
+            if (base == null || base.isEmpty()) base = webView != null ? webView.getUrl() : "";
+            Intent i = new Intent(MainActivity.this, PlayerActivity.class);
+            i.putExtra("server_url", base != null ? base : "");
+            i.putExtra("start_mode", mode);
+            startActivity(i);
+            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+        });
+    }
+
+    public class WebAppBridge {
+        @JavascriptInterface
+        public String getBatteryStatus() {
+            return getNativeBatteryStatus();
+        }
+
+        @JavascriptInterface
+        public void requestNativeLogPoll() {
+            pollHistoryLogNatively();
+        }
+
+        @JavascriptInterface
+        public void triggerBedroomLamp(final boolean turnOn) {
+            mainHandler.post(() -> triggerAlexaWebhook(turnOn));
+        }
+
+        @JavascriptInterface
+        public void openLampSetup() {
+            mainHandler.post(() -> showAlexaLampSetupDialog());
+        }
+
+        @JavascriptInterface
+        public void openAppSettings() {
+            mainHandler.post(() -> showSetupDialog(false));
+        }
+
+        @JavascriptInterface
+        public void setKeepScreenOn(final boolean keepOn) {
+            mainHandler.post(() -> {
+                userWakeLockEnabled = keepOn;
+                prefs.edit().putBoolean("wake_lock_on", keepOn).apply();
+                if (keepOn) {
+                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    webView.setKeepScreenOn(true);
+                    Toast.makeText(MainActivity.this, "Screen Wake: ON (All Modes)", Toast.LENGTH_SHORT).show();
+                } else {
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    webView.setKeepScreenOn(false);
+                    Toast.makeText(MainActivity.this, "Screen Wake: OFF", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void setScannerAudioConnected(final boolean connected) {
+            if (!connected) {
+                PriorityRadioEngine.onScannerRxStateChanged(prefs, false, false);
+            }
+            mainHandler.post(() -> {
+                scannerAudioConnected = connected;
+                setBgServiceRunning(connected || bgAudioModeEnabled);
+            });
+        }
+
+        @JavascriptInterface
+        public void setBackgroundAudioMode(final boolean enabled) {
+            mainHandler.post(() -> {
+                setBgServiceRunning(enabled);
+            });
+        }
+
+        @JavascriptInterface
+        public boolean isAutoDuckOn() {
+            return PriorityRadioEngine.isAutoDuckEnabled(prefs);
+        }
+
+        @JavascriptInterface
+        public boolean toggleSimpleAutoDuck() {
+            final boolean nextState = PriorityRadioEngine.toggleAutoDuck(prefs);
+            mainHandler.post(() -> Toast.makeText(MainActivity.this,
+                    nextState ? "Radio Auto-Duck: ON (Mutes on Scanner Hit)" : "Radio Auto-Duck: OFF",
+                    Toast.LENGTH_SHORT).show());
+            return nextState;
+        }
+
+        @JavascriptInterface
+        public void notifyScannerRx(final boolean rxActive, final boolean voiceReadoutEnabled) {
+            PriorityRadioEngine.onScannerRxStateChanged(prefs, rxActive, voiceReadoutEnabled);
+            if (!rxActive) {
+                lastRxEndedMs = System.currentTimeMillis();
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 650);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 1850);
+            }
+        }
+
+        @JavascriptInterface
+        public void speakChannel(final String text) {
+            if (text == null || text.trim().isEmpty()) return;
+            mainHandler.post(() -> {
+                final String cleanText = text.trim();
+
+                long now = System.currentTimeMillis();
+                if (!cleanText.equalsIgnoreCase("Voice readout on")
+                        && cleanText.equalsIgnoreCase(lastSpokenText)
+                        && (now - lastSpokenTimestamp < 15000)) {
+                    if (tts == null || !tts.isSpeaking()) {
+                        PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
+                    }
+                    return;
+                }
+                lastSpokenText = cleanText;
+                lastSpokenTimestamp = now;
+
+                PriorityRadioEngine.onTtsSpeechStateChanged(prefs, true);
+
+                if (tts == null || !ttsReady) {
+                    initTTS();
+                    mainHandler.postDelayed(() -> speakDirect(cleanText), 900);
+                    return;
+                }
+                speakDirect(cleanText);
+            });
+        }
+
+        private void speakDirect(String cleanText) {
+            int result = TextToSpeech.ERROR;
+            final String uttId = "proscan_tts_" + System.currentTimeMillis();
+            activeTtsUtteranceId = uttId;
+            try {
+                if (Build.VERSION.SDK_INT >= 21) {
+                    Bundle params = new Bundle();
+                    params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.45f);
+                    result = tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, uttId);
+                } else {
+                    result = tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null);
+                }
+            } catch (Exception e) {
+                result = TextToSpeech.ERROR;
+            }
+
+            mainHandler.postDelayed(() -> {
+                if (uttId.equals(activeTtsUtteranceId) && (tts == null || !tts.isSpeaking())) {
+                    PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
+                }
+            }, 4200);
+
+            if (result != TextToSpeech.SUCCESS) {
+                initTTS();
+                mainHandler.postDelayed(() -> {
+                    if (tts != null && ttsReady) {
+                        final String retryId = "proscan_tts_retry_" + System.currentTimeMillis();
+                        activeTtsUtteranceId = retryId;
+                        if (Build.VERSION.SDK_INT >= 21) {
+                            Bundle params = new Bundle();
+                            params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.45f);
+                            tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, retryId);
+                        } else {
+                            tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null);
+                        }
+                    } else {
+                        PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
+                    }
+                }, 1000);
+            }
+        }
+
+        @JavascriptInterface
+        public void syncActiveThemeInMemory(final String webStorageJson) {
+            try {
+                if (webStorageJson != null && webStorageJson.length() > 10) {
+                    prefs.edit().putString("shared_web_storage", webStorageJson).apply();
+                }
+                JSONObject root = new JSONObject();
+                root.put("local_url", prefs.getString("local_url", ""));
+                root.put("tailscale_url", prefs.getString("tailscale_url", ""));
+                root.put("alexa_lamp_off_url", prefs.getString("alexa_lamp_off_url", ""));
+                root.put("alexa_lamp_on_url", prefs.getString("alexa_lamp_on_url", ""));
+                root.put("web_storage", webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject());
+                prefs.edit().putString("last_backup_json", root.toString()).apply();
+            } catch (Exception ignored) {}
+        }
+
+        @JavascriptInterface
+        public void openArchivePlayer() { openPlayerActivityMode("archive"); }
+
+        @JavascriptInterface
+        public void openBroadcastRadio() { openPlayerActivityMode("radio"); }
+
+        @JavascriptInterface
+        public void autoSavePresetsJson(final String webStorageJson, final boolean notifyUser) {
+            mainHandler.post(() -> {
+                if (webStorageJson != null && webStorageJson.length() > 10) {
+                    prefs.edit().putString("shared_web_storage", webStorageJson).apply();
+                }
+                saveBackupJsonToDownloads(webStorageJson, notifyUser);
+            });
+        }
+
+        @JavascriptInterface
+        public void showSystemBars() {
+            mainHandler.post(() -> {
+                showBothSystemBarsNow();
+                mainHandler.postDelayed(() -> hideSystemUI(), 4500);
+            });
+        }
+
+        @JavascriptInterface
+        public void minimizeApp() { mainHandler.post(() -> moveTaskToBack(true)); }
+
+        @JavascriptInterface
+        public void exitApp() { mainHandler.post(() -> closeAndExitApp()); }
+    }
+
+    private void showBothSystemBarsNow() {
+        try {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            );
+            if (Build.VERSION.SDK_INT >= 30) {
+                WindowInsetsController ic = getWindow().getInsetsController();
+                if (ic != null) ic.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void closeAndExitApp() {
+        scannerAudioConnected = false;
+        PriorityRadioEngine.stopStation();
+        setBgServiceRunning(false);
+        releaseScannerWakeAndWifiLocks();
+        try { if (sensorManager != null) sensorManager.unregisterListener(this); } catch (Exception ignored) {}
+        try { unregisterReceiver(noisyAudioReceiver); } catch (Exception ignored) {}
+        try {
+            if (audioManager != null && Build.VERSION.SDK_INT >= 23) {
+                audioManager.unregisterAudioDeviceCallback(btDeviceCallback);
+            }
+        } catch (Exception ignored) {}
+        try { if (tts != null) { tts.stop(); tts.shutdown(); } } catch (Exception ignored) {}
+        try { if (webView != null) { webView.loadUrl("about:blank"); webView.stopLoading(); webView.destroy(); } } catch (Exception ignored) {}
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) finishAndRemoveTask();
+        else finish();
+        System.exit(0);
+    }
+
+    private void setupWebView() {
+        WebSettings s = webView.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setDatabaseEnabled(true);
+        s.setMediaPlaybackRequiresUserGesture(false);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        s.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        s.setUseWideViewPort(true);
+        s.setLoadWithOverviewMode(true);
+
+        CookieManager.getInstance().setAcceptCookie(true);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+
+        webView.addJavascriptInterface(new WebAppBridge(), "AndroidApp");
+        webView.setBackgroundColor(Color.BLACK);
+        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return false; }
+
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                injectEnhancements();
+                mainHandler.postDelayed(() -> injectEnhancements(), 400);
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                injectEnhancements();
+                pollHistoryLogNatively();
+            }
+        });
+
+        mainHandler.removeCallbacks(periodicInjector);
+        mainHandler.postDelayed(periodicInjector, 200);
     }
 private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
