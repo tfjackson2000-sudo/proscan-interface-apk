@@ -922,8 +922,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    '.radio-crud-bar{display:none;grid-template-columns:2fr 1fr 1fr 1fr!important;gap:6px!important;height:34px!important;}' +\n");
         js.append("    '.radio-crud-bar .btn{font-size:10.5px!important;font-weight:900!important;padding:2px!important;}' +\n");
         js.append("    '#date-select, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
-
-        /* Larger Illuminated Square Top Hardware Buttons: WAKE, VOICE, LAMP, and PWR (Identical to Scanner) */
         js.append("    '#btn-player-wake, #btn-player-voice, #btn-player-lamp, #btn-player-exit{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:2px!important;background:transparent!important;border:none!important;padding:0!important;margin:0 1px!important;cursor:pointer!important;touch-action:manipulation!important;box-shadow:none!important;}' +\n");
         js.append("    '.sq-hw-cap{width:28px!important;height:22px!important;border-radius:5px!important;background:linear-gradient(180deg,#262a30 0%,#14171a 100%)!important;border:1.5px solid #090a0c!important;box-shadow:0 2px 4px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.12)!important;display:flex!important;align-items:center!important;justify-content:center!important;transition:all 0.2s ease!important;position:relative!important;}' +\n");
         js.append("    '.sq-hw-cap::after{content:\"\"!important;width:12px!important;height:4px!important;border-radius:2px!important;background:#334155!important;box-shadow:inset 0 1px 2px rgba(0,0,0,0.8)!important;transition:all 0.2s ease!important;}' +\n");
@@ -937,8 +935,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    '#btn-player-lamp.active .sq-hw-cap::after{background:#fefce8!important;box-shadow:0 0 7px #ffffff!important;}' +\n");
         js.append("    '#btn-player-exit.active .sq-hw-cap{background:linear-gradient(180deg,#ef4444 0%,#b91c1c 100%)!important;border-color:#fca5a5!important;box-shadow:0 0 10px rgba(239,68,68,0.85),0 0 18px rgba(239,68,68,0.45),inset 0 1px 2px rgba(255,255,255,0.6)!important;}' +\n");
         js.append("    '#btn-player-exit.active .sq-hw-cap::after{background:#fef2f2!important;box-shadow:0 0 6px #ffffff!important;}' +\n");
-
-        /* Center RX / S-Meter / LOG Indicators (Identical to Scanner) */
         js.append("    '.player-led-col{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;}' +\n");
         js.append("    '.player-round-led{width:10px;height:10px;border-radius:50%;background:#1a1a1a;border:2px solid #000;box-shadow:inset 1px 1px 3px rgba(0,0,0,0.8),0 1px 1px rgba(255,255,255,0.1);transition:all 0.15s ease;}' +\n");
         js.append("    '#player-rx-led.active{background:#22c55e!important;border-color:#86efac!important;box-shadow:0 0 8px #22c55e,0 0 14px rgba(34,197,94,0.8),inset 1px 1px 2px #fff!important;}' +\n");
@@ -960,7 +956,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    '#sm-dig-txt{font-size:8.5px;font-weight:900;color:#39ff14;min-width:46px;text-align:left;letter-spacing:-0.3px;}' +\n");
         js.append("    '.sm-peak-track{flex:1;height:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;overflow:hidden;position:relative;}' +\n");
         js.append("    '#sm-peak-fill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#facc15 65%,#ef4444 100%);transition:width 0.08s ease-out;}' +\n");
-
         js.append("    '#deck-vinyl{background:radial-gradient(circle at 46% 54%,#1e2229 0%,#0c0e12 85%)!important;}' +\n");
         js.append("    '.tt-platter{position:absolute!important;left:90px!important;top:38px!important;width:140px!important;height:140px!important;box-shadow:0 8px 20px rgba(0,0,0,0.95),0 0 0 3px #18181b!important;}' +\n");
         js.append("    '.tt-record{width:128px!important;height:128px!important;}' +\n");
@@ -1029,7 +1024,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    newCycBtn.addEventListener('pointercancel', function() { clearTimeout(dHoldTimer); dHoldTimer = null; });\n");
         js.append("  }\n");
 
-        /* Display Top Header: Clock (Left), Mode + Rec Count (Center), Battery (Right) */
         js.append("  var pClk = document.getElementById('player-clock-hud');\n");
         js.append("  var recHud = document.getElementById('rec-count-hud');\n");
         js.append("  var modeHudEl = document.getElementById('deck-mode-hud');\n");
@@ -1061,7 +1055,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    setInterval(updatePlayerBattery, 10000);\n");
         js.append("  }\n");
 
-        /* Build Symmetrical Hardware Top Bar Identical to Scanner: [WAKE] [VOICE] — [RX] [S-METER] [LOG] — [LAMP] [PWR] */
         js.append("  var topCtrlBar = document.querySelector('.top-controls-container');\n");
         js.append("  if (topCtrlBar && !document.getElementById('btn-player-wake')) {\n");
         js.append("    topCtrlBar.innerHTML = '' +\n");
@@ -1132,7 +1125,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
 
         js.append("    var lampBtn = document.getElementById('btn-player-lamp');\n");
         js.append("    window.__playerLampState = false;\n");
-        js.append("    var lpTimer = null, lpLong = false;\n");
+        js.append("    var lpTimer = null, lpLong = false, lpFlashTimer = null;\n");
         js.append("    lampBtn.addEventListener('pointerdown', function() {\n");
         js.append("      clearTimeout(lpTimer); lpLong = false;\n");
         js.append("      lpTimer = setTimeout(function() {\n");
@@ -1146,7 +1139,9 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("      if (wasTap && !lpLong) {\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(25);\n");
         js.append("        window.__playerLampState = !window.__playerLampState;\n");
-        js.append("        lampBtn.classList.toggle('active', window.__playerLampState);\n");
+        js.append("        clearTimeout(lpFlashTimer);\n");
+        js.append("        lampBtn.classList.add('active');\n");
+        js.append("        lpFlashTimer = setTimeout(function() { lampBtn.classList.remove('active'); }, 800);\n");
         js.append("        if (window.PlayerBridge && window.PlayerBridge.triggerBedroomLamp) {\n");
         js.append("          window.PlayerBridge.triggerBedroomLamp(window.__playerLampState);\n");
         js.append("        }\n");
@@ -2022,7 +2017,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
 
         if (playerWeb != null) playerWeb.evaluateJavascript(js.toString(), null);
     }
-
     private void stopArchiveOnlyPlayer() {
         releaseEqualizer();
         currentStreamReqId++;
