@@ -295,9 +295,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             activeStationName = stationName != null ? stationName : "RADIO";
             radioExecutor.execute(() -> {
                 final String resolved = resolveRedirectsStatic(activeStationUrl);
-                handler.post(() -> {
-                    startMediaPlayerAttempt(context, resolved, true, onStarted, onError);
-                });
+                handler.post(() -> startMediaPlayerAttempt(context, resolved, true, onStarted, onError));
             });
         }
 
@@ -313,10 +311,8 @@ public class MainActivity extends Activity implements SensorEventListener {
                             .build());
                 }
                 if (allowFallbackAttempt) {
-                    // Attempt 1: Pure native URL string (lets Android NuPlayer/Stagefright handle Icecast & redirects natively)
                     radioPlayer.setDataSource(urlToPlay);
                 } else {
-                    // Attempt 2: With explicit headers if Attempt 1 failed
                     Map<String, String> headers = new HashMap<>();
                     headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36");
                     headers.put("Referer", "https://talksport.com/");
@@ -350,6 +346,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 }
             }
         }
+
         public static synchronized void togglePause(SharedPreferences prefs) {
             if (prefs != null) cachedPrefs = prefs;
             if (radioPlayer == null) return;
@@ -387,14 +384,10 @@ public class MainActivity extends Activity implements SensorEventListener {
             stopStationInternalOnly();
         }
 
-       private static String resolveRedirectsStatic(String urlStr) {
+        private static String resolveRedirectsStatic(String urlStr) {
             if (urlStr == null || urlStr.isEmpty()) return "";
             String current = urlStr.trim();
             String lower = current.toLowerCase(Locale.ROOT);
-
-            // ONLY fetch if it is a .m3u or .pls text playlist file!
-            // Never open an HttpURLConnection on a live stream URL before MediaPlayer,
-            // because live streams hang waiting for EOF or burn single-use session tokens (like talkSPORT/Audioxi).
             if (lower.endsWith(".m3u") || lower.endsWith(".pls") || lower.contains(".m3u?") || lower.contains(".pls?")) {
                 HttpURLConnection pConn = null;
                 try {
@@ -418,36 +411,6 @@ public class MainActivity extends Activity implements SensorEventListener {
                 } catch (Exception ignored) {
                 } finally {
                     if (pConn != null) try { pConn.disconnect(); } catch (Exception ignored) {}
-                }
-            }
-            return current;
-        }
-            // 2. Follow 301/302/307 redirects without opening a competing GET stream on the final edge server
-            for (int hop = 0; hop < 6; hop++) {
-                HttpURLConnection conn = null;
-                try {
-                    conn = (HttpURLConnection) new URL(current).openConnection();
-                    conn.setInstanceFollowRedirects(false);
-                    conn.setConnectTimeout(4000);
-                    conn.setReadTimeout(4000);
-                    conn.setRequestMethod("GET");
-                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-                    conn.setRequestProperty("Referer", "https://talksport.com/");
-                    conn.setRequestProperty("Origin", "https://talksport.com");
-                    conn.setRequestProperty("Icy-MetaData", "0");
-                    int code = conn.getResponseCode();
-                    if (code >= 300 && code < 400) {
-                        String loc = conn.getHeaderField("Location");
-                        conn.disconnect();
-                        if (loc == null || loc.isEmpty()) break;
-                        current = new URL(new URL(current), loc).toString();
-                    } else {
-                        conn.disconnect();
-                        break;
-                    }
-                } catch (Exception e) {
-                    if (conn != null) try { conn.disconnect(); } catch (Exception ignored) {}
-                    break;
                 }
             }
             return current;
@@ -524,11 +487,6 @@ public class MainActivity extends Activity implements SensorEventListener {
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
-    /**
-     * Native Uncached Java Log Poller:
-     * Never polls while scanner RX is active or during the 550ms post-squelch write window,
-     * and strips out 00:00:00 and 00:00:01 (<=1s) silent kerchunks right at the source!
-     */
     private void pollHistoryLogNatively() {
         long now = System.currentTimeMillis();
         if (nativeLogPollInFlight) return;
@@ -964,7 +922,6 @@ public class MainActivity extends Activity implements SensorEventListener {
             connectSmart(localUrl, tailscaleUrl);
         }
     }
-
     private String getNativeBatteryStatus() {
         try {
             IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
@@ -1087,6 +1044,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             Toast.makeText(this, "Invalid backup JSON file", Toast.LENGTH_SHORT).show();
         }
     }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
