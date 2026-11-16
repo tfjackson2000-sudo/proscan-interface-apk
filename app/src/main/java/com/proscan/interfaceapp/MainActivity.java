@@ -113,7 +113,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 synchronized (PriorityRadioEngine.class) {
                     isWaitingForPendingTts = false;
                     if (!isScannerRxActive && !isTtsSpeaking) {
-                        scheduleRestoreAfter2500msLocked();
+                        scheduleRestoreAfterDelayLocked(1000);
                     }
                 }
             }
@@ -210,13 +210,17 @@ public class MainActivity extends Activity implements SensorEventListener {
             }
         }
 
-        private static synchronized void scheduleRestoreAfter2500msLocked() {
+        private static synchronized void scheduleRestoreAfterDelayLocked(long delayMs) {
             handler.removeCallbacks(restoreVolumeRunnable);
             restoreScheduled = false;
             if (!isScannerRxActive && !isTtsSpeaking && !isWaitingForPendingTts) {
                 restoreScheduled = true;
-                handler.postDelayed(restoreVolumeRunnable, 2500);
+                handler.postDelayed(restoreVolumeRunnable, delayMs);
             }
+        }
+
+        private static synchronized void scheduleRestoreAfter2500msLocked() {
+            scheduleRestoreAfterDelayLocked(1000);
         }
 
         public static void onScannerRxStateChanged(final SharedPreferences prefs, final boolean rxActive, final boolean voiceReadoutEnabled) {
@@ -237,14 +241,15 @@ public class MainActivity extends Activity implements SensorEventListener {
                         restoreScheduled = false;
                         if (voiceReadoutEnabled) {
                             isWaitingForPendingTts = true;
+                            applyCurrentVolumeLocked(cachedPrefs);
                             handler.removeCallbacks(clearPendingTtsWaitRunnable);
-                            handler.postDelayed(clearPendingTtsWaitRunnable, 1300);
+                            handler.postDelayed(clearPendingTtsWaitRunnable, 3800);
                         } else {
                             isWaitingForPendingTts = false;
-                            scheduleRestoreAfter2500msLocked();
+                            scheduleRestoreAfterDelayLocked(2000);
                         }
                     } else if (!isTtsSpeaking && !isWaitingForPendingTts && !restoreScheduled) {
-                        scheduleRestoreAfter2500msLocked();
+                        scheduleRestoreAfterDelayLocked(1500);
                     }
                 }
             }
@@ -272,7 +277,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 } else {
                     isTtsSpeaking = false;
                     if (!isScannerRxActive) {
-                        scheduleRestoreAfter2500msLocked();
+                        scheduleRestoreAfterDelayLocked(1000);
                     }
                 }
             }
@@ -337,8 +342,6 @@ public class MainActivity extends Activity implements SensorEventListener {
             activeStationUrl = streamUrl != null ? streamUrl.trim() : "";
             activeStationName = stationName != null ? stationName : "RADIO";
             final String lowerUrl = activeStationUrl.toLowerCase(Locale.ROOT);
-            // If it's talkSPORT / Audioxi, go straight to MainActivity's persistent WebView audio engine
-            // so it starts in <1 second, never drops when leaving Radio screen, and Auto-Ducks on Scanner hits!
             if (lowerUrl.contains("talksport") || lowerUrl.contains("audioxi") || lowerUrl.contains("sharp-stream")) {
                 startPersistentMainWebFallback(activeStationUrl, onStarted, onError);
                 return;
@@ -473,7 +476,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-    private WebView webView;
+private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
     private SensorManager sensorManager;
@@ -548,8 +551,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         long now = System.currentTimeMillis();
         if (nativeLogPollInFlight) return;
         if (PriorityRadioEngine.isScannerCurrentlyReceiving()) return;
-        if (now - lastRxEndedMs < 550L) return;
-        if (now - lastNativeLogPollMs < 450L) return;
+        if (now - lastRxEndedMs < 220L) return;
+        if (now - lastNativeLogPollMs < 250L) return;
 
         String base = activeServerUrl;
         if ((base == null || base.isEmpty()) && webView != null) {
@@ -980,7 +983,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             connectSmart(localUrl, tailscaleUrl);
         }
     }
-    private String getNativeBatteryStatus() {
+private String getNativeBatteryStatus() {
         try {
             IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
             Intent b = registerReceiver(null, ifilter);
@@ -1215,8 +1218,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             PriorityRadioEngine.onScannerRxStateChanged(prefs, rxActive, voiceReadoutEnabled);
             if (!rxActive) {
                 lastRxEndedMs = System.currentTimeMillis();
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 650);
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 1850);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 300);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 900);
             }
         }
 
@@ -1411,7 +1414,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 200);
     }
-    private void injectEnhancements() {
+private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -1621,6 +1624,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        };\n");
         js.append("      }\n");
 
+        /* 1.0s Pause After Transmission Ends Before TTS Speaks */
         js.append("      window.__speakTextAfterRx = function(txt, immediate) {\n");
         js.append("        if (!window.AndroidApp || !txt) return;\n");
         js.append("        var clean = String(txt).trim();\n");
@@ -1633,14 +1637,16 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        var tries = 0;\n");
         js.append("        (function waitRxOff() {\n");
         js.append("          var rx = document.getElementById('rx-led');\n");
-        js.append("          if (rx && rx.classList.contains('active') && tries++ < 35) {\n");
-        js.append("            window.__rxTtsWaitTimer = setTimeout(waitRxOff, 200);\n");
+        js.append("          if (rx && rx.classList.contains('active') && tries++ < 50) {\n");
+        js.append("            window.__rxTtsWaitTimer = setTimeout(waitRxOff, 100);\n");
         js.append("          } else {\n");
+        js.append("            var elapsedSinceRxEnd = Date.now() - (window.__lastRealAudioMs || 0);\n");
+        js.append("            var waitMs = Math.max(80, Math.min(1000, 1000 - elapsedSinceRxEnd));\n");
         js.append("            window.__rxTtsWaitTimer = setTimeout(function() {\n");
         js.append("              if (window.__voiceReadoutEnabled || window.__vOn) {\n");
         js.append("                window.AndroidApp.speakChannel(clean);\n");
         js.append("              }\n");
-        js.append("            }, 150);\n");
+        js.append("            }, waitMs);\n");
         js.append("          }\n");
         js.append("        })();\n");
         js.append("      };\n");
@@ -1787,7 +1793,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      };\n");
         js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
         js.append("    }\n");
-        /* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
+/* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
         js.append("      window.renderCustomBrand = function() {};\n");
@@ -2097,7 +2103,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      var origSave = window.savePresetToSlot;\n");
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
-        js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
+js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
         js.append("      var rowParent = loginBtn.parentNode;\n");
