@@ -295,56 +295,42 @@ public class MainActivity extends Activity implements SensorEventListener {
             activeStationName = stationName != null ? stationName : "RADIO";
             radioExecutor.execute(() -> {
                 final String resolved = resolveRedirectsStatic(activeStationUrl);
-                handler.post(() -> startMediaPlayerAttempt(context, resolved, true, onStarted, onError));
-            });
-        }
-
-        private static void startMediaPlayerAttempt(final Context context, final String urlToPlay, final boolean allowFallbackAttempt, final Runnable onStarted, final Runnable onError) {
-            try {
-                stopStationInternalOnly();
-                radioPlayer = new MediaPlayer();
-                radioPlayer.setWakeMode(context.getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
-                if (Build.VERSION.SDK_INT >= 21) {
-                    radioPlayer.setAudioAttributes(new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                            .build());
-                }
-                if (allowFallbackAttempt) {
-                    radioPlayer.setDataSource(urlToPlay);
-                } else {
-                    Map<String, String> headers = new HashMap<>();
-                    headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36");
-                    headers.put("Referer", "https://talksport.com/");
-                    radioPlayer.setDataSource(context.getApplicationContext(), Uri.parse(urlToPlay), headers);
-                }
-                radioPlayer.setOnPreparedListener(mp -> {
-                    synchronized (PriorityRadioEngine.class) {
-                        isPlaying = true;
-                        activeSessionId = mp.getAudioSessionId();
-                        applyCurrentVolumeLocked(cachedPrefs);
-                        mp.start();
-                        handler.removeCallbacks(duckWatchdogRunnable);
-                        handler.postDelayed(duckWatchdogRunnable, 500);
-                    }
-                    if (onStarted != null) onStarted.run();
-                });
-                radioPlayer.setOnErrorListener((mp, what, extra) -> {
-                    if (allowFallbackAttempt) {
-                        handler.post(() -> startMediaPlayerAttempt(context, urlToPlay, false, onStarted, onError));
-                    } else {
+                handler.post(() -> {
+                    try {
+                        stopStationInternalOnly();
+                        radioPlayer = new MediaPlayer();
+                        radioPlayer.setWakeMode(context.getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
+                        if (Build.VERSION.SDK_INT >= 21) {
+                            radioPlayer.setAudioAttributes(new AudioAttributes.Builder()
+                                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                                    .build());
+                        }
+                        Map<String, String> headers = new HashMap<>();
+                        headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+                        headers.put("Referer", "https://talksport.com/");
+                        radioPlayer.setDataSource(context.getApplicationContext(), Uri.parse(resolved), headers);
+                        radioPlayer.setOnPreparedListener(mp -> {
+                            synchronized (PriorityRadioEngine.class) {
+                                isPlaying = true;
+                                activeSessionId = mp.getAudioSessionId();
+                                applyCurrentVolumeLocked(cachedPrefs);
+                                mp.start();
+                                handler.removeCallbacks(duckWatchdogRunnable);
+                                handler.postDelayed(duckWatchdogRunnable, 500);
+                            }
+                            if (onStarted != null) onStarted.run();
+                        });
+                        radioPlayer.setOnErrorListener((mp, what, extra) -> {
+                            if (onError != null) onError.run();
+                            return true;
+                        });
+                        radioPlayer.prepareAsync();
+                    } catch (Exception e) {
                         if (onError != null) onError.run();
                     }
-                    return true;
                 });
-                radioPlayer.prepareAsync();
-            } catch (Exception e) {
-                if (allowFallbackAttempt) {
-                    handler.post(() -> startMediaPlayerAttempt(context, urlToPlay, false, onStarted, onError));
-                } else {
-                    if (onError != null) onError.run();
-                }
-            }
+            });
         }
 
         public static synchronized void togglePause(SharedPreferences prefs) {
@@ -387,30 +373,37 @@ public class MainActivity extends Activity implements SensorEventListener {
         private static String resolveRedirectsStatic(String urlStr) {
             if (urlStr == null || urlStr.isEmpty()) return "";
             String current = urlStr.trim();
-            String lower = current.toLowerCase(Locale.ROOT);
-            if (lower.endsWith(".m3u") || lower.endsWith(".pls") || lower.contains(".m3u?") || lower.contains(".pls?")) {
-                HttpURLConnection pConn = null;
+            for (int hop = 0; hop < 4; hop++) {
+                // CRITICAL FOR TALKSPORT / AUDIOXI / STREAMGUYS:
+                // Once we have been redirected to a URL containing a session token (aw_0_1st / skey / token)
+                // or a direct .mp3/.aac edge mount, STOP IMMEDIATELY and hand it to MediaPlayer!
+                // If we open an HttpURLConnection to the tokenized edge URL, we burn the single-use token!
+                String lower = current.toLowerCase(Locale.ROOT);
+                if (hop > 0 && (lower.contains("aw_0_1st") || lower.contains("skey=") || lower.contains("token=")
+                        || lower.contains("sharp-stream.com") || lower.contains("streamguys") || lower.contains("audioxi"))) {
+                    break;
+                }
+                HttpURLConnection conn = null;
                 try {
-                    pConn = (HttpURLConnection) new URL(current).openConnection();
-                    pConn.setConnectTimeout(4000);
-                    pConn.setReadTimeout(4000);
-                    pConn.setRequestProperty("User-Agent", "Mozilla/5.0");
-                    BufferedReader br = new BufferedReader(new InputStreamReader(pConn.getInputStream(), StandardCharsets.UTF_8));
-                    String line;
-                    while ((line = br.readLine()) != null) {
-                        line = line.trim();
-                        if (line.startsWith("http://") || line.startsWith("https://")) {
-                            current = line;
-                            break;
-                        } else if (line.toLowerCase(Locale.ROOT).startsWith("file1=")) {
-                            current = line.substring(6).trim();
-                            break;
-                        }
+                    conn = (HttpURLConnection) new URL(current).openConnection();
+                    conn.setInstanceFollowRedirects(false);
+                    conn.setConnectTimeout(4000);
+                    conn.setReadTimeout(4000);
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+                    conn.setRequestProperty("Referer", "https://talksport.com/");
+                    int code = conn.getResponseCode();
+                    if (code >= 300 && code < 400) {
+                        String loc = conn.getHeaderField("Location");
+                        conn.disconnect();
+                        if (loc == null || loc.isEmpty()) break;
+                        current = new URL(new URL(current), loc).toString();
+                    } else {
+                        conn.disconnect();
+                        break;
                     }
-                    br.close();
-                } catch (Exception ignored) {
-                } finally {
-                    if (pConn != null) try { pConn.disconnect(); } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    if (conn != null) try { conn.disconnect(); } catch (Exception ignored) {}
+                    break;
                 }
             }
             return current;
