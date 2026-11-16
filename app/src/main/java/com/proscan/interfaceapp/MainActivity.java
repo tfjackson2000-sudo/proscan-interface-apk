@@ -395,7 +395,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-private WebView webView;
+    private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
     private SensorManager sensorManager;
@@ -430,22 +430,35 @@ private WebView webView;
     public void onSensorChanged(SensorEvent event) {
         if (event == null || event.values == null || event.values.length < 2 || webView == null) return;
         long now = System.currentTimeMillis();
-        if (now - lastTiltPushMs < 35) return;
+        if (now - lastTiltPushMs < 33) return;
         lastTiltPushMs = now;
         float rawX = Math.max(-7f, Math.min(7f, event.values[0])) / 7f;
         float rawY = Math.max(-7f, Math.min(7f, event.values[1] - 4.5f)) / 7f;
         smoothTiltX += (rawX - smoothTiltX) * 0.28f;
         smoothTiltY += (rawY - smoothTiltY) * 0.28f;
+
         int deg = Math.round(125f - smoothTiltX * 38f + smoothTiltY * 22f);
         int posPct = Math.round(38f + smoothTiltX * 28f - smoothTiltY * 20f);
-        int bx = Math.round(-smoothTiltX * 14f);
-        int by = Math.round(smoothTiltY * 14f);
+        int bx = Math.round(-smoothTiltX * 24f);
+        int by = Math.round(smoothTiltY * 20f);
+
+        int shineX = Math.max(8, Math.min(92, Math.round(50f - smoothTiltX * 42f)));
+        int shineY = Math.max(5, Math.min(88, Math.round(28f + smoothTiltY * 36f)));
+        int rimAng = Math.round(135f - smoothTiltX * 50f + smoothTiltY * 35f);
+        String btnHlX = String.format(Locale.US, "%.2fpx", -smoothTiltX * 1.6f);
+        String btnHlY = String.format(Locale.US, "%.2fpx", 1.0f + smoothTiltY * 0.9f);
+
         webView.evaluateJavascript(
                 "try{var r=document.documentElement.style;" +
                 "r.setProperty('--gloss-deg','" + deg + "deg');" +
                 "r.setProperty('--gloss-pos','" + posPct + "%');" +
                 "r.setProperty('--tilt-x','" + bx + "px');" +
-                "r.setProperty('--tilt-y','" + by + "px');}catch(e){}",
+                "r.setProperty('--tilt-y','" + by + "px');" +
+                "r.setProperty('--shine-x','" + shineX + "%');" +
+                "r.setProperty('--shine-y','" + shineY + "%');" +
+                "r.setProperty('--rim-ang','" + rimAng + "deg');" +
+                "r.setProperty('--btn-hl-x','" + btnHlX + "');" +
+                "r.setProperty('--btn-hl-y','" + btnHlY + "');}catch(e){}",
                 null
         );
     }
@@ -1016,7 +1029,6 @@ private WebView webView;
             Toast.makeText(this, "Invalid backup JSON file", Toast.LENGTH_SHORT).show();
         }
     }
-
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -1325,7 +1337,7 @@ private WebView webView;
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 200);
     }
-private void injectEnhancements() {
+    private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -1343,13 +1355,31 @@ private void injectEnhancements() {
         js.append("      var st = document.createElement('style');\n");
         js.append("      st.id = 'proscan-v10-upgrade-css';\n");
         js.append("      st.textContent = '' +\n");
-        js.append("        'html{--gloss-deg:125deg;--gloss-pos:38%;--tilt-x:0px;--tilt-y:0px;}' +\n");
+        js.append("        'html{--gloss-deg:125deg;--gloss-pos:38%;--tilt-x:0px;--tilt-y:0px;--shine-x:50%;--shine-y:28%;--rim-ang:135deg;--btn-hl-x:0px;--btn-hl-y:1px;}' +\n");
         js.append("        '#device-wrapper{width:95%!important;max-height:94dvh!important;transition:opacity 0.18s ease!important;}' +\n");
         js.append("        '#device-wrapper.flipping-out{opacity:0!important;}' +\n");
         js.append("        '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;position:relative!important;}' +\n");
-        js.append("        '#custom-scanner-ui::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:25!important;border-radius:inherit!important;background:radial-gradient(circle at calc(50% + var(--tilt-x,0px) * 4.5) calc(24% + var(--tilt-y,0px) * 4.5),rgba(255,255,255,0.13) 0%,rgba(255,255,255,0.04) 34%,transparent 65%)!important;}' +\n");
+
+        /* Realistic Directional Skin/Chassis Specular Sheen & Rim Catchlight */
+        js.append("        '#custom-scanner-ui::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:25!important;border-radius:inherit!important;' +\n");
+        js.append("          'background:radial-gradient(ellipse 68% 42% at var(--shine-x,50%) var(--shine-y,28%),rgba(255,255,255,0.16) 0%,rgba(255,255,255,0.06) 38%,transparent 72%),' +\n");
+        js.append("          'linear-gradient(var(--rim-ang,135deg),rgba(255,255,255,0.14) 0%,transparent 28%,transparent 72%,rgba(255,255,255,0.07) 100%)!important;' +\n");
+        js.append("          'box-shadow:inset var(--btn-hl-x,0px) var(--btn-hl-y,1px) 1.5px rgba(255,255,255,0.28),inset calc(var(--btn-hl-x,0px) * -1) -1px 2px rgba(0,0,0,0.65)!important;}' +\n");
+
+        /* Tilt-Reactive Top/Side Bevel Catchlight on Physical Keypad Buttons */
+        js.append("        '.btn{position:relative!important;overflow:hidden!important;}' +\n");
+        js.append("        '.btn::after{content:\"\"!important;position:absolute!important;inset:0!important;border-radius:inherit!important;pointer-events:none!important;' +\n");
+        js.append("          'background:radial-gradient(circle at var(--shine-x,50%) 0%,rgba(255,255,255,0.20) 0%,transparent 68%)!important;' +\n");
+        js.append("          'box-shadow:inset var(--btn-hl-x,0px) var(--btn-hl-y,1px) 0.8px rgba(255,255,255,0.32)!important;}' +\n");
+
         js.append("        '.scanner-display{height:325px!important;position:relative!important;overflow:hidden!important;transition:height 0.22s ease!important;}' +\n");
-        js.append("        'html[data-disp-tex=\"glass\"] .scanner-display::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:18!important;opacity:1!important;background:linear-gradient(var(--gloss-deg,125deg),rgba(255,255,255,0.22) 0%,rgba(255,255,255,0.08) calc(var(--gloss-pos,38%) - 4%),rgba(255,255,255,0.26) var(--gloss-pos,38%),rgba(255,255,255,0.03) calc(var(--gloss-pos,38%) + 2%),transparent calc(var(--gloss-pos,38%) + 12%),transparent 100%),radial-gradient(circle at center,transparent 60%,rgba(0,0,0,0.32) 100%)!important;}' +\n");
+
+        /* Subtle Curved Corner Glass Reflections (No Center Glare Stripe!) */
+        js.append("        'html[data-disp-tex=\"glass\"] .scanner-display::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:18!important;border-radius:inherit!important;opacity:1!important;' +\n");
+        js.append("          'background:radial-gradient(ellipse 36% 26% at calc(11% + var(--tilt-x,0px) * 0.45) calc(12% + var(--tilt-y,0px) * 0.45),rgba(255,255,255,0.24) 0%,rgba(255,255,255,0.11) 42%,rgba(255,255,255,0.02) 68%,transparent 78%),' +\n");
+        js.append("          'radial-gradient(ellipse 30% 22% at calc(89% + var(--tilt-x,0px) * 0.35) calc(88% + var(--tilt-y,0px) * 0.35),rgba(255,255,255,0.15) 0%,rgba(255,255,255,0.06) 45%,transparent 74%),' +\n");
+        js.append("          'radial-gradient(circle at center,transparent 74%,rgba(0,0,0,0.22) 100%)!important;' +\n");
+        js.append("          'box-shadow:inset var(--btn-hl-x,0px) var(--btn-hl-y,1px) 1.5px rgba(255,255,255,0.34),inset 0 0 10px rgba(255,255,255,0.04)!important;}' +\n");
 
         /* Battery HUD Follows All Bad Contact / Glitch Animations Alongside Clock & Log! */
         js.append("        'html:is([data-disp-tex=\"glitch\"],[data-disp-tex=\"cracked-glitch\"]):is(.bc-blur,.bc-blur-blink,.bc-deep-blur) #scanner-bat-hud:not(.disconnected){filter:blur(2.4px)!important;}' +\n");
@@ -1444,7 +1474,7 @@ private void injectEnhancements() {
         js.append("        '#mini-log-table th:nth-child(5),#mini-log-table td:nth-child(5){width:34%!important;}' +\n");
         js.append("        '#btn-wake-toggle, #btn-voice-toggle, #btn-lamp-toggle, #btn-hardware-exit{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:2px!important;background:transparent!important;border:none!important;padding:0!important;margin:0 1px!important;cursor:pointer!important;touch-action:manipulation!important;box-shadow:none!important;}' +\n");
         js.append("        '#btn-wake-toggle > *:not(.sq-hw-cap):not(.sq-hw-lbl), #btn-voice-toggle > *:not(.sq-hw-cap):not(.sq-hw-lbl){display:none!important;}' +\n");
-        js.append("        '.sq-hw-cap{width:28px!important;height:22px!important;border-radius:5px!important;background:linear-gradient(180deg,#262a30 0%,#14171a 100%)!important;border:1.5px solid #090a0c!important;box-shadow:0 2px 4px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.12)!important;display:flex!important;align-items:center!important;justify-content:center!important;transition:all 0.2s ease!important;position:relative!important;}' +\n");
+        js.append("        '.sq-hw-cap{width:28px!important;height:22px!important;border-radius:5px!important;background:linear-gradient(180deg,#262a30 0%,#14171a 100%)!important;border:1.5px solid #090a0c!important;box-shadow:0 2px 4px rgba(0,0,0,0.85),inset var(--btn-hl-x,0px) var(--btn-hl-y,1px) 1px rgba(255,255,255,0.28)!important;display:flex!important;align-items:center!important;justify-content:center!important;transition:all 0.2s ease!important;position:relative!important;}' +\n");
         js.append("        '.sq-hw-cap::after{content:\"\"!important;width:12px!important;height:4px!important;border-radius:2px!important;background:#334155!important;box-shadow:inset 0 1px 2px rgba(0,0,0,0.8)!important;transition:all 0.2s ease!important;}' +\n");
         js.append("        '.sq-hw-lbl{font-family:\"JetBrains Mono\",monospace!important;font-size:7px!important;font-weight:900!important;letter-spacing:0.4px!important;color:var(--toggle-color,#94a3b8)!important;line-height:1!important;}' +\n");
         js.append("        '#btn-wake-toggle:active .sq-hw-cap, #btn-voice-toggle:active .sq-hw-cap, #btn-lamp-toggle:active .sq-hw-cap, #btn-hardware-exit:active .sq-hw-cap{transform:translateY(1.5px)!important;}' +\n");
@@ -1683,7 +1713,7 @@ private void injectEnhancements() {
         js.append("      };\n");
         js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
         js.append("    }\n");
-/* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
+        /* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
         js.append("      window.renderCustomBrand = function() {};\n");
@@ -1993,7 +2023,6 @@ private void injectEnhancements() {
         js.append("      var origSave = window.savePresetToSlot;\n");
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
-
         js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
