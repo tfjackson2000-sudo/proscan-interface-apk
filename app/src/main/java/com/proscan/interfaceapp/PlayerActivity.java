@@ -133,22 +133,35 @@ public class PlayerActivity extends Activity implements SensorEventListener {
     public void onSensorChanged(SensorEvent event) {
         if (event == null || event.values == null || event.values.length < 2 || playerWeb == null) return;
         long now = System.currentTimeMillis();
-        if (now - lastTiltPushMs < 35) return;
+        if (now - lastTiltPushMs < 33) return;
         lastTiltPushMs = now;
         float rawX = Math.max(-7f, Math.min(7f, event.values[0])) / 7f;
         float rawY = Math.max(-7f, Math.min(7f, event.values[1] - 4.5f)) / 7f;
         smoothTiltX += (rawX - smoothTiltX) * 0.28f;
         smoothTiltY += (rawY - smoothTiltY) * 0.28f;
+
         int deg = Math.round(125f - smoothTiltX * 38f + smoothTiltY * 22f);
         int posPct = Math.round(38f + smoothTiltX * 28f - smoothTiltY * 20f);
-        int bx = Math.round(-smoothTiltX * 14f);
-        int by = Math.round(smoothTiltY * 14f);
+        int bx = Math.round(-smoothTiltX * 24f);
+        int by = Math.round(smoothTiltY * 20f);
+
+        int shineX = Math.max(8, Math.min(92, Math.round(50f - smoothTiltX * 42f)));
+        int shineY = Math.max(5, Math.min(88, Math.round(28f + smoothTiltY * 36f)));
+        int rimAng = Math.round(135f - smoothTiltX * 50f + smoothTiltY * 35f);
+        String btnHlX = String.format(Locale.US, "%.2fpx", -smoothTiltX * 1.6f);
+        String btnHlY = String.format(Locale.US, "%.2fpx", 1.0f + smoothTiltY * 0.9f);
+
         playerWeb.evaluateJavascript(
                 "try{var r=document.documentElement.style;" +
                 "r.setProperty('--gloss-deg','" + deg + "deg');" +
                 "r.setProperty('--gloss-pos','" + posPct + "%');" +
                 "r.setProperty('--tilt-x','" + bx + "px');" +
-                "r.setProperty('--tilt-y','" + by + "px');}catch(e){}",
+                "r.setProperty('--tilt-y','" + by + "px');" +
+                "r.setProperty('--shine-x','" + shineX + "%');" +
+                "r.setProperty('--shine-y','" + shineY + "%');" +
+                "r.setProperty('--rim-ang','" + rimAng + "deg');" +
+                "r.setProperty('--btn-hl-x','" + btnHlX + "');" +
+                "r.setProperty('--btn-hl-y','" + btnHlY + "');}catch(e){}",
                 null
         );
     }
@@ -860,7 +873,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
 
         js.append("  var st = document.createElement('style');\n");
         js.append("  st.textContent = '' +\n");
-        js.append("    'html{--gloss-deg:125deg;--gloss-pos:38%;--tilt-x:0px;--tilt-y:0px;}' +\n");
+        js.append("    'html{--gloss-deg:125deg;--gloss-pos:38%;--tilt-x:0px;--tilt-y:0px;--shine-x:50%;--shine-y:28%;--rim-ang:135deg;--btn-hl-x:0px;--btn-hl-y:1px;}' +\n");
         js.append("    '@keyframes smoothFadeIn{0%{opacity:0;}100%{opacity:1;}}' +\n");
         js.append("    '@keyframes crtWhiteBeamCollapse{0%{opacity:0;transform:translate(-50%,-50%) scale(1,35);border-radius:0;}16%{opacity:1;transform:translate(-50%,-50%) scale(1,1.4);border-radius:2px;}46%{opacity:1;transform:translate(-50%,-50%) scale(0.92,0.65);border-radius:999px;}76%{opacity:1;transform:translate(-50%,-50%) scale(0.014,1.35);border-radius:50%;}92%{opacity:0.9;transform:translate(-50%,-50%) scale(0.006,0.6);border-radius:50%;}100%{opacity:0;transform:translate(-50%,-50%) scale(0,0);border-radius:50%;}}' +\n");
         js.append("    'html.tv-shutting-down .scanner-display{background:#000000!important;border-color:#0a0a0a!important;box-shadow:inset 0 0 24px #000000!important;transition:none!important;}' +\n");
@@ -869,8 +882,26 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    '#device-wrapper{width:95%!important;max-height:94dvh!important;animation:smoothFadeIn 0.25s ease-out forwards;transition:opacity 0.2s ease!important;}' +\n");
         js.append("    '#device-wrapper.fading-out{opacity:0!important;}' +\n");
         js.append("    '#custom-scanner-ui{padding:16px 16px!important;gap:8px!important;position:relative!important;}' +\n");
-        js.append("    '#custom-scanner-ui::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:25!important;border-radius:inherit!important;background:radial-gradient(circle at calc(50% + var(--tilt-x,0px) * 4.5) calc(24% + var(--tilt-y,0px) * 4.5),rgba(255,255,255,0.16) 0%,rgba(255,255,255,0.05) 34%,transparent 65%)!important;}' +\n");
-        js.append("    'html[data-disp-tex=\"glass\"] .scanner-display::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:18!important;opacity:1!important;background:linear-gradient(var(--gloss-deg,125deg),rgba(255,255,255,0.22) 0%,rgba(255,255,255,0.08) calc(var(--gloss-pos,38%) - 4%),rgba(255,255,255,0.26) var(--gloss-pos,38%),rgba(255,255,255,0.03) calc(var(--gloss-pos,38%) + 2%),transparent calc(var(--gloss-pos,38%) + 12%),transparent 100%),radial-gradient(circle at center,transparent 60%,rgba(0,0,0,0.32) 100%)!important;}' +\n");
+
+        /* Realistic Directional Skin/Chassis Specular Sheen & Rim Catchlight */
+        js.append("    '#custom-scanner-ui::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:25!important;border-radius:inherit!important;' +\n");
+        js.append("      'background:radial-gradient(ellipse 68% 42% at var(--shine-x,50%) var(--shine-y,28%),rgba(255,255,255,0.16) 0%,rgba(255,255,255,0.06) 38%,transparent 72%),' +\n");
+        js.append("      'linear-gradient(var(--rim-ang,135deg),rgba(255,255,255,0.14) 0%,transparent 28%,transparent 72%,rgba(255,255,255,0.07) 100%)!important;' +\n");
+        js.append("      'box-shadow:inset var(--btn-hl-x,0px) var(--btn-hl-y,1px) 1.5px rgba(255,255,255,0.28),inset calc(var(--btn-hl-x,0px) * -1) -1px 2px rgba(0,0,0,0.65)!important;}' +\n");
+
+        /* Tilt-Reactive Top/Side Bevel Catchlight on Physical Keypad Buttons */
+        js.append("    '.btn{position:relative!important;overflow:hidden!important;}' +\n");
+        js.append("    '.btn::after{content:\"\"!important;position:absolute!important;inset:0!important;border-radius:inherit!important;pointer-events:none!important;' +\n");
+        js.append("      'background:radial-gradient(circle at var(--shine-x,50%) 0%,rgba(255,255,255,0.20) 0%,transparent 68%)!important;' +\n");
+        js.append("      'box-shadow:inset var(--btn-hl-x,0px) var(--btn-hl-y,1px) 0.8px rgba(255,255,255,0.32)!important;}' +\n");
+
+        /* Subtle Curved Corner Glass Reflections (No Center Glare Stripe!) */
+        js.append("    'html[data-disp-tex=\"glass\"] .scanner-display::after{content:\"\"!important;position:absolute!important;inset:0!important;pointer-events:none!important;z-index:18!important;border-radius:inherit!important;opacity:1!important;' +\n");
+        js.append("      'background:radial-gradient(ellipse 36% 26% at calc(11% + var(--tilt-x,0px) * 0.45) calc(12% + var(--tilt-y,0px) * 0.45),rgba(255,255,255,0.24) 0%,rgba(255,255,255,0.11) 42%,rgba(255,255,255,0.02) 68%,transparent 78%),' +\n");
+        js.append("      'radial-gradient(ellipse 30% 22% at calc(89% + var(--tilt-x,0px) * 0.35) calc(88% + var(--tilt-y,0px) * 0.35),rgba(255,255,255,0.15) 0%,rgba(255,255,255,0.06) 45%,transparent 74%),' +\n");
+        js.append("      'radial-gradient(circle at center,transparent 74%,rgba(0,0,0,0.22) 100%)!important;' +\n");
+        js.append("      'box-shadow:inset var(--btn-hl-x,0px) var(--btn-hl-y,1px) 1.5px rgba(255,255,255,0.34),inset 0 0 10px rgba(255,255,255,0.04)!important;}' +\n");
+
         js.append("    'html[data-skin=\"whiteline\"]{--ui-bg:radial-gradient(circle at 50% 12%,#26292e 0%,#121417 65%,#070809 100%)!important;--btn-bg:linear-gradient(180deg,#2e3238 0%,#181a1e 55%,#0d0e11 100%)!important;--btn-color:#ffffff!important;--btn-active-color:#38bdf8!important;--btn-border:1px solid rgba(255,255,255,0.75)!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #94a3b8,0 4px 6px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.45)!important;--btn-shadow-active:0 0 0 #94a3b8,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
         js.append("    'html[data-skin=\"tron\"]{--ui-bg:radial-gradient(circle at 50% 12%,#0c2e36 0%,#06161a 65%,#02080a 100%)!important;--btn-bg:linear-gradient(180deg,#103c47 0%,#071f26 55%,#031014 100%)!important;--btn-color:#00ffff!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #00ffff!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #008b8b,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(180,255,255,0.45)!important;--btn-shadow-active:0 0 0 #008b8b,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
         js.append("    'html[data-skin=\"neongreen\"]{--ui-bg:radial-gradient(circle at 50% 12%,#11330d 0%,#081906 65%,#030a02 100%)!important;--btn-bg:linear-gradient(180deg,#184212 0%,#0b2108 55%,#051104 100%)!important;--btn-color:#39ff14!important;--btn-active-color:#ffffff!important;--btn-border:1px solid #39ff14!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #1b8a08,0 4px 7px rgba(0,0,0,0.85),inset 0 1px 1px rgba(190,255,180,0.45)!important;--btn-shadow-active:0 0 0 #1b8a08,inset 0 2px 5px rgba(0,0,0,0.9)!important;--btn-active-transform:translateY(2px)!important;}' +\n");
@@ -923,7 +954,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    '.radio-crud-bar .btn{font-size:10.5px!important;font-weight:900!important;padding:2px!important;}' +\n");
         js.append("    '#date-select, #btn-refresh, #btn-open-gdrive, #btn-mode-tts, #cont-status-hud, #btn-cc-toggle{display:none!important;}' +\n");
         js.append("    '#btn-player-wake, #btn-player-voice, #btn-player-lamp, #btn-player-exit{display:inline-flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:2px!important;background:transparent!important;border:none!important;padding:0!important;margin:0 1px!important;cursor:pointer!important;touch-action:manipulation!important;box-shadow:none!important;}' +\n");
-        js.append("    '.sq-hw-cap{width:28px!important;height:22px!important;border-radius:5px!important;background:linear-gradient(180deg,#262a30 0%,#14171a 100%)!important;border:1.5px solid #090a0c!important;box-shadow:0 2px 4px rgba(0,0,0,0.85),inset 0 1px 1px rgba(255,255,255,0.12)!important;display:flex!important;align-items:center!important;justify-content:center!important;transition:all 0.2s ease!important;position:relative!important;}' +\n");
+        js.append("    '.sq-hw-cap{width:28px!important;height:22px!important;border-radius:5px!important;background:linear-gradient(180deg,#262a30 0%,#14171a 100%)!important;border:1.5px solid #090a0c!important;box-shadow:0 2px 4px rgba(0,0,0,0.85),inset var(--btn-hl-x,0px) var(--btn-hl-y,1px) 1px rgba(255,255,255,0.28)!important;display:flex!important;align-items:center!important;justify-content:center!important;transition:all 0.2s ease!important;position:relative!important;}' +\n");
         js.append("    '.sq-hw-cap::after{content:\"\"!important;width:12px!important;height:4px!important;border-radius:2px!important;background:#334155!important;box-shadow:inset 0 1px 2px rgba(0,0,0,0.8)!important;transition:all 0.2s ease!important;}' +\n");
         js.append("    '.sq-hw-lbl{font-family:\"JetBrains Mono\",monospace!important;font-size:7px!important;font-weight:900!important;letter-spacing:0.4px!important;color:var(--toggle-color,#94a3b8)!important;line-height:1!important;}' +\n");
         js.append("    '#btn-player-wake:active .sq-hw-cap, #btn-player-voice:active .sq-hw-cap, #btn-player-lamp:active .sq-hw-cap, #btn-player-exit:active .sq-hw-cap{transform:translateY(1.5px)!important;}' +\n");
@@ -1114,7 +1145,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
 
         js.append("    var vBtn = document.getElementById('btn-player-voice');\n");
         js.append("    vBtn.classList.toggle('active', Boolean(typeof isTts !== 'undefined' && isTts));\n");
-        js.append("    vBtn.addEventListener('click', function() {\n");
+        js.append(" vBtn.addEventListener('click', function() {\n");
         js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
         js.append("      if (typeof isTts !== 'undefined') isTts = !isTts; else window.isTts = true;\n");
         js.append("      vBtn.classList.toggle('active', Boolean(isTts));\n");
@@ -1448,7 +1479,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("      }\n");
         js.append("    });\n");
         js.append("  }\n");
-
         js.append("  window.__normalizeStationList = function(arr) {\n");
         js.append("    if (!Array.isArray(arr)) return [];\n");
         js.append("    var out = [];\n");
@@ -1618,7 +1648,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("      }\n");
         js.append("    });\n");
         js.append("  };\n");
-
         js.append("  var oldCanvas = document.getElementById('hack-canvas');\n");
         js.append("  if (oldCanvas) {\n");
         js.append("    var hCanvas = oldCanvas.cloneNode(true);\n");
@@ -2371,7 +2400,6 @@ public class PlayerActivity extends Activity implements SensorEventListener {
                 .setNegativeButton("Cancel", null)
                 .show();
     }
-
     public class PlayerBridge {
         @JavascriptInterface
         public String getServerUrl() { return serverBaseUrl; }
