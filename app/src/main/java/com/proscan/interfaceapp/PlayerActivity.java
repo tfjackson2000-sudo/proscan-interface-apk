@@ -2068,67 +2068,28 @@ public class PlayerActivity extends Activity implements SensorEventListener {
     }
 
     private void startLiveStreamEnergyTap(final String resolvedUrl, final int reqId) {
+        // Do NOT open a second HTTP connection to the live radio stream!
+        // Single-connection CDNs (like talkSPORT / Audioxi) immediately drop or block MediaPlayer
+        // if a second socket connects with the same token/IP.
         liveStreamTapExecutor.execute(() -> {
-            HttpURLConnection conn = null;
-            InputStream is = null;
-            try {
-                String streamTarget = resolvedUrl;
-                if (streamTarget.toLowerCase().contains(".m3u8")) {
-                    String m3uText = fetchUrlText(streamTarget);
-                    String[] lines = m3uText.split("\n");
-                    for (String l : lines) {
-                        l = l.trim();
-                        if (!l.isEmpty() && !l.startsWith("#")) {
-                            streamTarget = new URL(new URL(resolvedUrl), l).toString();
-                            break;
-                        }
+            double phase = 0.0;
+            while (reqId == currentStreamReqId && isLiveRadioStream) {
+                if (MainActivity.PriorityRadioEngine.isRadioPlaying()) {
+                    long now = System.currentTimeMillis();
+                    // Only provide fallback syllable-like energy if hardware Visualizer isn't feeding data
+                    if (liveVisualizerLevel < 0.025f || (now - lastVisualizerUpdateMs) > 450) {
+                        phase += 0.23;
+                        float wave = (float) (0.45 + 0.35 * Math.sin(phase) * Math.cos(phase * 0.45) + 0.15 * Math.sin(phase * 2.1));
+                        liveStreamTapLevel = Math.min(0.88f, Math.max(0.08f, wave));
+                        lastStreamTapUpdateMs = now;
                     }
+                } else {
+                    liveStreamTapLevel = 0.02f;
                 }
-                conn = (HttpURLConnection) new URL(streamTarget).openConnection();
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
-                conn.setInstanceFollowRedirects(true);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                is = conn.getInputStream();
-                byte[] buf = new byte[1024];
-                float runningMin = 120f;
-                float runningMax = 195f;
-                while (reqId == currentStreamReqId && isLiveRadioStream) {
-                    int n = is.read(buf);
-                    if (n <= 0) break;
-                    int zeroRuns = 0;
-                    long diffSum = 0;
-                    int prev = buf[0] & 0xFF;
-                    for (int i = 1; i < n; i++) {
-                        int cur = buf[i] & 0xFF;
-                        int d = Math.abs(cur - prev);
-                        diffSum += d;
-                        if (cur == 0 || cur == 0xFF || d < 3) zeroRuns++;
-                        prev = cur;
-                    }
-                    float avgDiff = (float) diffSum / Math.max(1, n - 1);
-                    float activity = avgDiff * (1f - ((float) zeroRuns / n) * 0.65f);
-                    if (activity < runningMin) runningMin = activity;
-                    else runningMin += (activity - runningMin) * 0.015f;
-                    if (activity > runningMax) runningMax = activity;
-                    else runningMax -= (runningMax - activity) * 0.012f;
-
-                    float span = Math.max(4f, runningMax - runningMin);
-                    float norm = (activity - runningMin) / span;
-                    norm = Math.max(0f, Math.min(1f, norm));
-                    float shaped = (float) Math.pow(norm, 0.78);
-                    liveStreamTapLevel = Math.min(0.96f, Math.max(0.03f, shaped));
-                    lastStreamTapUpdateMs = System.currentTimeMillis();
-                    try { Thread.sleep(38); } catch (InterruptedException ie) { break; }
-                }
-            } catch (Exception ignored) {
-            } finally {
-                try { if (is != null) is.close(); } catch (Exception ignored) {}
-                try { if (conn != null) conn.disconnect(); } catch (Exception ignored) {}
+                try { Thread.sleep(45); } catch (InterruptedException ie) { break; }
             }
         });
     }
-
     private float[] extractMp3AmplitudeEnvelope(File mp3File) {
         int buckets = 240;
         float[] env = new float[buckets];
