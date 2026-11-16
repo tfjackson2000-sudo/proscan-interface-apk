@@ -296,44 +296,59 @@ public class MainActivity extends Activity implements SensorEventListener {
             radioExecutor.execute(() -> {
                 final String resolved = resolveRedirectsStatic(activeStationUrl);
                 handler.post(() -> {
-                    try {
-                        stopStationInternalOnly();
-                        radioPlayer = new MediaPlayer();
-                        radioPlayer.setWakeMode(context.getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
-                        if (Build.VERSION.SDK_INT >= 21) {
-                            radioPlayer.setAudioAttributes(new AudioAttributes.Builder()
-                                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                                    .build());
-                        }
-                        Map<String, String> headers = new HashMap<>();
-                        headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-                        headers.put("Referer", "https://talksport.com/");
-                        headers.put("Origin", "https://talksport.com");
-                        headers.put("Icy-MetaData", "0");
-                        headers.put("Accept", "*/*");
-                        radioPlayer.setDataSource(context.getApplicationContext(), Uri.parse(resolved), headers);
-                        radioPlayer.setOnPreparedListener(mp -> {
-                            synchronized (PriorityRadioEngine.class) {
-                                isPlaying = true;
-                                activeSessionId = mp.getAudioSessionId();
-                                applyCurrentVolumeLocked(cachedPrefs);
-                                mp.start();
-                                handler.removeCallbacks(duckWatchdogRunnable);
-                                handler.postDelayed(duckWatchdogRunnable, 500);
-                            }
-                            if (onStarted != null) onStarted.run();
-                        });
-                        radioPlayer.setOnErrorListener((mp, what, extra) -> {
-                            if (onError != null) onError.run();
-                            return true;
-                        });
-                        radioPlayer.prepareAsync();
-                    } catch (Exception e) {
-                        if (onError != null) onError.run();
-                    }
+                    startMediaPlayerAttempt(context, resolved, true, onStarted, onError);
                 });
             });
+        }
+
+        private static void startMediaPlayerAttempt(final Context context, final String urlToPlay, final boolean allowFallbackAttempt, final Runnable onStarted, final Runnable onError) {
+            try {
+                stopStationInternalOnly();
+                radioPlayer = new MediaPlayer();
+                radioPlayer.setWakeMode(context.getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
+                if (Build.VERSION.SDK_INT >= 21) {
+                    radioPlayer.setAudioAttributes(new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build());
+                }
+                if (allowFallbackAttempt) {
+                    // Attempt 1: Pure native URL string (lets Android NuPlayer/Stagefright handle Icecast & redirects natively)
+                    radioPlayer.setDataSource(urlToPlay);
+                } else {
+                    // Attempt 2: With explicit headers if Attempt 1 failed
+                    Map<String, String> headers = new HashMap<>();
+                    headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36");
+                    headers.put("Referer", "https://talksport.com/");
+                    radioPlayer.setDataSource(context.getApplicationContext(), Uri.parse(urlToPlay), headers);
+                }
+                radioPlayer.setOnPreparedListener(mp -> {
+                    synchronized (PriorityRadioEngine.class) {
+                        isPlaying = true;
+                        activeSessionId = mp.getAudioSessionId();
+                        applyCurrentVolumeLocked(cachedPrefs);
+                        mp.start();
+                        handler.removeCallbacks(duckWatchdogRunnable);
+                        handler.postDelayed(duckWatchdogRunnable, 500);
+                    }
+                    if (onStarted != null) onStarted.run();
+                });
+                radioPlayer.setOnErrorListener((mp, what, extra) -> {
+                    if (allowFallbackAttempt) {
+                        handler.post(() -> startMediaPlayerAttempt(context, urlToPlay, false, onStarted, onError));
+                    } else {
+                        if (onError != null) onError.run();
+                    }
+                    return true;
+                });
+                radioPlayer.prepareAsync();
+            } catch (Exception e) {
+                if (allowFallbackAttempt) {
+                    handler.post(() -> startMediaPlayerAttempt(context, urlToPlay, false, onStarted, onError));
+                } else {
+                    if (onError != null) onError.run();
+                }
+            }
         }
         public static synchronized void togglePause(SharedPreferences prefs) {
             if (prefs != null) cachedPrefs = prefs;
@@ -375,16 +390,18 @@ public class MainActivity extends Activity implements SensorEventListener {
        private static String resolveRedirectsStatic(String urlStr) {
             if (urlStr == null || urlStr.isEmpty()) return "";
             String current = urlStr.trim();
-
-            // 1. If it's a .m3u or .pls playlist wrapper, extract the stream URL inside it
             String lower = current.toLowerCase(Locale.ROOT);
-            if (lower.endsWith(".m3u") || lower.endsWith(".pls")) {
+
+            // ONLY fetch if it is a .m3u or .pls text playlist file!
+            // Never open an HttpURLConnection on a live stream URL before MediaPlayer,
+            // because live streams hang waiting for EOF or burn single-use session tokens (like talkSPORT/Audioxi).
+            if (lower.endsWith(".m3u") || lower.endsWith(".pls") || lower.contains(".m3u?") || lower.contains(".pls?")) {
                 HttpURLConnection pConn = null;
                 try {
                     pConn = (HttpURLConnection) new URL(current).openConnection();
                     pConn.setConnectTimeout(4000);
                     pConn.setReadTimeout(4000);
-                    pConn.setRequestProperty("User-Agent", "VLC/3.0.20 LibVLC/3.0.20");
+                    pConn.setRequestProperty("User-Agent", "Mozilla/5.0");
                     BufferedReader br = new BufferedReader(new InputStreamReader(pConn.getInputStream(), StandardCharsets.UTF_8));
                     String line;
                     while ((line = br.readLine()) != null) {
@@ -403,7 +420,8 @@ public class MainActivity extends Activity implements SensorEventListener {
                     if (pConn != null) try { pConn.disconnect(); } catch (Exception ignored) {}
                 }
             }
-
+            return current;
+        }
             // 2. Follow 301/302/307 redirects without opening a competing GET stream on the final edge server
             for (int hop = 0; hop < 6; hop++) {
                 HttpURLConnection conn = null;
