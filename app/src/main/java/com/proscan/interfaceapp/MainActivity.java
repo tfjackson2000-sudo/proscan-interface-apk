@@ -77,9 +77,11 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity implements SensorEventListener {
 
     private static final int REQ_LOAD_JSON = 901;
+    private static WebView sMainWebViewRef = null;
 
     public static final class PriorityRadioEngine {
         private static MediaPlayer radioPlayer = null;
+        private static volatile boolean isWebFallbackPlaying = false;
         private static String activeStationUrl = "";
         private static String activeStationName = "";
         private static int activeSessionId = 0;
@@ -98,7 +100,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             public void run() {
                 synchronized (PriorityRadioEngine.class) {
                     restoreScheduled = false;
-                    if (radioPlayer == null || !isPlaying) return;
+                    if (!isPlaying) return;
                     if (isScannerRxActive || isTtsSpeaking || isWaitingForPendingTts) return;
                     applyCurrentVolumeLocked(cachedPrefs);
                 }
@@ -121,7 +123,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             @Override
             public void run() {
                 synchronized (PriorityRadioEngine.class) {
-                    if (radioPlayer != null && isPlaying) {
+                    if (isPlaying && (radioPlayer != null || isWebFallbackPlaying)) {
                         long now = System.currentTimeMillis();
                         if (isScannerRxActive && (now - lastRxHeartbeatMs > 1500L)) {
                             isScannerRxActive = false;
@@ -188,12 +190,24 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
 
         private static synchronized void applyCurrentVolumeLocked(SharedPreferences prefs) {
-            if (radioPlayer == null || !isPlaying) return;
+            if (!isPlaying) return;
             boolean ducked = isAutoDuckEnabled(prefs) && (isScannerRxActive || isTtsSpeaking || isWaitingForPendingTts);
-            float target = ducked ? 0.0f : getUserRadioVolumeScalar(prefs);
-            try {
-                radioPlayer.setVolume(target, target);
-            } catch (Exception ignored) {}
+            final float target = ducked ? 0.0f : getUserRadioVolumeScalar(prefs);
+            if (radioPlayer != null) {
+                try { radioPlayer.setVolume(target, target); } catch (Exception ignored) {}
+            }
+            if (isWebFallbackPlaying && sMainWebViewRef != null) {
+                handler.post(() -> {
+                    try {
+                        if (sMainWebViewRef != null) {
+                            sMainWebViewRef.evaluateJavascript(
+                                    "try{if(window.__mainBgRadio){window.__mainBgRadio.volume=" + target + ";window.__mainBgRadio.muted=" + (target <= 0.001f) + ";}}catch(e){}",
+                                    null
+                            );
+                        }
+                    } catch (Exception ignored) {}
+                });
+            }
         }
 
         private static synchronized void scheduleRestoreAfter2500msLocked() {
@@ -270,6 +284,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         public static synchronized boolean isRadioPlaying() {
             try {
+                if (isWebFallbackPlaying && isPlaying) return true;
                 return isPlaying && radioPlayer != null && radioPlayer.isPlaying();
             } catch (Exception e) {
                 return false;
@@ -288,11 +303,46 @@ public class MainActivity extends Activity implements SensorEventListener {
             return activeSessionId;
         }
 
+        private static void startPersistentMainWebFallback(final String streamUrl, final Runnable onStarted, final Runnable onError) {
+            if (sMainWebViewRef == null) {
+                if (onError != null) onError.run();
+                return;
+            }
+            handler.post(() -> {
+                synchronized (PriorityRadioEngine.class) {
+                    stopStationInternalOnly();
+                    isWebFallbackPlaying = true;
+                    isPlaying = true;
+                    float initVol = (isAutoDuckEnabled(cachedPrefs) && (isScannerRxActive || isTtsSpeaking || isWaitingForPendingTts))
+                            ? 0.0f : getUserRadioVolumeScalar(cachedPrefs);
+                    String safeUrl = JSONObject.quote(streamUrl);
+                    String js = "try{" +
+                            "if(!window.__mainBgRadio){window.__mainBgRadio=new Audio();}" +
+                            "window.__mainBgRadio.pause();" +
+                            "window.__mainBgRadio.src=" + safeUrl + ";" +
+                            "window.__mainBgRadio.volume=" + initVol + ";" +
+                            "window.__mainBgRadio.play().catch(function(){});" +
+                            "}catch(e){}";
+                    sMainWebViewRef.evaluateJavascript(js, null);
+                    handler.removeCallbacks(duckWatchdogRunnable);
+                    handler.postDelayed(duckWatchdogRunnable, 500);
+                }
+                if (onStarted != null) onStarted.run();
+            });
+        }
+
         public static void startStation(final Context context, final SharedPreferences prefs, final String streamUrl, final String stationName, final Runnable onStarted, final Runnable onError) {
             if (prefs != null) cachedPrefs = prefs;
             stopStation();
             activeStationUrl = streamUrl != null ? streamUrl.trim() : "";
             activeStationName = stationName != null ? stationName : "RADIO";
+            final String lowerUrl = activeStationUrl.toLowerCase(Locale.ROOT);
+            // If it's talkSPORT / Audioxi, go straight to MainActivity's persistent WebView audio engine
+            // so it starts in <1 second, never drops when leaving Radio screen, and Auto-Ducks on Scanner hits!
+            if (lowerUrl.contains("talksport") || lowerUrl.contains("audioxi") || lowerUrl.contains("sharp-stream")) {
+                startPersistentMainWebFallback(activeStationUrl, onStarted, onError);
+                return;
+            }
             radioExecutor.execute(() -> {
                 final String resolved = resolveRedirectsStatic(activeStationUrl);
                 handler.post(() -> {
@@ -308,11 +358,11 @@ public class MainActivity extends Activity implements SensorEventListener {
                         }
                         Map<String, String> headers = new HashMap<>();
                         headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                        headers.put("Referer", "https://talksport.com/");
                         radioPlayer.setDataSource(context.getApplicationContext(), Uri.parse(resolved), headers);
                         radioPlayer.setOnPreparedListener(mp -> {
                             synchronized (PriorityRadioEngine.class) {
                                 isPlaying = true;
+                                isWebFallbackPlaying = false;
                                 activeSessionId = mp.getAudioSessionId();
                                 applyCurrentVolumeLocked(cachedPrefs);
                                 mp.start();
@@ -322,12 +372,12 @@ public class MainActivity extends Activity implements SensorEventListener {
                             if (onStarted != null) onStarted.run();
                         });
                         radioPlayer.setOnErrorListener((mp, what, extra) -> {
-                            if (onError != null) onError.run();
+                            startPersistentMainWebFallback(activeStationUrl, onStarted, onError);
                             return true;
                         });
                         radioPlayer.prepareAsync();
                     } catch (Exception e) {
-                        if (onError != null) onError.run();
+                        startPersistentMainWebFallback(activeStationUrl, onStarted, onError);
                     }
                 });
             });
@@ -335,6 +385,19 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         public static synchronized void togglePause(SharedPreferences prefs) {
             if (prefs != null) cachedPrefs = prefs;
+            if (isWebFallbackPlaying && sMainWebViewRef != null) {
+                if (isPlaying) {
+                    isPlaying = false;
+                    handler.post(() -> sMainWebViewRef.evaluateJavascript("try{if(window.__mainBgRadio)window.__mainBgRadio.pause();}catch(e){}", null));
+                } else {
+                    isPlaying = true;
+                    applyCurrentVolumeLocked(cachedPrefs);
+                    handler.post(() -> sMainWebViewRef.evaluateJavascript("try{if(window.__mainBgRadio)window.__mainBgRadio.play();}catch(e){}", null));
+                    handler.removeCallbacks(duckWatchdogRunnable);
+                    handler.postDelayed(duckWatchdogRunnable, 500);
+                }
+                return;
+            }
             if (radioPlayer == null) return;
             try {
                 if (radioPlayer.isPlaying()) {
@@ -357,6 +420,20 @@ public class MainActivity extends Activity implements SensorEventListener {
             restoreScheduled = false;
             isPlaying = false;
             activeSessionId = 0;
+            if (isWebFallbackPlaying && sMainWebViewRef != null) {
+                isWebFallbackPlaying = false;
+                handler.post(() -> {
+                    try {
+                        if (sMainWebViewRef != null) {
+                            sMainWebViewRef.evaluateJavascript(
+                                    "try{if(window.__mainBgRadio){window.__mainBgRadio.pause();window.__mainBgRadio.removeAttribute('src');window.__mainBgRadio.load();}}catch(e){}",
+                                    null
+                            );
+                        }
+                    } catch (Exception ignored) {}
+                });
+            }
+            isWebFallbackPlaying = false;
             if (radioPlayer != null) {
                 try { if (radioPlayer.isPlaying()) radioPlayer.stop(); } catch (Exception ignored) {}
                 try { radioPlayer.reset(); radioPlayer.release(); } catch (Exception ignored) {}
@@ -371,26 +448,14 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
 
         private static String resolveRedirectsStatic(String urlStr) {
-            if (urlStr == null || urlStr.isEmpty()) return "";
-            String current = urlStr.trim();
-            for (int hop = 0; hop < 4; hop++) {
-                // CRITICAL FOR TALKSPORT / AUDIOXI / STREAMGUYS:
-                // Once we have been redirected to a URL containing a session token (aw_0_1st / skey / token)
-                // or a direct .mp3/.aac edge mount, STOP IMMEDIATELY and hand it to MediaPlayer!
-                // If we open an HttpURLConnection to the tokenized edge URL, we burn the single-use token!
-                String lower = current.toLowerCase(Locale.ROOT);
-                if (hop > 0 && (lower.contains("aw_0_1st") || lower.contains("skey=") || lower.contains("token=")
-                        || lower.contains("sharp-stream.com") || lower.contains("streamguys") || lower.contains("audioxi"))) {
-                    break;
-                }
-                HttpURLConnection conn = null;
+            String current = urlStr;
+            for (int hop = 0; hop < 6; hop++) {
                 try {
-                    conn = (HttpURLConnection) new URL(current).openConnection();
+                    HttpURLConnection conn = (HttpURLConnection) new URL(current).openConnection();
                     conn.setInstanceFollowRedirects(false);
-                    conn.setConnectTimeout(4000);
-                    conn.setReadTimeout(4000);
+                    conn.setConnectTimeout(5000);
+                    conn.setReadTimeout(5000);
                     conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                    conn.setRequestProperty("Referer", "https://talksport.com/");
                     int code = conn.getResponseCode();
                     if (code >= 300 && code < 400) {
                         String loc = conn.getHeaderField("Location");
@@ -402,7 +467,6 @@ public class MainActivity extends Activity implements SensorEventListener {
                         break;
                     }
                 } catch (Exception e) {
-                    if (conn != null) try { conn.disconnect(); } catch (Exception ignored) {}
                     break;
                 }
             }
@@ -891,6 +955,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             public void pauseTimers() {
             }
         };
+        sMainWebViewRef = webView;
         webView.setKeepScreenOn(false);
         setupWebView();
         root.addView(webView, new FrameLayout.LayoutParams(
