@@ -291,7 +291,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         public static void startStation(final Context context, final SharedPreferences prefs, final String streamUrl, final String stationName, final Runnable onStarted, final Runnable onError) {
             if (prefs != null) cachedPrefs = prefs;
             stopStation();
-            activeStationUrl = streamUrl != null ? streamUrl : "";
+            activeStationUrl = streamUrl != null ? streamUrl.trim() : "";
             activeStationName = stationName != null ? stationName : "RADIO";
             radioExecutor.execute(() -> {
                 final String resolved = resolveRedirectsStatic(activeStationUrl);
@@ -307,7 +307,11 @@ public class MainActivity extends Activity implements SensorEventListener {
                                     .build());
                         }
                         Map<String, String> headers = new HashMap<>();
-                        headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+                        headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+                        headers.put("Referer", "https://talksport.com/");
+                        headers.put("Origin", "https://talksport.com");
+                        headers.put("Icy-MetaData", "0");
+                        headers.put("Accept", "*/*");
                         radioPlayer.setDataSource(context.getApplicationContext(), Uri.parse(resolved), headers);
                         radioPlayer.setOnPreparedListener(mp -> {
                             synchronized (PriorityRadioEngine.class) {
@@ -331,7 +335,6 @@ public class MainActivity extends Activity implements SensorEventListener {
                 });
             });
         }
-
         public static synchronized void togglePause(SharedPreferences prefs) {
             if (prefs != null) cachedPrefs = prefs;
             if (radioPlayer == null) return;
@@ -369,15 +372,51 @@ public class MainActivity extends Activity implements SensorEventListener {
             stopStationInternalOnly();
         }
 
-        private static String resolveRedirectsStatic(String urlStr) {
-            String current = urlStr;
-            for (int hop = 0; hop < 6; hop++) {
+       private static String resolveRedirectsStatic(String urlStr) {
+            if (urlStr == null || urlStr.isEmpty()) return "";
+            String current = urlStr.trim();
+
+            // 1. If it's a .m3u or .pls playlist wrapper, extract the stream URL inside it
+            String lower = current.toLowerCase(Locale.ROOT);
+            if (lower.endsWith(".m3u") || lower.endsWith(".pls")) {
+                HttpURLConnection pConn = null;
                 try {
-                    HttpURLConnection conn = (HttpURLConnection) new URL(current).openConnection();
+                    pConn = (HttpURLConnection) new URL(current).openConnection();
+                    pConn.setConnectTimeout(4000);
+                    pConn.setReadTimeout(4000);
+                    pConn.setRequestProperty("User-Agent", "VLC/3.0.20 LibVLC/3.0.20");
+                    BufferedReader br = new BufferedReader(new InputStreamReader(pConn.getInputStream(), StandardCharsets.UTF_8));
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        line = line.trim();
+                        if (line.startsWith("http://") || line.startsWith("https://")) {
+                            current = line;
+                            break;
+                        } else if (line.toLowerCase(Locale.ROOT).startsWith("file1=")) {
+                            current = line.substring(6).trim();
+                            break;
+                        }
+                    }
+                    br.close();
+                } catch (Exception ignored) {
+                } finally {
+                    if (pConn != null) try { pConn.disconnect(); } catch (Exception ignored) {}
+                }
+            }
+
+            // 2. Follow 301/302/307 redirects without opening a competing GET stream on the final edge server
+            for (int hop = 0; hop < 6; hop++) {
+                HttpURLConnection conn = null;
+                try {
+                    conn = (HttpURLConnection) new URL(current).openConnection();
                     conn.setInstanceFollowRedirects(false);
-                    conn.setConnectTimeout(5000);
-                    conn.setReadTimeout(5000);
-                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
+                    conn.setConnectTimeout(4000);
+                    conn.setReadTimeout(4000);
+                    conn.setRequestMethod("GET");
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+                    conn.setRequestProperty("Referer", "https://talksport.com/");
+                    conn.setRequestProperty("Origin", "https://talksport.com");
+                    conn.setRequestProperty("Icy-MetaData", "0");
                     int code = conn.getResponseCode();
                     if (code >= 300 && code < 400) {
                         String loc = conn.getHeaderField("Location");
@@ -389,6 +428,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                         break;
                     }
                 } catch (Exception e) {
+                    if (conn != null) try { conn.disconnect(); } catch (Exception ignored) {}
                     break;
                 }
             }
