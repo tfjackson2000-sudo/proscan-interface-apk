@@ -478,7 +478,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         @Override
         public void run() {
             try {
-                boolean radioRunning = isLiveRadioStream && MainActivity.PriorityRadioEngine.isRadioPlaying();
+                boolean radioRunning = isLiveRadioStream;
                 boolean archiveRunning = !isLiveRadioStream && nativePlayer != null && nativePlayer.isPlaying();
                 if (playerWeb != null && (radioRunning || archiveRunning)) {
                     int sec = 0, tot = 0;
@@ -1072,7 +1072,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    topBar.appendChild(pBat);\n");
         js.append("    function updatePlayerBattery() {\n");
         js.append("      if (window.PlayerBridge && typeof window.PlayerBridge.getBatteryStatus === 'function') {\n");
-        js.append("        var bStr = window.PlayerBridge.getBatteryStatus() || '';\n");
+        js.append("        var bStr = window.AndroidApp ? window.AndroidApp.getBatteryStatus() : (window.PlayerBridge.getBatteryStatus() || '');\n");
         js.append("        var bTxt = document.getElementById('player-bat-txt');\n");
         js.append("        var bFill = document.getElementById('player-bat-fill');\n");
         js.append("        if (bTxt && bStr) bTxt.innerText = bStr;\n");
@@ -1145,7 +1145,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
 
         js.append("    var vBtn = document.getElementById('btn-player-voice');\n");
         js.append("    vBtn.classList.toggle('active', Boolean(typeof isTts !== 'undefined' && isTts));\n");
-        js.append(" vBtn.addEventListener('click', function() {\n");
+        js.append("    vBtn.addEventListener('click', function() {\n");
         js.append("      if (navigator.vibrate) navigator.vibrate(20);\n");
         js.append("      if (typeof isTts !== 'undefined') isTts = !isTts; else window.isTts = true;\n");
         js.append("      vBtn.classList.toggle('active', Boolean(isTts));\n");
@@ -1301,6 +1301,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("        window.__radioVolPct = v;\n");
         js.append("        document.getElementById('time-cur').innerText = 'VOL';\n");
         js.append("        document.getElementById('time-tot').innerText = v + '%';\n");
+        js.append("        try { if (window.__webRadioAudio) window.__webRadioAudio.volume = v / 100; } catch(e){}\n");
         js.append("        if (window.PlayerBridge && window.PlayerBridge.setRadioVolumePct) {\n");
         js.append("          window.PlayerBridge.setRadioVolumePct(v);\n");
         js.append("        }\n");
@@ -1310,6 +1311,7 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("      if (window.__isBroadcastRadioMode) {\n");
         js.append("        var v = parseInt(this.value, 10) || 0;\n");
         js.append("        window.__radioVolPct = v;\n");
+        js.append("        try { if (window.__webRadioAudio) window.__webRadioAudio.volume = v / 100; } catch(e){}\n");
         js.append("        if (window.PlayerBridge && window.PlayerBridge.setRadioVolumePct) {\n");
         js.append("          window.PlayerBridge.setRadioVolumePct(v);\n");
         js.append("        }\n");
@@ -1317,8 +1319,14 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    });\n");
         js.append("  }\n");
 
+        /* Hybrid WebView Audio Engine Fallback for talkSPORT / Audioxi Streams */
+        js.append("  window.__webRadioAudio = new Audio();\n");
+        js.append("  window.__webRadioFallbackTimer = null;\n");
+
         js.append("  window.__stopAllRadioAndNativeAudio = function() {\n");
         js.append("    window.__streamLaunchToken = (window.__streamLaunchToken || 0) + 1;\n");
+        js.append("    clearTimeout(window.__webRadioFallbackTimer);\n");
+        js.append("    try { if (window.__webRadioAudio) { window.__webRadioAudio.pause(); window.__webRadioAudio.removeAttribute('src'); window.__webRadioAudio.load(); } } catch(e){}\n");
         js.append("    window.__audioLevel = 0;\n");
         js.append("    if (typeof setPlayingUI === 'function') setPlayingUI(false);\n");
         js.append("    var arm = document.querySelector('.tt-tonearm');\n");
@@ -1537,8 +1545,35 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("  window.__radioIdx = window.__radioStations.length > 0 ? 0 : -1;\n");
         js.append("  window.__activeRadioUrl = ").append(activeBgRadioUrl).append(";\n");
 
+        js.append("  window.__startWebAudioFallback = function(url, token) {\n");
+        js.append("    if (token !== window.__streamLaunchToken) return;\n");
+        js.append("    try {\n");
+        js.append("      if (window.PlayerBridge && window.PlayerBridge.stopAudio) window.PlayerBridge.stopAudio();\n");
+        js.append("      var wa = window.__webRadioAudio;\n");
+        js.append("      wa.removeAttribute('crossorigin');\n");
+        js.append("      wa.src = url;\n");
+        js.append("      wa.volume = (window.__radioVolPct !== undefined ? window.__radioVolPct : 50) / 100;\n");
+        js.append("      wa.onplaying = function() {\n");
+        js.append("        if (token !== window.__streamLaunchToken) return;\n");
+        js.append("        clearTimeout(window.__webRadioFallbackTimer);\n");
+        js.append("        if (window.PlayerBridge && window.PlayerBridge.setWebStreamActive) window.PlayerBridge.setWebStreamActive(true);\n");
+        js.append("        if (window.onNativePlayStarted) window.onNativePlayStarted();\n");
+        js.append("      };\n");
+        js.append("      wa.play().catch(function(){\n");
+        js.append("        if (window.onNativePlayError) window.onNativePlayError('STREAM OFFLINE');\n");
+        js.append("      });\n");
+        js.append("    } catch(e) {}\n");
+        js.append("  };\n");
+
         js.append("  window.__startHybridLiveStream = function(url, name) {\n");
         js.append("    window.__stopAllRadioAndNativeAudio();\n");
+        js.append("    var myToken = window.__streamLaunchToken;\n");
+        js.append("    clearTimeout(window.__webRadioFallbackTimer);\n");
+        js.append("    window.__webRadioFallbackTimer = setTimeout(function() {\n");
+        js.append("      if (myToken === window.__streamLaunchToken && !isPlayingNow) {\n");
+        js.append("        window.__startWebAudioFallback(url, myToken);\n");
+        js.append("      }\n");
+        js.append("    }, 3800);\n");
         js.append("    if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrlWithName) {\n");
         js.append("      window.PlayerBridge.playLiveStreamUrlWithName(url, name || 'RADIO');\n");
         js.append("    } else if (window.PlayerBridge && window.PlayerBridge.playLiveStreamUrl) {\n");
@@ -2068,28 +2103,21 @@ public class PlayerActivity extends Activity implements SensorEventListener {
     }
 
     private void startLiveStreamEnergyTap(final String resolvedUrl, final int reqId) {
-        // Do NOT open a second HTTP connection to the live radio stream!
-        // Single-connection CDNs (like talkSPORT / Audioxi) immediately drop or block MediaPlayer
-        // if a second socket connects with the same token/IP.
         liveStreamTapExecutor.execute(() -> {
             double phase = 0.0;
             while (reqId == currentStreamReqId && isLiveRadioStream) {
-                if (MainActivity.PriorityRadioEngine.isRadioPlaying()) {
-                    long now = System.currentTimeMillis();
-                    // Only provide fallback syllable-like energy if hardware Visualizer isn't feeding data
-                    if (liveVisualizerLevel < 0.025f || (now - lastVisualizerUpdateMs) > 450) {
-                        phase += 0.23;
-                        float wave = (float) (0.45 + 0.35 * Math.sin(phase) * Math.cos(phase * 0.45) + 0.15 * Math.sin(phase * 2.1));
-                        liveStreamTapLevel = Math.min(0.88f, Math.max(0.08f, wave));
-                        lastStreamTapUpdateMs = now;
-                    }
-                } else {
-                    liveStreamTapLevel = 0.02f;
+                long now = System.currentTimeMillis();
+                if (liveVisualizerLevel < 0.025f || (now - lastVisualizerUpdateMs) > 450) {
+                    phase += 0.23;
+                    float wave = (float) (0.45 + 0.35 * Math.sin(phase) * Math.cos(phase * 0.45) + 0.15 * Math.sin(phase * 2.1));
+                    liveStreamTapLevel = Math.min(0.88f, Math.max(0.08f, wave));
+                    lastStreamTapUpdateMs = now;
                 }
                 try { Thread.sleep(45); } catch (InterruptedException ie) { break; }
             }
         });
     }
+
     private float[] extractMp3AmplitudeEnvelope(File mp3File) {
         int buckets = 240;
         float[] env = new float[buckets];
@@ -2230,13 +2258,13 @@ public class PlayerActivity extends Activity implements SensorEventListener {
                     if (sessionId != 0) setupVisualizer(sessionId);
                     startLiveStreamEnergyTap(streamUrl, reqId);
                     if (playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
+                        playerWeb.evaluateJavascript("clearTimeout(window.__webRadioFallbackTimer);if(window.onNativePlayStarted)window.onNativePlayStarted();", null);
                     }
                     mainHandler.post(progressTicker);
                 },
                 () -> {
                     if (reqId == currentStreamReqId && playerWeb != null) {
-                        playerWeb.evaluateJavascript("if(window.onNativePlayError)window.onNativePlayError('STREAM OFFLINE');", null);
+                        playerWeb.evaluateJavascript("if(window.__startWebAudioFallback)window.__startWebAudioFallback(" + JSONObject.quote(streamUrl) + ",window.__streamLaunchToken);", null);
                     }
                 }
         );
@@ -2439,7 +2467,11 @@ public class PlayerActivity extends Activity implements SensorEventListener {
             mainHandler.post(() -> {
                 isLiveRadioStream = active;
                 mainHandler.removeCallbacks(progressTicker);
-                if (active) mainHandler.post(progressTicker);
+                if (active) {
+                    final int reqId = ++currentStreamReqId;
+                    startLiveStreamEnergyTap(activeLiveRadioUrl, reqId);
+                    mainHandler.post(progressTicker);
+                }
             });
         }
 
