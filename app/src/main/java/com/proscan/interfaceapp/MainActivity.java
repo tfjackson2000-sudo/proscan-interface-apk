@@ -230,6 +230,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                     lastRxHeartbeatMs = System.currentTimeMillis();
                     isScannerRxActive = true;
                     isWaitingForPendingTts = false;
+                    isTtsSpeaking = false;
                     restoreScheduled = false;
                     handler.removeCallbacks(restoreVolumeRunnable);
                     handler.removeCallbacks(clearPendingTtsWaitRunnable);
@@ -476,7 +477,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-private WebView webView;
+    private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
     private SensorManager sensorManager;
@@ -983,7 +984,7 @@ private WebView webView;
             connectSmart(localUrl, tailscaleUrl);
         }
     }
-private String getNativeBatteryStatus() {
+    private String getNativeBatteryStatus() {
         try {
             IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
             Intent b = registerReceiver(null, ifilter);
@@ -1216,7 +1217,16 @@ private String getNativeBatteryStatus() {
         @JavascriptInterface
         public void notifyScannerRx(final boolean rxActive, final boolean voiceReadoutEnabled) {
             PriorityRadioEngine.onScannerRxStateChanged(prefs, rxActive, voiceReadoutEnabled);
-            if (!rxActive) {
+            if (rxActive) {
+                // Immediately silence any in-progress TTS if a new scanner transmission starts!
+                mainHandler.post(() -> {
+                    try {
+                        if (tts != null && tts.isSpeaking()) {
+                            tts.stop();
+                        }
+                    } catch (Exception ignored) {}
+                });
+            } else {
                 lastRxEndedMs = System.currentTimeMillis();
                 mainHandler.postDelayed(() -> pollHistoryLogNatively(), 300);
                 mainHandler.postDelayed(() -> pollHistoryLogNatively(), 900);
@@ -1228,9 +1238,16 @@ private String getNativeBatteryStatus() {
             if (text == null || text.trim().isEmpty()) return;
             mainHandler.post(() -> {
                 final String cleanText = text.trim();
+                final boolean isToggleConfirm = cleanText.equalsIgnoreCase("Voice readout on");
+
+                // Never speak a channel name if a scanner transmission is currently active!
+                if (!isToggleConfirm && PriorityRadioEngine.isScannerCurrentlyReceiving()) {
+                    PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
+                    return;
+                }
 
                 long now = System.currentTimeMillis();
-                if (!cleanText.equalsIgnoreCase("Voice readout on")
+                if (!isToggleConfirm
                         && cleanText.equalsIgnoreCase(lastSpokenText)
                         && (now - lastSpokenTimestamp < 15000)) {
                     if (tts == null || !tts.isSpeaking()) {
@@ -1245,14 +1262,18 @@ private String getNativeBatteryStatus() {
 
                 if (tts == null || !ttsReady) {
                     initTTS();
-                    mainHandler.postDelayed(() -> speakDirect(cleanText), 900);
+                    mainHandler.postDelayed(() -> speakDirect(cleanText, isToggleConfirm), 900);
                     return;
                 }
-                speakDirect(cleanText);
+                speakDirect(cleanText, isToggleConfirm);
             });
         }
 
-        private void speakDirect(String cleanText) {
+        private void speakDirect(String cleanText, boolean isToggleConfirm) {
+            if (!isToggleConfirm && PriorityRadioEngine.isScannerCurrentlyReceiving()) {
+                PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
+                return;
+            }
             int result = TextToSpeech.ERROR;
             final String uttId = "proscan_tts_" + System.currentTimeMillis();
             activeTtsUtteranceId = uttId;
@@ -1277,6 +1298,10 @@ private String getNativeBatteryStatus() {
             if (result != TextToSpeech.SUCCESS) {
                 initTTS();
                 mainHandler.postDelayed(() -> {
+                    if (!isToggleConfirm && PriorityRadioEngine.isScannerCurrentlyReceiving()) {
+                        PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
+                        return;
+                    }
                     if (tts != null && ttsReady) {
                         final String retryId = "proscan_tts_retry_" + System.currentTimeMillis();
                         activeTtsUtteranceId = retryId;
@@ -1414,7 +1439,7 @@ private String getNativeBatteryStatus() {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 200);
     }
-private void injectEnhancements() {
+    private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -1624,7 +1649,7 @@ private void injectEnhancements() {
         js.append("        };\n");
         js.append("      }\n");
 
-        /* 1.0s Pause After Transmission Ends Before TTS Speaks */
+        /* 1.0s Pause After Transmission Ends Before TTS Speaks — Skips If New Transmission Starts! */
         js.append("      window.__speakTextAfterRx = function(txt, immediate) {\n");
         js.append("        if (!window.AndroidApp || !txt) return;\n");
         js.append("        var clean = String(txt).trim();\n");
@@ -1634,21 +1659,21 @@ private void injectEnhancements() {
         js.append("          return;\n");
         js.append("        }\n");
         js.append("        clearTimeout(window.__rxTtsWaitTimer);\n");
-        js.append("        var tries = 0;\n");
-        js.append("        (function waitRxOff() {\n");
-        js.append("          var rx = document.getElementById('rx-led');\n");
-        js.append("          if (rx && rx.classList.contains('active') && tries++ < 50) {\n");
-        js.append("            window.__rxTtsWaitTimer = setTimeout(waitRxOff, 100);\n");
-        js.append("          } else {\n");
-        js.append("            var elapsedSinceRxEnd = Date.now() - (window.__lastRealAudioMs || 0);\n");
-        js.append("            var waitMs = Math.max(80, Math.min(1000, 1000 - elapsedSinceRxEnd));\n");
-        js.append("            window.__rxTtsWaitTimer = setTimeout(function() {\n");
-        js.append("              if (window.__voiceReadoutEnabled || window.__vOn) {\n");
-        js.append("                window.AndroidApp.speakChannel(clean);\n");
-        js.append("              }\n");
-        js.append("            }, waitMs);\n");
+        js.append("        var rx = document.getElementById('rx-led');\n");
+        js.append("        if ((rx && rx.classList.contains('active')) || window.__lastNotifiedRxState) {\n");
+        js.append("          return;\n");
+        js.append("        }\n");
+        js.append("        var elapsedSinceRxEnd = Date.now() - (window.__lastRealAudioMs || 0);\n");
+        js.append("        var waitMs = Math.max(80, Math.min(1000, 1000 - elapsedSinceRxEnd));\n");
+        js.append("        window.__rxTtsWaitTimer = setTimeout(function() {\n");
+        js.append("          var rxNow = document.getElementById('rx-led');\n");
+        js.append("          if ((rxNow && rxNow.classList.contains('active')) || window.__lastNotifiedRxState) {\n");
+        js.append("            return;\n");
         js.append("          }\n");
-        js.append("        })();\n");
+        js.append("          if (window.__voiceReadoutEnabled || window.__vOn) {\n");
+        js.append("            window.AndroidApp.speakChannel(clean);\n");
+        js.append("          }\n");
+        js.append("        }, waitMs);\n");
         js.append("      };\n");
 
         js.append("      window.__onNativeHistoryLogText = function(text) {\n");
@@ -1766,6 +1791,8 @@ private void injectEnhancements() {
         js.append("          var reqMs = isKey ? 320 : 120;\n");
         js.append("          if ((now - rxSignalStartTime) >= reqMs && window.__voiceEnergyFrames >= 3) {\n");
         js.append("            window.__lastRealAudioMs = nowWall;\n");
+        /* Cancel Any Pending TTS From a Previous Transmission Immediately! */
+        js.append("            clearTimeout(window.__rxTtsWaitTimer);\n");
         js.append("            if (led && !led.classList.contains('active')) led.classList.add('active');\n");
         js.append("            if (!window.__lastNotifiedRxState || (nowWall - window.__lastActiveRxPushMs > 350)) {\n");
         js.append("              window.__lastNotifiedRxState = true;\n");
@@ -1793,7 +1820,7 @@ private void injectEnhancements() {
         js.append("      };\n");
         js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
         js.append("    }\n");
-/* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
+        /* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
         js.append("      window.renderCustomBrand = function() {};\n");
@@ -2103,7 +2130,7 @@ private void injectEnhancements() {
         js.append("      var origSave = window.savePresetToSlot;\n");
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
-js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
+        js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
         js.append("      var rowParent = loginBtn.parentNode;\n");
