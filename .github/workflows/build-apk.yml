@@ -5,9 +5,12 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -52,9 +55,10 @@ jobs:
           EOF
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.5'
+          cache-disabled: true
 
       - name: Build Debug APK
         run: gradle assembleDebug
@@ -64,3 +68,11 @@ jobs:
         with:
           name: ProScan-Interface-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish Direct APK to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-apk
+          name: Latest ProScan APK
+          body: "Tap app-debug.apk below under Assets to download & install directly!"
+          files: app/build/outputs/apk/debug/app-debug.apk
