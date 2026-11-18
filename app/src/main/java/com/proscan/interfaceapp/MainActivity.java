@@ -3,11 +3,13 @@ package com.proscan.interfaceapp;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
+import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -81,7 +83,10 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     public static final class PriorityRadioEngine {
         private static MediaPlayer radioPlayer = null;
+        private static Context cachedAppContext = null;
         private static volatile boolean isWebFallbackPlaying = false;
+        private static volatile boolean userRequestedPlay = false;
+        private static volatile long lastReconnectAttemptMs = 0L;
         private static String activeStationUrl = "";
         private static String activeStationName = "";
         private static int activeSessionId = 0;
@@ -123,7 +128,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             @Override
             public void run() {
                 synchronized (PriorityRadioEngine.class) {
-                    if (isPlaying && (radioPlayer != null || isWebFallbackPlaying)) {
+                    if (userRequestedPlay && !activeStationUrl.isEmpty()) {
                         long now = System.currentTimeMillis();
                         if (isScannerRxActive && (now - lastRxHeartbeatMs > 1500L)) {
                             isScannerRxActive = false;
@@ -131,8 +136,29 @@ public class MainActivity extends Activity implements SensorEventListener {
                         if (isTtsSpeaking && (now - lastTtsStartMs > 7000L)) {
                             isTtsSpeaking = false;
                         }
-                        if (!isScannerRxActive && !isTtsSpeaking && !isWaitingForPendingTts && !restoreScheduled) {
+                        if (isPlaying && !isScannerRxActive && !isTtsSpeaking && !isWaitingForPendingTts && !restoreScheduled) {
                             applyCurrentVolumeLocked(cachedPrefs);
+                        }
+                        // Overnight stream drop auto-recovery (if user didn't pause/stop)
+                        if (isPlaying && !isWebFallbackPlaying && radioPlayer != null) {
+                            boolean mpPlaying = false;
+                            try { mpPlaying = radioPlayer.isPlaying(); } catch (Exception ignored) {}
+                            if (!mpPlaying && (now - lastReconnectAttemptMs > 10000L) && cachedAppContext != null) {
+                                lastReconnectAttemptMs = now;
+                                final String retryUrl = activeStationUrl;
+                                final String retryName = activeStationName;
+                                handler.postDelayed(() -> {
+                                    if (userRequestedPlay && !retryUrl.isEmpty()) {
+                                        startStation(cachedAppContext, cachedPrefs, retryUrl, retryName, null, null);
+                                    }
+                                }, 1500);
+                            }
+                        } else if (isPlaying && isWebFallbackPlaying && sMainWebViewRef != null && (now - lastReconnectAttemptMs > 10000L)) {
+                            lastReconnectAttemptMs = now;
+                            sMainWebViewRef.evaluateJavascript(
+                                    "try{if(window.__mainBgRadio && (window.__mainBgRadio.paused || window.__mainBgRadio.ended || window.__mainBgRadio.readyState===0)){window.__mainBgRadio.load();window.__mainBgRadio.play().catch(function(){});}}catch(e){}",
+                                    null
+                            );
                         }
                         handler.postDelayed(this, 500);
                     }
@@ -314,11 +340,17 @@ public class MainActivity extends Activity implements SensorEventListener {
                     stopStationInternalOnly();
                     isWebFallbackPlaying = true;
                     isPlaying = true;
+                    userRequestedPlay = true;
+                    lastReconnectAttemptMs = System.currentTimeMillis();
                     float initVol = (isAutoDuckEnabled(cachedPrefs) && (isScannerRxActive || isTtsSpeaking || isWaitingForPendingTts))
                             ? 0.0f : getUserRadioVolumeScalar(cachedPrefs);
                     String safeUrl = JSONObject.quote(streamUrl);
                     String js = "try{" +
-                            "if(!window.__mainBgRadio){window.__mainBgRadio=new Audio();}" +
+                            "if(!window.__mainBgRadio){" +
+                            "  window.__mainBgRadio=new Audio();" +
+                            "  window.__mainBgRadio.addEventListener('error',function(){setTimeout(function(){if(window.__mainBgRadio&&window.__mainBgRadio.src){window.__mainBgRadio.load();window.__mainBgRadio.play().catch(function(){});}},3000);});" +
+                            "  window.__mainBgRadio.addEventListener('ended',function(){setTimeout(function(){if(window.__mainBgRadio&&window.__mainBgRadio.src){window.__mainBgRadio.load();window.__mainBgRadio.play().catch(function(){});}},2000);});" +
+                            "}" +
                             "window.__mainBgRadio.pause();" +
                             "window.__mainBgRadio.src=" + safeUrl + ";" +
                             "window.__mainBgRadio.volume=" + initVol + ";" +
@@ -333,10 +365,13 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
 
         public static void startStation(final Context context, final SharedPreferences prefs, final String streamUrl, final String stationName, final Runnable onStarted, final Runnable onError) {
+            if (context != null) cachedAppContext = context.getApplicationContext();
             if (prefs != null) cachedPrefs = prefs;
-            stopStation();
+            stopStationInternalOnly();
             activeStationUrl = streamUrl != null ? streamUrl.trim() : "";
             activeStationName = stationName != null ? stationName : "RADIO";
+            userRequestedPlay = true;
+            lastReconnectAttemptMs = System.currentTimeMillis();
             final String lowerUrl = activeStationUrl.toLowerCase(Locale.ROOT);
             if (lowerUrl.contains("talksport") || lowerUrl.contains("audioxi") || lowerUrl.contains("sharp-stream")) {
                 startPersistentMainWebFallback(activeStationUrl, onStarted, onError);
@@ -347,8 +382,11 @@ public class MainActivity extends Activity implements SensorEventListener {
                 handler.post(() -> {
                     try {
                         stopStationInternalOnly();
+                        userRequestedPlay = true;
                         radioPlayer = new MediaPlayer();
-                        radioPlayer.setWakeMode(context.getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
+                        if (cachedAppContext != null) {
+                            radioPlayer.setWakeMode(cachedAppContext, PowerManager.PARTIAL_WAKE_LOCK);
+                        }
                         if (Build.VERSION.SDK_INT >= 21) {
                             radioPlayer.setAudioAttributes(new AudioAttributes.Builder()
                                     .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -357,7 +395,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                         }
                         Map<String, String> headers = new HashMap<>();
                         headers.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124.0.0.0 Mobile");
-                        radioPlayer.setDataSource(context.getApplicationContext(), Uri.parse(resolved), headers);
+                        radioPlayer.setDataSource(cachedAppContext, Uri.parse(resolved), headers);
                         radioPlayer.setOnPreparedListener(mp -> {
                             synchronized (PriorityRadioEngine.class) {
                                 isPlaying = true;
@@ -369,6 +407,16 @@ public class MainActivity extends Activity implements SensorEventListener {
                                 handler.postDelayed(duckWatchdogRunnable, 500);
                             }
                             if (onStarted != null) onStarted.run();
+                        });
+                        radioPlayer.setOnCompletionListener(mp -> {
+                            // Live radio stream shouldn't "complete" — auto-reconnect if user didn't stop!
+                            if (userRequestedPlay && !activeStationUrl.isEmpty() && cachedAppContext != null) {
+                                handler.postDelayed(() -> {
+                                    if (userRequestedPlay && !activeStationUrl.isEmpty()) {
+                                        startStation(cachedAppContext, cachedPrefs, activeStationUrl, activeStationName, null, null);
+                                    }
+                                }, 2500);
+                            }
                         });
                         radioPlayer.setOnErrorListener((mp, what, extra) -> {
                             startPersistentMainWebFallback(activeStationUrl, onStarted, onError);
@@ -387,9 +435,11 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (isWebFallbackPlaying && sMainWebViewRef != null) {
                 if (isPlaying) {
                     isPlaying = false;
+                    userRequestedPlay = false;
                     handler.post(() -> sMainWebViewRef.evaluateJavascript("try{if(window.__mainBgRadio)window.__mainBgRadio.pause();}catch(e){}", null));
                 } else {
                     isPlaying = true;
+                    userRequestedPlay = true;
                     applyCurrentVolumeLocked(cachedPrefs);
                     handler.post(() -> sMainWebViewRef.evaluateJavascript("try{if(window.__mainBgRadio)window.__mainBgRadio.play();}catch(e){}", null));
                     handler.removeCallbacks(duckWatchdogRunnable);
@@ -402,8 +452,10 @@ public class MainActivity extends Activity implements SensorEventListener {
                 if (radioPlayer.isPlaying()) {
                     radioPlayer.pause();
                     isPlaying = false;
+                    userRequestedPlay = false;
                 } else {
                     isPlaying = true;
+                    userRequestedPlay = true;
                     applyCurrentVolumeLocked(cachedPrefs);
                     radioPlayer.start();
                     handler.removeCallbacks(duckWatchdogRunnable);
@@ -441,6 +493,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
 
         public static synchronized void stopStation() {
+            userRequestedPlay = false;
             activeStationUrl = "";
             activeStationName = "";
             stopStationInternalOnly();
@@ -745,13 +798,15 @@ public class MainActivity extends Activity implements SensorEventListener {
                             .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
                             .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
                             .apply();
-                    Toast.makeText(MainActivity.this, "Bedroom Light Routine Saved! Tap LAMP to trigger.", Toast.LENGTH_SHORT).show();
+                    saveBackupJsonToDownloads(prefs.getString("shared_web_storage", "{}"), false);
+                    Toast.makeText(MainActivity.this, "Bedroom Light Routine Saved & Backed Up!", Toast.LENGTH_SHORT).show();
                 })
                 .setNeutralButton("Test Now", (d, w) -> {
                     prefs.edit()
                             .putString("alexa_lamp_off_url", offInput.getText().toString().trim())
                             .putString("alexa_lamp_on_url", onInput.getText().toString().trim())
                             .apply();
+                    saveBackupJsonToDownloads(prefs.getString("shared_web_storage", "{}"), false);
                     triggerAlexaWebhook(false);
                 })
                 .setNegativeButton("Cancel", null)
@@ -1019,7 +1074,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             root.put("tailscale_url", prefs.getString("tailscale_url", ""));
             root.put("alexa_lamp_off_url", prefs.getString("alexa_lamp_off_url", ""));
             root.put("alexa_lamp_on_url", prefs.getString("alexa_lamp_on_url", ""));
-            JSONObject ws = webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject();
+            JSONObject ws = (webStorageJson != null && !webStorageJson.trim().isEmpty())
+                    ? new JSONObject(webStorageJson) : new JSONObject();
             String rad = prefs.getString("radio_stations_json", "");
             if (!rad.isEmpty() && !ws.has("proscan_radio_stations_v3")) {
                 ws.put("proscan_radio_stations_v3", rad);
@@ -1029,38 +1085,59 @@ public class MainActivity extends Activity implements SensorEventListener {
 
             prefs.edit().putString("last_backup_json", root.toString()).apply();
 
+            boolean written = false;
             if (Build.VERSION.SDK_INT >= 29) {
+                Uri collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
                 try {
-                    getContentResolver().delete(
-                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                            MediaStore.MediaColumns.DISPLAY_NAME + "=?",
-                            new String[]{"proscan_presets_backup.json"}
+                    Cursor c = getContentResolver().query(
+                            collection,
+                            new String[]{MediaStore.MediaColumns._ID},
+                            MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ?",
+                            new String[]{"proscan_presets_backup%"},
+                            null
                     );
+                    if (c != null) {
+                        while (c.moveToNext()) {
+                            long id = c.getLong(0);
+                            Uri delUri = ContentUris.withAppendedId(collection, id);
+                            try { getContentResolver().delete(delUri, null, null); } catch (Exception ignored) {}
+                        }
+                        c.close();
+                    }
                 } catch (Exception ignored) {}
 
                 ContentValues values = new ContentValues();
                 values.put(MediaStore.MediaColumns.DISPLAY_NAME, "proscan_presets_backup.json");
                 values.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
                 values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                values.put(MediaStore.MediaColumns.IS_PENDING, 1);
 
-                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                Uri uri = getContentResolver().insert(collection, values);
                 if (uri != null) {
-                    OutputStream os = getContentResolver().openOutputStream(uri);
+                    OutputStream os = getContentResolver().openOutputStream(uri, "w");
                     if (os != null) {
                         os.write(bytes);
                         os.close();
+                        written = true;
                     }
+                    values.clear();
+                    values.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                    getContentResolver().update(uri, values, null, null);
                 }
-            } else {
+            }
+
+            if (!written) {
                 File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                if (!dir.exists()) dir.mkdirs();
                 File file = new File(dir, "proscan_presets_backup.json");
+                if (file.exists()) file.delete();
                 FileOutputStream fos = new FileOutputStream(file);
                 fos.write(bytes);
                 fos.close();
             }
 
             if (showToast) {
-                Toast.makeText(this, "Saved to Downloads/proscan_presets_backup.json", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Saved IPs, Lamp & Presets to Downloads/proscan_presets_backup.json", Toast.LENGTH_SHORT).show();
             }
         } catch (Exception e) {
             if (showToast) {
@@ -1081,7 +1158,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (!loc.isEmpty() || !ts.isEmpty()) {
                 prefs.edit().putString("local_url", loc).putString("tailscale_url", ts).apply();
             }
-            if (!lampOff.isEmpty() || !lampOn.isEmpty()) {
+            if (root.has("alexa_lamp_off_url") || root.has("alexa_lamp_on_url")) {
                 prefs.edit().putString("alexa_lamp_off_url", lampOff).putString("alexa_lamp_on_url", lampOn).apply();
             }
             if (webStorage != null) {
@@ -1091,7 +1168,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 prefs.edit().putString("shared_web_storage", webStorage.toString()).putString("last_backup_json", root.toString()).apply();
             }
 
-            Toast.makeText(this, "Presets & IPs Restored! Loading...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Presets, Lamp & IPs Restored! Loading...", Toast.LENGTH_SHORT).show();
             String activeLoc = prefs.getString("local_url", "");
             String activeTs = prefs.getString("tailscale_url", "");
             if (!activeLoc.isEmpty() || !activeTs.isEmpty()) {
@@ -2477,7 +2554,10 @@ public class MainActivity extends Activity implements SensorEventListener {
                 .setTitle("Presets, IPs & Direct Modes")
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
-                        if (webView != null) webView.evaluateJavascript("if(window.__exportAllProscanStorage)window.__exportAllProscanStorage(true);", null);
+                        // Always save directly in Java first (works even if offline or before WebView loads),
+                        // and also sync WebView storage if loaded!
+                        saveBackupJsonToDownloads(prefs.getString("shared_web_storage", "{}"), true);
+                        if (webView != null) webView.evaluateJavascript("if(window.__exportAllProscanStorage)window.__exportAllProscanStorage(false);", null);
                     } else if (which == 1) {
                         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                         intent.addCategory(Intent.CATEGORY_OPENABLE);
