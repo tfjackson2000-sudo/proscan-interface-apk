@@ -241,7 +241,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             restoreScheduled = false;
             if (!isScannerRxActive && !isTtsSpeaking && !isWaitingForPendingTts) {
                 restoreScheduled = true;
-                handler.postDelayed(restoreVolumeRunnable, 2000);
+                handler.postDelayed(restoreVolumeRunnable, 1200);
             }
         }
 
@@ -263,9 +263,13 @@ public class MainActivity extends Activity implements SensorEventListener {
                         handler.removeCallbacks(restoreVolumeRunnable);
                         restoreScheduled = false;
                         if (voiceReadoutEnabled) {
+                            // Hold radio muted up to 4.2s while waiting for post-RX log poll & TTS to start.
+                            // As soon as TTS starts (or skips due to duplicate), onTtsSpeechStateChanged
+                            // cancels this wait immediately!
                             isWaitingForPendingTts = true;
+                            applyCurrentVolumeLocked(cachedPrefs);
                             handler.removeCallbacks(clearPendingTtsWaitRunnable);
-                            handler.postDelayed(clearPendingTtsWaitRunnable, 2400);
+                            handler.postDelayed(clearPendingTtsWaitRunnable, 4200);
                         } else {
                             isWaitingForPendingTts = false;
                             scheduleRestoreAfter2500msLocked();
@@ -409,7 +413,6 @@ public class MainActivity extends Activity implements SensorEventListener {
                             if (onStarted != null) onStarted.run();
                         });
                         radioPlayer.setOnCompletionListener(mp -> {
-                            // Live radio stream shouldn't "complete" — auto-reconnect if user didn't stop!
                             if (userRequestedPlay && !activeStationUrl.isEmpty() && cachedAppContext != null) {
                                 handler.postDelayed(() -> {
                                     if (userRequestedPlay && !activeStationUrl.isEmpty()) {
@@ -525,7 +528,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-    private WebView webView;
+private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
     private SensorManager sensorManager;
@@ -600,8 +603,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         long now = System.currentTimeMillis();
         if (nativeLogPollInFlight) return;
         if (PriorityRadioEngine.isScannerCurrentlyReceiving()) return;
-        if (now - lastRxEndedMs < 550L) return;
-        if (now - lastNativeLogPollMs < 450L) return;
+        if (now - lastRxEndedMs < 250L) return;
+        if (now - lastNativeLogPollMs < 250L) return;
 
         String base = activeServerUrl;
         if ((base == null || base.isEmpty()) && webView != null) {
@@ -1034,7 +1037,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             connectSmart(localUrl, tailscaleUrl);
         }
     }
-    private String getNativeBatteryStatus() {
+private String getNativeBatteryStatus() {
         try {
             IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
             Intent b = registerReceiver(null, ifilter);
@@ -1299,8 +1302,10 @@ public class MainActivity extends Activity implements SensorEventListener {
                 });
             } else {
                 lastRxEndedMs = System.currentTimeMillis();
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 650);
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 1850);
+                // Poll at 350ms, 950ms, and 1750ms after RX ends so TTS speaks ~1s sooner while keeping radio muted!
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 350);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 950);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 1750);
             }
         }
 
@@ -1509,7 +1514,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 200);
     }
-    private void injectEnhancements() {
+private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -1740,7 +1745,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          if (window.__voiceReadoutEnabled || window.__vOn) {\n");
         js.append("            window.AndroidApp.speakChannel(clean);\n");
         js.append("          }\n");
-        js.append("        }, 150);\n");
+        js.append("        }, 120);\n");
         js.append("      };\n");
 
         js.append("      window.__onNativeHistoryLogText = function(text) {\n");
@@ -1886,7 +1891,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      };\n");
         js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
         js.append("    }\n");
-        /* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
+/* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
         js.append("      window.renderCustomBrand = function() {};\n");
@@ -2196,7 +2201,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      var origSave = window.savePresetToSlot;\n");
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
-        js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
+js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
         js.append("      var rowParent = loginBtn.parentNode;\n");
@@ -2554,8 +2559,6 @@ public class MainActivity extends Activity implements SensorEventListener {
                 .setTitle("Presets, IPs & Direct Modes")
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
-                        // Always save directly in Java first (works even if offline or before WebView loads),
-                        // and also sync WebView storage if loaded!
                         saveBackupJsonToDownloads(prefs.getString("shared_web_storage", "{}"), true);
                         if (webView != null) webView.evaluateJavascript("if(window.__exportAllProscanStorage)window.__exportAllProscanStorage(false);", null);
                     } else if (which == 1) {
