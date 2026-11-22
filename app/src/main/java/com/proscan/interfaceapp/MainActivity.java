@@ -174,10 +174,6 @@ public class MainActivity extends Activity implements SensorEventListener {
             return isScannerRxActive;
         }
 
-        public static boolean isStillInPostRxDuckWindow() {
-            return isScannerRxActive || isWaitingForPendingTts || isTtsSpeaking;
-        }
-
         public static boolean isAutoDuckEnabled(SharedPreferences prefs) {
             if (prefs != null) cachedPrefs = prefs;
             return cachedPrefs == null || cachedPrefs.getBoolean("simple_auto_duck_on", true);
@@ -244,7 +240,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             restoreScheduled = false;
             if (!isScannerRxActive && !isTtsSpeaking && !isWaitingForPendingTts) {
                 restoreScheduled = true;
-                handler.postDelayed(restoreVolumeRunnable, 1100);
+                handler.postDelayed(restoreVolumeRunnable, 1200);
             }
         }
 
@@ -266,10 +262,13 @@ public class MainActivity extends Activity implements SensorEventListener {
                         handler.removeCallbacks(restoreVolumeRunnable);
                         restoreScheduled = false;
                         if (voiceReadoutEnabled) {
+                            // Hold radio muted up to 5.5s waiting for History Log.txt & TTS to start.
+                            // As soon as TTS speaks (or skips duplicate), onTtsSpeechStateChanged
+                            // cancels this wait immediately!
                             isWaitingForPendingTts = true;
                             applyCurrentVolumeLocked(cachedPrefs);
                             handler.removeCallbacks(clearPendingTtsWaitRunnable);
-                            handler.postDelayed(clearPendingTtsWaitRunnable, 2800);
+                            handler.postDelayed(clearPendingTtsWaitRunnable, 5500);
                         } else {
                             isWaitingForPendingTts = false;
                             scheduleRestoreAfter2500msLocked();
@@ -599,15 +598,12 @@ private WebView webView;
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
-    /**
-     * Native Uncached Java Log Poller:
-     * Allowed to poll even while buffered audio is still playing (so after an hour of stream drift,
-     * the new log line is already fetched and ready the instant audio finishes in your ear!).
-     */
     private void pollHistoryLogNatively() {
         long now = System.currentTimeMillis();
         if (nativeLogPollInFlight) return;
-        if (now - lastNativeLogPollMs < 240L) return;
+        if (PriorityRadioEngine.isScannerCurrentlyReceiving()) return;
+        if (now - lastRxEndedMs < 250L) return;
+        if (now - lastNativeLogPollMs < 250L) return;
 
         String base = activeServerUrl;
         if ((base == null || base.isEmpty()) && webView != null) {
@@ -1305,9 +1301,11 @@ private String getNativeBatteryStatus() {
                 });
             } else {
                 lastRxEndedMs = System.currentTimeMillis();
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 250);
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 850);
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 1650);
+                // Poll at 350ms, 950ms, 1850ms, and 2900ms after RX ends
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 350);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 950);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 1850);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 2900);
             }
         }
 
@@ -1320,12 +1318,6 @@ private String getNativeBatteryStatus() {
 
                 if (!isToggleConfirm && PriorityRadioEngine.isScannerCurrentlyReceiving()) {
                     PriorityRadioEngine.onTtsSpeechStateChanged(prefs, false);
-                    return;
-                }
-
-                // NEVER re-mute the radio for a late log poll if the post-RX duck window has already ended!
-                if (!isToggleConfirm && PriorityRadioEngine.isRadioPlaying()
-                        && !PriorityRadioEngine.isStillInPostRxDuckWindow()) {
                     return;
                 }
 
@@ -1706,13 +1698,12 @@ private void injectEnhancements() {
         js.append("    try { if (typeof rxHoldTimeout !== 'undefined') clearTimeout(rxHoldTimeout); } catch(e) {}\n");
         js.append("    try { if (typeof rxPostLogTimeout !== 'undefined') clearTimeout(rxPostLogTimeout); } catch(e) {}\n");
 
-        /* Global Native TTS Helper + Drift-Proof Pre-Queueing + <=1s Filter */
+        /* Global Native TTS Helper + <=1s Filter + Top-Row-Only Animation */
         js.append("    if (!window.__reliableLogAndSquelchHooked) {\n");
         js.append("      window.__reliableLogAndSquelchHooked = true;\n");
         js.append("      window.__lastRenderedIdsSig = '';\n");
         js.append("      window.__lastTopRowId = '';\n");
         js.append("      window.__lastSpokenRowKey = '';\n");
-        js.append("      window.__queuedChannelWhileRx = '';\n");
         js.append("      window.__rxTtsWaitTimer = null;\n");
         js.append("      window.__lastRealAudioMs = 0;\n");
         js.append("      window.__voiceEnergyFrames = 0;\n");
@@ -1744,11 +1735,8 @@ private void injectEnhancements() {
         js.append("        clearTimeout(window.__rxTtsWaitTimer);\n");
         js.append("        var rx = document.getElementById('rx-led');\n");
         js.append("        if ((rx && rx.classList.contains('active')) || window.__lastNotifiedRxState) {\n");
-        /* If buffered audio is still playing in your ear (due to stream drift), queue it to fire 750ms after audio ends! */
-        js.append("          window.__queuedChannelWhileRx = clean;\n");
         js.append("          return;\n");
         js.append("        }\n");
-        js.append("        window.__queuedChannelWhileRx = '';\n");
         js.append("        window.__rxTtsWaitTimer = setTimeout(function() {\n");
         js.append("          var rxNow = document.getElementById('rx-led');\n");
         js.append("          if ((rxNow && rxNow.classList.contains('active')) || window.__lastNotifiedRxState) {\n");
@@ -1838,7 +1826,8 @@ private void injectEnhancements() {
         js.append("      window.__bgTickSquelchAndLog = function() {\n");
         js.append("        var nowWall = Date.now();\n");
         js.append("        var led = document.getElementById('rx-led');\n");
-        js.append("        if ((isDisplayOn || isConnected) && (nowWall - window.__lastLogPollMs >= 2600)) {\n");
+        js.append("        var isRxCurrentlyLit = Boolean(led && led.classList.contains('active'));\n");
+        js.append("        if ((isDisplayOn || isConnected) && !isRxCurrentlyLit && (nowWall - window.__lastLogPollMs >= 3000)) {\n");
         js.append("          window.__lastLogPollMs = nowWall;\n");
         js.append("          window.updateMiniLog();\n");
         js.append("        }\n");
@@ -1893,22 +1882,8 @@ private void injectEnhancements() {
         js.append("              window.__lastNotifiedRxState = false;\n");
         js.append("              window.__lastRealAudioMs = nowWall;\n");
         js.append("              window.__lastLogPollMs = nowWall;\n");
-        js.append("              var vOnNow = Boolean(window.__voiceReadoutEnabled || window.__vOn);\n");
         js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerRx) {\n");
-        js.append("                window.AndroidApp.notifyScannerRx(false, vOnNow);\n");
-        js.append("              }\n");
-        /* If the log already arrived while buffered audio was playing, speak it 750ms after audio ends! */
-        js.append("              if (vOnNow && window.__queuedChannelWhileRx) {\n");
-        js.append("                var qName = window.__queuedChannelWhileRx;\n");
-        js.append("                window.__queuedChannelWhileRx = '';\n");
-        js.append("                clearTimeout(window.__rxTtsWaitTimer);\n");
-        js.append("                window.__rxTtsWaitTimer = setTimeout(function() {\n");
-        js.append("                  var rxNow = document.getElementById('rx-led');\n");
-        js.append("                  if ((rxNow && rxNow.classList.contains('active')) || window.__lastNotifiedRxState) return;\n");
-        js.append("                  if ((window.__voiceReadoutEnabled || window.__vOn) && window.AndroidApp) {\n");
-        js.append("                    window.AndroidApp.speakChannel(qName);\n");
-        js.append("                  }\n");
-        js.append("                }, 750);\n");
+        js.append("                window.AndroidApp.notifyScannerRx(false, Boolean(window.__voiceReadoutEnabled || window.__vOn));\n");
         js.append("              }\n");
         js.append("            }\n");
         js.append("          }\n");
@@ -2359,17 +2334,29 @@ js.append("    var loginBtn = document.getElementById('proscan-login-open');\n")
         js.append("      }\n");
         js.append("    }\n");
 
+        /* Anti-Drift Scanner Audio Buffer Catch-Up (Works on Chunked & Buffered Streams!) */
         js.append("    if (!window.__audioBufferCatchupHooked) {\n");
         js.append("      window.__audioBufferCatchupHooked = true;\n");
         js.append("      setInterval(function() {\n");
         js.append("        try {\n");
         js.append("          var p = document.getElementById('audio_player'), rx = document.getElementById('rx-led');\n");
-        js.append("          if (p && !p.paused && (!rx || !rx.classList.contains('active')) && p.buffered && p.buffered.length > 0) {\n");
-        js.append("            var end = p.buffered.end(p.buffered.length - 1);\n");
-        js.append("            if (end - p.currentTime > 1.8) p.currentTime = end - 0.25;\n");
+        js.append("          var rxLit = Boolean(rx && rx.classList.contains('active'));\n");
+        js.append("          if (p && !p.paused) {\n");
+        js.append("            if (p.buffered && p.buffered.length > 0) {\n");
+        js.append("              var end = p.buffered.end(p.buffered.length - 1);\n");
+        js.append("              var lag = end - p.currentTime;\n");
+        js.append("              if (!rxLit && lag > 0.9) {\n");
+        js.append("                p.currentTime = end - 0.15;\n");
+        js.append("                p.playbackRate = 1.0;\n");
+        js.append("              } else if (lag > 0.45) {\n");
+        js.append("                p.playbackRate = 1.06;\n");
+        js.append("              } else {\n");
+        js.append("                p.playbackRate = 1.0;\n");
+        js.append("              }\n");
+        js.append("            }\n");
         js.append("          }\n");
         js.append("        } catch(e) {}\n");
-        js.append("      }, 8000);\n");
+        js.append("      }, 3000);\n");
         js.append("    }\n");
 
         js.append("    var logTb = document.getElementById('mini-log-data');\n");
