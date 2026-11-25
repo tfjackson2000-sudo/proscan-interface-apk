@@ -240,7 +240,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             restoreScheduled = false;
             if (!isScannerRxActive && !isTtsSpeaking && !isWaitingForPendingTts) {
                 restoreScheduled = true;
-                handler.postDelayed(restoreVolumeRunnable, 1200);
+                handler.postDelayed(restoreVolumeRunnable, 1100);
             }
         }
 
@@ -262,13 +262,10 @@ public class MainActivity extends Activity implements SensorEventListener {
                         handler.removeCallbacks(restoreVolumeRunnable);
                         restoreScheduled = false;
                         if (voiceReadoutEnabled) {
-                            // Hold radio muted up to 5.5s waiting for History Log.txt & TTS to start.
-                            // As soon as TTS speaks (or skips duplicate), onTtsSpeechStateChanged
-                            // cancels this wait immediately!
                             isWaitingForPendingTts = true;
                             applyCurrentVolumeLocked(cachedPrefs);
                             handler.removeCallbacks(clearPendingTtsWaitRunnable);
-                            handler.postDelayed(clearPendingTtsWaitRunnable, 5500);
+                            handler.postDelayed(clearPendingTtsWaitRunnable, 3200);
                         } else {
                             isWaitingForPendingTts = false;
                             scheduleRestoreAfter2500msLocked();
@@ -527,7 +524,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             return current;
         }
     }
-private WebView webView;
+    private WebView webView;
     private SharedPreferences prefs;
     private AudioManager audioManager;
     private SensorManager sensorManager;
@@ -602,8 +599,8 @@ private WebView webView;
         long now = System.currentTimeMillis();
         if (nativeLogPollInFlight) return;
         if (PriorityRadioEngine.isScannerCurrentlyReceiving()) return;
-        if (now - lastRxEndedMs < 250L) return;
-        if (now - lastNativeLogPollMs < 250L) return;
+        if (now - lastRxEndedMs < 220L) return;
+        if (now - lastNativeLogPollMs < 220L) return;
 
         String base = activeServerUrl;
         if ((base == null || base.isEmpty()) && webView != null) {
@@ -1036,7 +1033,7 @@ private WebView webView;
             connectSmart(localUrl, tailscaleUrl);
         }
     }
-private String getNativeBatteryStatus() {
+    private String getNativeBatteryStatus() {
         try {
             IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
             Intent b = registerReceiver(null, ifilter);
@@ -1301,11 +1298,11 @@ private String getNativeBatteryStatus() {
                 });
             } else {
                 lastRxEndedMs = System.currentTimeMillis();
-                // Poll at 350ms, 950ms, 1850ms, and 2900ms after RX ends
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 350);
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 950);
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 1850);
-                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 2900);
+                // Poll at 300ms, 850ms, 1550ms, and 2400ms after RX ends
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 300);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 850);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 1550);
+                mainHandler.postDelayed(() -> pollHistoryLogNatively(), 2400);
             }
         }
 
@@ -1514,7 +1511,7 @@ private String getNativeBatteryStatus() {
         mainHandler.removeCallbacks(periodicInjector);
         mainHandler.postDelayed(periodicInjector, 200);
     }
-private void injectEnhancements() {
+    private void injectEnhancements() {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
@@ -1525,6 +1522,20 @@ private void injectEnhancements() {
         js.append("    try {\n");
         js.append("      Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });\n");
         js.append("      Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });\n");
+        js.append("    } catch(e) {}\n");
+
+        /* Register 6 Seamless Full-Screen Phone-Chassis Skins into the SKIN button cycle */
+        js.append("    try {\n");
+        js.append("      if (typeof skins !== 'undefined' && Array.isArray(skins) && !skins.some(function(s){ return s.id === 'fs-pure-black'; })) {\n");
+        js.append("        skins.push(\n");
+        js.append("          { id: 'fs-pure-black',    name: 'FS: PURE BLACK' },\n");
+        js.append("          { id: 'fs-shiny-black',   name: 'FS: SHINY BLACK' },\n");
+        js.append("          { id: 'fs-matte-black',   name: 'FS: MATTE BLACK' },\n");
+        js.append("          { id: 'fs-arctic-silver', name: 'FS: SILVER KEYS' },\n");
+        js.append("          { id: 'fs-stealth-gold',  name: 'FS: GOLD KEYS' },\n");
+        js.append("          { id: 'fs-gunmetal-ice',  name: 'FS: ICE KEYS' }\n");
+        js.append("        );\n");
+        js.append("      }\n");
         js.append("    } catch(e) {}\n");
 
         js.append("    var existingSt = document.getElementById('proscan-v10-upgrade-css');\n");
@@ -1548,6 +1559,37 @@ private void injectEnhancements() {
         js.append("        '.btn::after{content:\"\"!important;position:absolute!important;inset:0!important;border-radius:inherit!important;pointer-events:none!important;' +\n");
         js.append("          'background:radial-gradient(circle at var(--shine-x,50%) 0%,rgba(255,255,255,0.20) 0%,transparent 68%)!important;' +\n");
         js.append("          'box-shadow:inset var(--btn-hl-x,0px) var(--btn-hl-y,1px) 0.8px rgba(255,255,255,0.32)!important;}' +\n");
+
+        /* SEAMLESS FULL-SCREEN PHONE-AS-RADIO SKINS (html[data-skin^="fs-"]) */
+        js.append("        'html[data-skin^=\"fs-\"], html[data-skin^=\"fs-\"] body{background:#000000!important;}' +\n");
+        js.append("        'html[data-skin^=\"fs-\"] #device-wrapper{width:100vw!important;max-width:100vw!important;height:100dvh!important;max-height:100dvh!important;margin:0!important;padding:0!important;border-radius:0!important;box-shadow:none!important;}' +\n");
+        js.append("        'html[data-skin^=\"fs-\"] #custom-scanner-ui{width:100%!important;height:100%!important;border:none!important;border-radius:0!important;box-shadow:none!important;padding:24px 20px!important;justify-content:space-between!important;}' +\n");
+        js.append("        'html[data-skin^=\"fs-\"] .buttons-box{background:transparent!important;border-color:rgba(255,255,255,0.06)!important;box-shadow:none!important;}' +\n");
+
+        /* 1. FS: PURE BLACK (True AMOLED #000000 Seamless Bezel + Crisp Dark Glass Buttons) */
+        js.append("        'html[data-skin=\"fs-pure-black\"]{--ui-bg:#000000!important;--btn-bg:linear-gradient(180deg,#15171c 0%,#090a0d 55%,#030405 100%)!important;--btn-color:#f1f5f9!important;--btn-active-color:#38bdf8!important;--btn-border:1px solid rgba(255,255,255,0.22)!important;--btn-radius:8px!important;--btn-shadow:0 3px 0 #000000,0 4px 8px rgba(0,0,0,0.95),inset 0 1px 1px rgba(255,255,255,0.22)!important;}' +\n");
+        js.append("        'html[data-skin=\"fs-pure-black\"] #custom-scanner-ui::after{background:radial-gradient(ellipse 60% 35% at var(--shine-x,50%) var(--shine-y,28%),rgba(255,255,255,0.07) 0%,transparent 65%)!important;box-shadow:none!important;}' +\n");
+
+        /* 2. FS: SHINY BLACK (Piano-Black Obsidian Gloss + High-Reflection Specular Sheen) */
+        js.append("        'html[data-skin=\"fs-shiny-black\"]{--ui-bg:radial-gradient(circle at var(--shine-x,50%) var(--shine-y,24%),#1a1e26 0%,#07080b 48%,#000000 100%)!important;--btn-bg:linear-gradient(180deg,#282d38 0%,#101318 48%,#040507 52%,#0c0e12 100%)!important;--btn-color:#ffffff!important;--btn-active-color:#38bdf8!important;--btn-border:1px solid rgba(255,255,255,0.42)!important;--btn-radius:8px!important;--btn-shadow:0 3px 0 #050608,0 5px 10px rgba(0,0,0,0.95),inset 0 1.5px 1px rgba(255,255,255,0.55)!important;}' +\n");
+        js.append("        'html[data-skin=\"fs-shiny-black\"] #custom-scanner-ui::after{background:radial-gradient(ellipse 65% 38% at var(--shine-x,50%) var(--shine-y,28%),rgba(255,255,255,0.22) 0%,rgba(255,255,255,0.08) 34%,transparent 68%),linear-gradient(var(--rim-ang,135deg),rgba(255,255,255,0.16) 0%,transparent 25%,transparent 75%,rgba(255,255,255,0.08) 100%)!important;box-shadow:none!important;}' +\n");
+
+        /* 3. FS: MATTE BLACK (Stealth Satin Carbon-Black + Tactical Matte Buttons) */
+        js.append("        'html[data-skin=\"fs-matte-black\"]{--ui-bg:#07080a!important;--btn-bg:linear-gradient(180deg,#1e2128 0%,#14161b 100%)!important;--btn-color:#cbd5e1!important;--btn-active-color:#22c55e!important;--btn-border:1px solid #2a2e39!important;--btn-radius:6px!important;--btn-shadow:0 2px 0 #030405,0 3px 5px rgba(0,0,0,0.85),inset 0 1px 0 rgba(255,255,255,0.10)!important;}' +\n");
+        js.append("        'html[data-skin=\"fs-matte-black\"] #custom-scanner-ui::after{background:radial-gradient(ellipse 75% 45% at var(--shine-x,50%) var(--shine-y,28%),rgba(255,255,255,0.05) 0%,transparent 70%)!important;box-shadow:none!important;}' +\n");
+
+        /* 4. FS: SILVER KEYS (Seamless Black Phone Chassis + Brushed Arctic Silver/Titanium Buttons) */
+        js.append("        'html[data-skin=\"fs-arctic-silver\"]{--ui-bg:#000000!important;--btn-bg:linear-gradient(180deg,#f1f5f9 0%,#cbd5e1 48%,#94a3b8 100%)!important;--btn-color:#0f172a!important;--btn-active-color:#0284c7!important;--btn-border:1px solid #ffffff!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #475569,0 4px 8px rgba(0,0,0,0.9),inset 0 1.5px 1px #ffffff!important;}' +\n");
+        js.append("        'html[data-skin=\"fs-arctic-silver\"] .scroll-btn, html[data-skin=\"fs-arctic-silver\"] .numpad .btn{color:#090d16!important;font-weight:900!important;}' +\n");
+        js.append("        'html[data-skin=\"fs-arctic-silver\"] #custom-scanner-ui::after{background:radial-gradient(ellipse 65% 38% at var(--shine-x,50%) var(--shine-y,28%),rgba(255,255,255,0.11) 0%,transparent 68%)!important;box-shadow:none!important;}' +\n");
+
+        /* 5. FS: GOLD KEYS (Seamless Black Phone Chassis + Champagne Gold Rimmed Buttons) */
+        js.append("        'html[data-skin=\"fs-stealth-gold\"]{--ui-bg:#000000!important;--btn-bg:linear-gradient(180deg,#292314 0%,#17130a 55%,#0c0a05 100%)!important;--btn-color:#fde047!important;--btn-active-color:#ffffff!important;--btn-border:1px solid rgba(250,204,21,0.65)!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #713f12,0 4px 8px rgba(0,0,0,0.95),inset 0 1px 1px rgba(254,240,138,0.45)!important;}' +\n");
+        js.append("        'html[data-skin=\"fs-stealth-gold\"] #custom-scanner-ui::after{background:radial-gradient(ellipse 65% 38% at var(--shine-x,50%) var(--shine-y,28%),rgba(250,204,21,0.10) 0%,transparent 68%)!important;box-shadow:none!important;}' +\n");
+
+        /* 6. FS: ICE KEYS (Seamless Black Phone Chassis + Cool Ice-Blue Metallic Buttons) */
+        js.append("        'html[data-skin=\"fs-gunmetal-ice\"]{--ui-bg:#000000!important;--btn-bg:linear-gradient(180deg,#1e293b 0%,#0f172a 55%,#060b14 100%)!important;--btn-color:#7dd3fc!important;--btn-active-color:#ffffff!important;--btn-border:1px solid rgba(56,189,248,0.65)!important;--btn-radius:7px!important;--btn-shadow:0 3px 0 #0369a1,0 4px 8px rgba(0,0,0,0.95),inset 0 1px 1px rgba(186,230,253,0.45)!important;}' +\n");
+        js.append("        'html[data-skin=\"fs-gunmetal-ice\"] #custom-scanner-ui::after{background:radial-gradient(ellipse 65% 38% at var(--shine-x,50%) var(--shine-y,28%),rgba(56,189,248,0.11) 0%,transparent 68%)!important;box-shadow:none!important;}' +\n");
 
         js.append("        '.scanner-display{height:325px!important;position:relative!important;overflow:hidden!important;transition:height 0.22s ease!important;}' +\n");
 
@@ -1724,6 +1766,7 @@ private void injectEnhancements() {
         js.append("        };\n");
         js.append("      }\n");
 
+        /* Never throw away a new log hit if the last 0.5s of buffered audio is still finishing! */
         js.append("      window.__speakTextAfterRx = function(txt, immediate) {\n");
         js.append("        if (!window.AndroidApp || !txt) return;\n");
         js.append("        var clean = String(txt).trim();\n");
@@ -1733,19 +1776,24 @@ private void injectEnhancements() {
         js.append("          return;\n");
         js.append("        }\n");
         js.append("        clearTimeout(window.__rxTtsWaitTimer);\n");
-        js.append("        var rx = document.getElementById('rx-led');\n");
-        js.append("        if ((rx && rx.classList.contains('active')) || window.__lastNotifiedRxState) {\n");
-        js.append("          return;\n");
-        js.append("        }\n");
-        js.append("        window.__rxTtsWaitTimer = setTimeout(function() {\n");
-        js.append("          var rxNow = document.getElementById('rx-led');\n");
-        js.append("          if ((rxNow && rxNow.classList.contains('active')) || window.__lastNotifiedRxState) {\n");
+        js.append("        var tries = 0;\n");
+        js.append("        (function waitTailRxOff() {\n");
+        js.append("          var rx = document.getElementById('rx-led');\n");
+        js.append("          var stillActive = (rx && rx.classList.contains('active')) || window.__lastNotifiedRxState;\n");
+        js.append("          if (stillActive) {\n");
+        js.append("            if (tries++ < 22) {\n");
+        js.append("              window.__rxTtsWaitTimer = setTimeout(waitTailRxOff, 100);\n");
+        js.append("            }\n");
         js.append("            return;\n");
         js.append("          }\n");
-        js.append("          if (window.__voiceReadoutEnabled || window.__vOn) {\n");
-        js.append("            window.AndroidApp.speakChannel(clean);\n");
-        js.append("          }\n");
-        js.append("        }, 120);\n");
+        js.append("          window.__rxTtsWaitTimer = setTimeout(function() {\n");
+        js.append("            var rxNow = document.getElementById('rx-led');\n");
+        js.append("            if ((rxNow && rxNow.classList.contains('active')) || window.__lastNotifiedRxState) return;\n");
+        js.append("            if (window.__voiceReadoutEnabled || window.__vOn) {\n");
+        js.append("              window.AndroidApp.speakChannel(clean);\n");
+        js.append("            }\n");
+        js.append("          }, 100);\n");
+        js.append("        })();\n");
         js.append("      };\n");
 
         js.append("      window.__onNativeHistoryLogText = function(text) {\n");
@@ -1863,7 +1911,6 @@ private void injectEnhancements() {
         js.append("          var reqMs = isKey ? 320 : 120;\n");
         js.append("          if ((now - rxSignalStartTime) >= reqMs && window.__voiceEnergyFrames >= 3) {\n");
         js.append("            window.__lastRealAudioMs = nowWall;\n");
-        js.append("            clearTimeout(window.__rxTtsWaitTimer);\n");
         js.append("            if (led && !led.classList.contains('active')) led.classList.add('active');\n");
         js.append("            if (!window.__lastNotifiedRxState || (nowWall - window.__lastActiveRxPushMs > 350)) {\n");
         js.append("              window.__lastNotifiedRxState = true;\n");
@@ -1891,7 +1938,7 @@ private void injectEnhancements() {
         js.append("      };\n");
         js.append("      setInterval(window.__bgTickSquelchAndLog, 45);\n");
         js.append("    }\n");
-/* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
+        /* Symmetrical Center Slot: [ RX ] — [ S-METER ] — [ LOG ] */
         js.append("    var bSlot = document.getElementById('brand-logo-slot');\n");
         js.append("    if (bSlot && !document.getElementById('sig-meter-host')) {\n");
         js.append("      window.renderCustomBrand = function() {};\n");
@@ -2201,7 +2248,7 @@ private void injectEnhancements() {
         js.append("      var origSave = window.savePresetToSlot;\n");
         js.append("      window.savePresetToSlot = function(slot, snap) { origSave(slot, snap); window.__exportAllProscanStorage(false); };\n");
         js.append("    }\n");
-js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
+        js.append("    var loginBtn = document.getElementById('proscan-login-open');\n");
         js.append("    var logoutBtn = document.getElementById('proscan-logout-button');\n");
         js.append("    if (loginBtn && logoutBtn && !loginBtn.__mergedAuthHooked) {\n");
         js.append("      var rowParent = loginBtn.parentNode;\n");
@@ -2334,7 +2381,7 @@ js.append("    var loginBtn = document.getElementById('proscan-login-open');\n")
         js.append("      }\n");
         js.append("    }\n");
 
-        /* Anti-Drift Scanner Audio Buffer Catch-Up (Works on Chunked & Buffered Streams!) */
+        /* Anti-Drift Scanner Audio Buffer Catch-Up */
         js.append("    if (!window.__audioBufferCatchupHooked) {\n");
         js.append("      window.__audioBufferCatchupHooked = true;\n");
         js.append("      setInterval(function() {\n");
