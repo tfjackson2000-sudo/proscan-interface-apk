@@ -3684,6 +3684,7 @@
         document.documentElement.setAttribute('data-skin', skins[currentSkinIndex].id);
         document.getElementById('btn-skin-toggle').innerText = `SKIN: ${skins[currentSkinIndex].name}`;
         localStorage.setItem('proscan_skin_index', currentSkinIndex);
+        if (typeof saveLastLookSnapshot === 'function') saveLastLookSnapshot();
     }
 
     function applyDisplay(index) {
@@ -3691,6 +3692,7 @@
         document.documentElement.setAttribute('data-display', displays[currentDisplayIndex].id);
         document.getElementById('btn-display-toggle').innerText = `DISP: ${displays[currentDisplayIndex].name}`;
         localStorage.setItem('proscan_display_index', currentDisplayIndex);
+        if (typeof saveLastLookSnapshot === 'function') saveLastLookSnapshot();
     }
 
     function applyDispTxtColor(index, showHud) {
@@ -3703,6 +3705,7 @@
         if (showHud) {
             showDisplayHud('DISP TXT: ' + item.name, 1200);
         }
+        if (typeof saveLastLookSnapshot === 'function') saveLastLookSnapshot();
     }
 
     function applyLogTxtColor(index, showHud) {
@@ -3713,6 +3716,7 @@
         if (showHud) {
             showDisplayHud('LOG TXT: ' + item.name, 1400);
         }
+        if (typeof saveLastLookSnapshot === 'function') saveLastLookSnapshot();
     }
 
     function applyLogFx(index) {
@@ -3720,6 +3724,7 @@
         document.documentElement.setAttribute('data-log-fx', logTransitions[currentLogFxIndex].id);
         document.getElementById('btn-log-fx-toggle').innerText = `FX: ${logTransitions[currentLogFxIndex].name}`;
         localStorage.setItem('proscan_log_fx_index', currentLogFxIndex);
+        if (typeof saveLastLookSnapshot === 'function') saveLastLookSnapshot();
     }
 
     function applyBg(index) {
@@ -3727,6 +3732,7 @@
         document.documentElement.setAttribute('data-bg', backgrounds[currentBgIndex].id);
         document.getElementById('btn-bg-toggle').innerText = `BG: ${backgrounds[currentBgIndex].name}`;
         localStorage.setItem('proscan_bg_index', currentBgIndex);
+        if (typeof saveLastLookSnapshot === 'function') saveLastLookSnapshot();
     }
 
     function cycleSkin() {
@@ -3829,6 +3835,7 @@
         if (isDisplayOn) {
             document.documentElement.style.setProperty('--ui-brightness', val);
         }
+        if (typeof saveLastLookSnapshot === 'function') saveLastLookSnapshot();
     }
 
     function cycleBrightness() {
@@ -3836,6 +3843,15 @@
     }
 
     const PRESETS_STORAGE_KEY = 'proscan_theme_presets_v1';
+    const LAST_LOOK_STORAGE_KEY = 'proscan_last_look_v1';
+
+    function saveLastLookSnapshot() {
+        if (window.__restoringLastLook) return;
+        try {
+            localStorage.setItem(LAST_LOOK_STORAGE_KEY, JSON.stringify(captureCurrentThemeSnapshot()));
+            localStorage.setItem('proscan_last_look_ts_v1', String(Date.now()));
+        } catch (e) {}
+    }
 
     function getSavedPresets() {
         try {
@@ -3895,6 +3911,7 @@
         if (typeof snapshot.brand === 'string') {
             renderCustomBrand(snapshot.brand);
         }
+        saveLastLookSnapshot();
     }
 
     function savePresetToSlot(slot, snapshot) {
@@ -4753,17 +4770,29 @@
     }
 
     window.addEventListener('load', function() {
-        applySkin(currentSkinIndex);
-        applyDisplay(currentDisplayIndex);
-        applyDispTxtColor(currentDispTxtIndex, false);
-        applyLogTxtColor(currentLogTxtIndex, false);
-        applyLogFx(currentLogFxIndex);
-        applyBg(currentBgIndex);
-        renderCustomBrand(currentCustomBrand);
-        applyDisplayFont(currentDispTexIndex, false);
-
-        let val = brightnessLevels[currentUiBrightnessLevel];
-        document.getElementById('btn-brt-toggle').innerText = `DISP:\n${Math.round(val * 100)}%`;
+        window.__restoringLastLook = true;
+        let restoredFromLook = false;
+        if (!window.AndroidApp) {
+            try {
+                const rawLook = localStorage.getItem(LAST_LOOK_STORAGE_KEY);
+                if (rawLook) {
+                    applyThemeSnapshot(JSON.parse(rawLook));
+                    restoredFromLook = true;
+                }
+            } catch (e) {}
+        }
+        if (!restoredFromLook) {
+            applySkin(currentSkinIndex);
+            applyDisplay(currentDisplayIndex);
+            applyDispTxtColor(currentDispTxtIndex, false);
+            applyLogTxtColor(currentLogTxtIndex, false);
+            applyLogFx(currentLogFxIndex);
+            applyBg(currentBgIndex);
+            renderCustomBrand(currentCustomBrand);
+            applyDisplayFont(currentDispTexIndex, false);
+            applyBrightness(currentUiBrightnessLevel);
+        }
+        window.__restoringLastLook = false;
 
         syncDisplay();
         setTimeout(function() {
