@@ -536,15 +536,21 @@
     </div>
 </div>
 <script>
-    /* Sync Skin, Display, Background & Brand from Main Radio's localStorage */
-    var skinIds = ['neumorphic','plastic','neublackyellow','whiteline','tron','neongreen','amber','ham','nokia','retro','yellow','blue','green','red','armycamo','desertcamo','metal','silver','carbon','titanium','bakelite','wood','milspec','copper'];
+    /* Sync Skin, Full-Screen Mode, Display & Background from Main Radio's localStorage */
+    var skinIds = ['neumorphic','plastic','neublackyellow','whiteline','tron','neongreen','amber','ham','nokia','retro','yellow','blue','green','red','armycamo','desertcamo','metal','silver','carbon','titanium','bakelite','wood','milspec','copper','pure-black','shiny-black','matte-black','gunmetal-ice'];
     var dispIds = ['disp-soft','disp-lcd','disp-green-brt','disp-blue','disp-amber','disp-oled-brt','disp-term','disp-paper'];
     var bgIds   = ['bg-dark','bg-soft','bg-pitch','bg-black','bg-blue','bg-green','bg-amber','bg-sand'];
 
     var sIdx = parseInt(localStorage.getItem('proscan_skin_index') || '0', 10) || 0;
     var dIdx = parseInt(localStorage.getItem('proscan_display_index') || '0', 10) || 0;
     var bIdx = parseInt(localStorage.getItem('proscan_bg_index') || '0', 10) || 0;
-    document.documentElement.setAttribute('data-skin', skinIds[sIdx % skinIds.length] || 'neumorphic');
+    var activeSkinId = (localStorage.getItem('proscan_active_skin_id_v1') || '').trim();
+    var fsSkinPref = localStorage.getItem('proscan_fullscreen_skin_v1');
+    var isFsSkin = (fsSkinPref !== null) ? (fsSkinPref === 'true') : ((sIdx % 2) === 1);
+    if (activeSkinId.indexOf('fs-') === 0) { activeSkinId = activeSkinId.slice(3); isFsSkin = true; }
+    if (!activeSkinId) activeSkinId = skinIds[Math.floor(sIdx / 2) % skinIds.length] || 'neumorphic';
+    document.documentElement.setAttribute('data-skin', activeSkinId);
+    document.documentElement.setAttribute('data-fullscreen-skin', isFsSkin ? 'true' : 'false');
     document.documentElement.setAttribute('data-display', dispIds[dIdx % dispIds.length] || 'disp-soft');
     document.documentElement.setAttribute('data-bg', bgIds[bIdx % bgIds.length] || 'bg-dark');
 
