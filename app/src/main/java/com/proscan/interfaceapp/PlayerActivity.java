@@ -841,6 +841,8 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         String savedStationsJson = prefs.getString("radio_stations_json", "");
         String safeStations = JSONObject.quote(savedStationsJson);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
+        int nativeMeterStyle = prefs.getInt("sig_meter_style", -1);
+        int nativeDeckIdx = prefs.getInt("archive_deck_idx", -1);
         boolean openInRadio = "radio".equalsIgnoreCase(initialStartMode);
         String activeBgRadioUrl = JSONObject.quote(MainActivity.PriorityRadioEngine.getActiveStationUrl());
         boolean isBgRadioPlaying = MainActivity.PriorityRadioEngine.isRadioPlaying();
@@ -1046,8 +1048,16 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("  if (typeof decks !== 'undefined' && !decks.some(function(d){ return d.id === 'lite'; })) {\n");
         js.append("    decks.push({ id: 'lite', btn: 'DECK: LITE', hud: 'ARCHIVE // LITE LOG VIEW' });\n");
         js.append("  }\n");
-        js.append("  var savedDeckIdx = parseInt(localStorage.getItem('proscan_deck_idx') || '0', 10) || 0;\n");
-        js.append("  if (typeof applyDeck === 'function') applyDeck(savedDeckIdx);\n");
+        js.append("  var nativeDeckPref = ").append(nativeDeckIdx).append(";\n");
+        js.append("  var savedDeckIdx = (nativeDeckPref >= 0) ? nativeDeckPref : (parseInt(localStorage.getItem('proscan_deck_idx') || '0', 10) || 0);\n");
+        js.append("  if (typeof applyDeck === 'function') {\n");
+        js.append("    var origApplyDeck = window.applyDeck;\n");
+        js.append("    window.applyDeck = function(idx) {\n");
+        js.append("      origApplyDeck(idx);\n");
+        js.append("      try { if (window.PlayerBridge && window.PlayerBridge.setArchiveDeckPref) window.PlayerBridge.setArchiveDeckPref(deckIdx); } catch(e) {}\n");
+        js.append("    };\n");
+        js.append("    applyDeck(savedDeckIdx);\n");
+        js.append("  }\n");
 
         js.append("  var cycDeckBtn = document.getElementById('btn-cycle-deck');\n");
         js.append("  if (cycDeckBtn) {\n");
@@ -1140,10 +1150,12 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         js.append("    if (ledBarsWrap) { var sh = ''; for (var s=0; s<12; s++) sh += '<div class=\"sm-seg\"></div>'; ledBarsWrap.innerHTML = sh; }\n");
         js.append("    if (specBarsWrap) { var sph = ''; for (var sp=0; sp<10; sp++) sph += '<div class=\"sm-spec-bar\"></div>'; specBarsWrap.innerHTML = sph; }\n");
 
-        js.append("    window.__sigMeterStyle = parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0;\n");
+        js.append("    var nativeMeterPref = ").append(nativeMeterStyle).append(";\n");
+        js.append("    window.__sigMeterStyle = (nativeMeterPref >= 0) ? nativeMeterPref : (parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0);\n");
         js.append("    window.__applyPlayerSigMeterStyle = function(idx) {\n");
         js.append("      window.__sigMeterStyle = ((idx % 5) + 5) % 5;\n");
         js.append("      localStorage.setItem('proscan_sig_meter_style_v1', String(window.__sigMeterStyle));\n");
+        js.append("      try { if (window.PlayerBridge && window.PlayerBridge.setSigMeterStylePref) window.PlayerBridge.setSigMeterStylePref(window.__sigMeterStyle); } catch(e) {}\n");
         js.append("      for (var m = 0; m < 5; m++) {\n");
         js.append("        var el = document.getElementById('sm-mode-' + m);\n");
         js.append("        if (el) el.classList.toggle('active', m === window.__sigMeterStyle);\n");
@@ -2478,6 +2490,16 @@ public class PlayerActivity extends Activity implements SensorEventListener {
         @JavascriptInterface
         public boolean getClarityFilterState() {
             return clarityFilterEnabled;
+        }
+
+        @JavascriptInterface
+        public void setSigMeterStylePref(final int style) {
+            prefs.edit().putInt("sig_meter_style", ((style % 5) + 5) % 5).apply();
+        }
+
+        @JavascriptInterface
+        public void setArchiveDeckPref(final int idx) {
+            prefs.edit().putInt("archive_deck_idx", Math.max(0, idx)).apply();
         }
 
         @JavascriptInterface

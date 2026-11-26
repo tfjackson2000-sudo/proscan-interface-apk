@@ -3872,12 +3872,18 @@
             logFxId: logTransitions[currentLogFxIndex] ? logTransitions[currentLogFxIndex].id : 'fx-block',
             bgId: backgrounds[currentBgIndex] ? backgrounds[currentBgIndex].id : 'bg-dark',
             brtIndex: currentUiBrightnessLevel,
-            brand: currentCustomBrand
+            brand: currentCustomBrand,
+            sigMeterStyle: (typeof window.__sigMeterStyle === 'number') ? window.__sigMeterStyle : (parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0),
+            liteMode: Boolean(window.__scannerLiteMode),
+            scannerDsp: (typeof window.__scannerDspOn === 'boolean') ? window.__scannerDspOn : (localStorage.getItem('proscan_scanner_dsp_v1') !== 'false'),
+            voiceOn: Boolean(window.__voiceReadoutEnabled || window.__vOn)
         };
     }
 
     function applyThemeSnapshot(snapshot) {
         if (!snapshot) return;
+        const prevRestore = Boolean(window.__restoringLastLook);
+        window.__restoringLastLook = true;
 
         const skinIdx = skins.findIndex(s => s.id === snapshot.skinId);
         if (skinIdx !== -1) applySkin(skinIdx);
@@ -3911,6 +3917,19 @@
         if (typeof snapshot.brand === 'string') {
             renderCustomBrand(snapshot.brand);
         }
+        if (typeof snapshot.sigMeterStyle === 'number' && typeof window.__applySigMeterStyle === 'function') {
+            window.__applySigMeterStyle(snapshot.sigMeterStyle, false);
+        }
+        if (typeof snapshot.liteMode === 'boolean' && typeof window.__applyScannerLiteMode === 'function') {
+            window.__applyScannerLiteMode(snapshot.liteMode, false);
+        }
+        if (typeof snapshot.scannerDsp === 'boolean' && typeof window.__applyScannerDspState === 'function') {
+            window.__applyScannerDspState(snapshot.scannerDsp, false);
+        }
+        if (typeof snapshot.voiceOn === 'boolean' && typeof window.__setVoiceReadoutState === 'function') {
+            window.__setVoiceReadoutState(snapshot.voiceOn, false, true);
+        }
+        window.__restoringLastLook = prevRestore;
         saveLastLookSnapshot();
     }
 
@@ -3923,44 +3942,50 @@
     (function setupNumpadPresets() {
         const presetButtons = document.querySelectorAll('.numpad .btn[data-preset-slot]');
         const LOAD_HOLD_MS = 500;
-        const SAVE_OVERWRITE_HOLD_MS = 3000;
+        const SAVE_OVERWRITE_HOLD_MS = 2200;
 
         presetButtons.forEach(function (btn) {
             const slot = btn.getAttribute('data-preset-slot');
             const scannerTarget = btn.getAttribute('data-scanner-btn');
-            let loadTimer = null;
+            let armTimer = null;
             let saveTimer = null;
-            let longPressTriggered = false;
+            let armedToLoad = false;
+            let overwritten = false;
             let prePressSnapshot = null;
 
             function clearHoldTimers() {
-                clearTimeout(loadTimer);
+                clearTimeout(armTimer);
                 clearTimeout(saveTimer);
-                loadTimer = null;
+                armTimer = null;
                 saveTimer = null;
             }
 
             function startHold(e) {
                 if (e.type === 'mousedown' && e.button !== 0) return;
+                try { if (btn.setPointerCapture && e.pointerId !== undefined) btn.setPointerCapture(e.pointerId); } catch (err) {}
                 clearHoldTimers();
-                longPressTriggered = false;
+                armedToLoad = false;
+                overwritten = false;
                 prePressSnapshot = captureCurrentThemeSnapshot();
 
-                loadTimer = setTimeout(function () {
-                    longPressTriggered = true;
+                armTimer = setTimeout(function () {
+                    armTimer = null;
                     triggerHaptic(35);
                     const presets = getSavedPresets();
 
                     if (!presets[slot]) {
+                        overwritten = true;
                         savePresetToSlot(slot, prePressSnapshot);
                         showDisplayHud('FAV ' + slot + ': SAVED', 1600);
                     } else {
-                        applyThemeSnapshot(presets[slot]);
-                        showDisplayHud('FAV ' + slot + ': LOADED (HOLD=SAVE)', 2400);
+                        armedToLoad = true;
+                        showDisplayHud('FAV ' + slot + ': RELEASE=LOAD • HOLD=SAVE', 1900);
 
                         saveTimer = setTimeout(function () {
+                            saveTimer = null;
+                            armedToLoad = false;
+                            overwritten = true;
                             triggerHaptic([45, 60, 45]);
-                            applyThemeSnapshot(prePressSnapshot);
                             savePresetToSlot(slot, prePressSnapshot);
                             showDisplayHud('FAV ' + slot + ': OVERWRITTEN!', 1800);
                         }, SAVE_OVERWRITE_HOLD_MS - LOAD_HOLD_MS);
@@ -3969,20 +3994,28 @@
             }
 
             function endHold() {
-                const wasHolding = loadTimer !== null || saveTimer !== null;
+                const wasShort = armTimer !== null;
+                const shouldLoad = armedToLoad && !overwritten;
                 clearHoldTimers();
-                if (wasHolding && !longPressTriggered && scannerTarget) {
+                armedToLoad = false;
+                if (shouldLoad) {
+                    const presets = getSavedPresets();
+                    if (presets[slot]) {
+                        applyThemeSnapshot(presets[slot]);
+                        showDisplayHud('FAV ' + slot + ': LOADED', 1600);
+                    }
+                } else if (wasShort && !overwritten && scannerTarget) {
                     triggerScannerElement(scannerTarget);
                 }
             }
 
             function cancelHold() {
                 clearHoldTimers();
+                armedToLoad = false;
             }
 
             btn.addEventListener('pointerdown', startHold);
             btn.addEventListener('pointerup', endHold);
-            btn.addEventListener('pointerleave', cancelHold);
             btn.addEventListener('pointercancel', cancelHold);
             btn.addEventListener('contextmenu', function (e) {
                 e.preventDefault();

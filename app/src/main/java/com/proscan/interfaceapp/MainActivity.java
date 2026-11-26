@@ -1138,16 +1138,34 @@ public class MainActivity extends Activity implements SensorEventListener {
             root.put("tailscale_url", prefs.getString("tailscale_url", ""));
             root.put("alexa_lamp_off_url", prefs.getString("alexa_lamp_off_url", ""));
             root.put("alexa_lamp_on_url", prefs.getString("alexa_lamp_on_url", ""));
+            root.put("wake_lock_on", prefs.getBoolean("wake_lock_on", true));
+            root.put("simple_auto_duck_on", prefs.getBoolean("simple_auto_duck_on", true));
+            root.put("radio_independent_vol_pct", prefs.getInt("radio_independent_vol_pct", 50));
+            root.put("clarity_filter_on", prefs.getBoolean("clarity_filter_on", false));
+            root.put("voice_readout_on", prefs.getBoolean("voice_readout_on", false));
+            root.put("sig_meter_style", prefs.getInt("sig_meter_style", 0));
+            root.put("scanner_lite_on", prefs.getBoolean("scanner_lite_on", false));
+            root.put("scanner_dsp_on", prefs.getBoolean("scanner_dsp_on", true));
+            root.put("archive_deck_idx", prefs.getInt("archive_deck_idx", 0));
+
             JSONObject ws = (webStorageJson != null && !webStorageJson.trim().isEmpty())
                     ? new JSONObject(webStorageJson) : new JSONObject();
             String rad = prefs.getString("radio_stations_json", "");
             if (!rad.isEmpty() && !ws.has("proscan_radio_stations_v3")) {
                 ws.put("proscan_radio_stations_v3", rad);
             }
+            ws.put("proscan_voice_readout_v1", String.valueOf(prefs.getBoolean("voice_readout_on", false)));
+            ws.put("proscan_sig_meter_style_v1", String.valueOf(prefs.getInt("sig_meter_style", 0)));
+            ws.put("proscan_scanner_lite_v1", String.valueOf(prefs.getBoolean("scanner_lite_on", false)));
+            ws.put("proscan_scanner_dsp_v1", String.valueOf(prefs.getBoolean("scanner_dsp_on", true)));
+            ws.put("proscan_deck_idx", String.valueOf(prefs.getInt("archive_deck_idx", 0)));
             root.put("web_storage", ws);
             byte[] bytes = root.toString(2).getBytes(StandardCharsets.UTF_8);
 
-            prefs.edit().putString("last_backup_json", root.toString()).apply();
+            prefs.edit()
+                    .putString("shared_web_storage", ws.toString())
+                    .putString("last_backup_json", root.toString())
+                    .apply();
 
             boolean written = false;
             if (Build.VERSION.SDK_INT >= 29) {
@@ -1219,20 +1237,70 @@ public class MainActivity extends Activity implements SensorEventListener {
             String lampOn = root.optString("alexa_lamp_on_url", "");
             JSONObject webStorage = root.optJSONObject("web_storage");
 
+            SharedPreferences.Editor ed = prefs.edit();
             if (!loc.isEmpty() || !ts.isEmpty()) {
-                prefs.edit().putString("local_url", loc).putString("tailscale_url", ts).apply();
+                ed.putString("local_url", loc).putString("tailscale_url", ts);
             }
             if (root.has("alexa_lamp_off_url") || root.has("alexa_lamp_on_url")) {
-                prefs.edit().putString("alexa_lamp_off_url", lampOff).putString("alexa_lamp_on_url", lampOn).apply();
+                ed.putString("alexa_lamp_off_url", lampOff).putString("alexa_lamp_on_url", lampOn);
+            }
+            if (root.has("wake_lock_on")) {
+                userWakeLockEnabled = root.optBoolean("wake_lock_on", true);
+                ed.putBoolean("wake_lock_on", userWakeLockEnabled);
+                if (userWakeLockEnabled) {
+                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    if (webView != null) webView.setKeepScreenOn(true);
+                } else {
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    if (webView != null) webView.setKeepScreenOn(false);
+                }
+            }
+            if (root.has("simple_auto_duck_on")) {
+                ed.putBoolean("simple_auto_duck_on", root.optBoolean("simple_auto_duck_on", true));
+            }
+            if (root.has("radio_independent_vol_pct")) {
+                int rVol = Math.max(0, Math.min(100, root.optInt("radio_independent_vol_pct", 50)));
+                ed.putInt("radio_independent_vol_pct", rVol);
+                PriorityRadioEngine.setRadioVolumePct(prefs, rVol);
+            }
+            if (root.has("clarity_filter_on")) {
+                ed.putBoolean("clarity_filter_on", root.optBoolean("clarity_filter_on", false));
+            }
+            if (root.has("voice_readout_on")) {
+                ed.putBoolean("voice_readout_on", root.optBoolean("voice_readout_on", false));
+            } else if (webStorage != null && webStorage.has("proscan_voice_readout_v1")) {
+                ed.putBoolean("voice_readout_on", "true".equals(webStorage.optString("proscan_voice_readout_v1", "false")));
+            }
+            if (root.has("sig_meter_style")) {
+                ed.putInt("sig_meter_style", root.optInt("sig_meter_style", 0));
+            } else if (webStorage != null && webStorage.has("proscan_sig_meter_style_v1")) {
+                try { ed.putInt("sig_meter_style", Integer.parseInt(webStorage.optString("proscan_sig_meter_style_v1", "0"))); } catch (Exception ignored) {}
+            }
+            if (root.has("scanner_lite_on")) {
+                ed.putBoolean("scanner_lite_on", root.optBoolean("scanner_lite_on", false));
+            } else if (webStorage != null && webStorage.has("proscan_scanner_lite_v1")) {
+                ed.putBoolean("scanner_lite_on", "true".equals(webStorage.optString("proscan_scanner_lite_v1", "false")));
+            }
+            if (root.has("scanner_dsp_on")) {
+                ed.putBoolean("scanner_dsp_on", root.optBoolean("scanner_dsp_on", true));
+            } else if (webStorage != null && webStorage.has("proscan_scanner_dsp_v1")) {
+                ed.putBoolean("scanner_dsp_on", !"false".equals(webStorage.optString("proscan_scanner_dsp_v1", "true")));
+            }
+            if (root.has("archive_deck_idx")) {
+                ed.putInt("archive_deck_idx", root.optInt("archive_deck_idx", 0));
+            } else if (webStorage != null && webStorage.has("proscan_deck_idx")) {
+                try { ed.putInt("archive_deck_idx", Integer.parseInt(webStorage.optString("proscan_deck_idx", "0"))); } catch (Exception ignored) {}
             }
             if (webStorage != null) {
                 if (webStorage.has("proscan_radio_stations_v3")) {
-                    prefs.edit().putString("radio_stations_json", webStorage.optString("proscan_radio_stations_v3", "")).apply();
+                    ed.putString("radio_stations_json", webStorage.optString("proscan_radio_stations_v3", ""));
                 }
-                prefs.edit().putString("shared_web_storage", webStorage.toString()).putString("last_backup_json", root.toString()).apply();
+                ed.putString("shared_web_storage", webStorage.toString()).putString("last_backup_json", root.toString());
             }
+            ed.putBoolean("pending_backup_restore", true);
+            ed.apply();
 
-            Toast.makeText(this, "Presets, Lamp & IPs Restored! Loading...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "All Settings, Presets, Lamp & IPs Restored! Loading...", Toast.LENGTH_SHORT).show();
             String activeLoc = prefs.getString("local_url", "");
             String activeTs = prefs.getString("tailscale_url", "");
             if (!activeLoc.isEmpty() || !activeTs.isEmpty()) {
@@ -1482,18 +1550,71 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
 
         @JavascriptInterface
+        public void setVoiceReadoutPref(final boolean enabled) {
+            prefs.edit().putBoolean("voice_readout_on", enabled).apply();
+        }
+
+        @JavascriptInterface
+        public void setSigMeterStylePref(final int style) {
+            prefs.edit().putInt("sig_meter_style", ((style % 5) + 5) % 5).apply();
+        }
+
+        @JavascriptInterface
+        public void setScannerLitePref(final boolean enabled) {
+            prefs.edit().putBoolean("scanner_lite_on", enabled).apply();
+        }
+
+        @JavascriptInterface
+        public void setScannerDspPref(final boolean enabled) {
+            prefs.edit().putBoolean("scanner_dsp_on", enabled).apply();
+        }
+
+        @JavascriptInterface
+        public void clearPendingBackupRestore() {
+            prefs.edit().putBoolean("pending_backup_restore", false).apply();
+        }
+
+        @JavascriptInterface
         public void syncActiveThemeInMemory(final String webStorageJson) {
             try {
-                if (webStorageJson != null && webStorageJson.length() > 10) {
-                    prefs.edit().putString("shared_web_storage", webStorageJson).apply();
+                JSONObject ws = (webStorageJson != null && webStorageJson.length() > 2)
+                        ? new JSONObject(webStorageJson) : new JSONObject();
+                SharedPreferences.Editor ed = prefs.edit();
+                if (ws.has("proscan_voice_readout_v1")) {
+                    ed.putBoolean("voice_readout_on", "true".equals(ws.optString("proscan_voice_readout_v1", "false")));
                 }
+                if (ws.has("proscan_sig_meter_style_v1")) {
+                    try { ed.putInt("sig_meter_style", Integer.parseInt(ws.optString("proscan_sig_meter_style_v1", "0"))); } catch (Exception ignored) {}
+                }
+                if (ws.has("proscan_scanner_lite_v1")) {
+                    ed.putBoolean("scanner_lite_on", "true".equals(ws.optString("proscan_scanner_lite_v1", "false")));
+                }
+                if (ws.has("proscan_scanner_dsp_v1")) {
+                    ed.putBoolean("scanner_dsp_on", !"false".equals(ws.optString("proscan_scanner_dsp_v1", "true")));
+                }
+                ws.put("proscan_deck_idx", String.valueOf(prefs.getInt("archive_deck_idx", 0)));
+                String rad = prefs.getString("radio_stations_json", "");
+                if (!rad.isEmpty() && !ws.has("proscan_radio_stations_v3")) {
+                    ws.put("proscan_radio_stations_v3", rad);
+                }
+                ed.putString("shared_web_storage", ws.toString());
+
                 JSONObject root = new JSONObject();
                 root.put("local_url", prefs.getString("local_url", ""));
                 root.put("tailscale_url", prefs.getString("tailscale_url", ""));
                 root.put("alexa_lamp_off_url", prefs.getString("alexa_lamp_off_url", ""));
                 root.put("alexa_lamp_on_url", prefs.getString("alexa_lamp_on_url", ""));
-                root.put("web_storage", webStorageJson != null ? new JSONObject(webStorageJson) : new JSONObject());
-                prefs.edit().putString("last_backup_json", root.toString()).apply();
+                root.put("wake_lock_on", prefs.getBoolean("wake_lock_on", true));
+                root.put("simple_auto_duck_on", prefs.getBoolean("simple_auto_duck_on", true));
+                root.put("radio_independent_vol_pct", prefs.getInt("radio_independent_vol_pct", 50));
+                root.put("clarity_filter_on", prefs.getBoolean("clarity_filter_on", false));
+                root.put("voice_readout_on", prefs.getBoolean("voice_readout_on", false));
+                root.put("sig_meter_style", prefs.getInt("sig_meter_style", 0));
+                root.put("scanner_lite_on", prefs.getBoolean("scanner_lite_on", false));
+                root.put("scanner_dsp_on", prefs.getBoolean("scanner_dsp_on", true));
+                root.put("archive_deck_idx", prefs.getInt("archive_deck_idx", 0));
+                root.put("web_storage", ws);
+                ed.putString("last_backup_json", root.toString()).apply();
             } catch (Exception ignored) {}
         }
 
@@ -1606,6 +1727,11 @@ public class MainActivity extends Activity implements SensorEventListener {
         String sharedStorage = prefs.getString("shared_web_storage", "");
         String safeShared = JSONObject.quote(sharedStorage);
         boolean wakePref = prefs.getBoolean("wake_lock_on", true);
+        boolean pendingRestorePref = prefs.getBoolean("pending_backup_restore", false);
+        boolean voicePref = prefs.getBoolean("voice_readout_on", false);
+        int meterPref = prefs.getInt("sig_meter_style", -1);
+        int litePref = prefs.contains("scanner_lite_on") ? (prefs.getBoolean("scanner_lite_on", false) ? 1 : 0) : -1;
+        int dspPref = prefs.contains("scanner_dsp_on") ? (prefs.getBoolean("scanner_dsp_on", true) ? 1 : 0) : -1;
 
         StringBuilder js = new StringBuilder();
         js.append("(function() {\n");
@@ -2163,7 +2289,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      window.renderCustomBrand = function() {};\n");
         js.append("      var mShortNames = ['BAR', 'VU', 'EQ', 'SCP', 'dB'];\n");
         js.append("      var mHudNames   = ['S-BAR', 'VU DIAL', 'SPECTRUM', 'SCOPE', 'PEAK dB'];\n");
-        js.append("      window.__sigMeterStyle = parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0;\n");
+        js.append("      var nativeMeterPref = ").append(meterPref).append(";\n");
+        js.append("      window.__sigMeterStyle = (nativeMeterPref >= 0) ? nativeMeterPref : (parseInt(localStorage.getItem('proscan_sig_meter_style_v1') || '0', 10) || 0);\n");
         js.append("      var segHtml = ''; for (var s=0; s<12; s++) segHtml += '<div class=\"sm-seg\"></div>';\n");
         js.append("      var specHtml = ''; for (var sp=0; sp<10; sp++) specHtml += '<div class=\"sm-spec-bar\"></div>';\n");
         js.append("      bSlot.innerHTML = '<div id=\"sig-meter-host\" title=\"Tap to cycle Signal Meter style\">' +\n");
@@ -2183,6 +2310,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      window.__applySigMeterStyle = function(idx, showHudMsg) {\n");
         js.append("        window.__sigMeterStyle = ((idx % 5) + 5) % 5;\n");
         js.append("        localStorage.setItem('proscan_sig_meter_style_v1', String(window.__sigMeterStyle));\n");
+        js.append("        if (window.AndroidApp && window.AndroidApp.setSigMeterStylePref) window.AndroidApp.setSigMeterStylePref(window.__sigMeterStyle);\n");
         js.append("        for (var m = 0; m < 5; m++) {\n");
         js.append("          var el = document.getElementById('sm-mode-' + m);\n");
         js.append("          if (el) el.classList.toggle('active', m === window.__sigMeterStyle);\n");
@@ -2192,6 +2320,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        if (showHudMsg && typeof showDisplayHud === 'function') {\n");
         js.append("          showDisplayHud('SIGNAL METER: ' + mHudNames[window.__sigMeterStyle], 1300);\n");
         js.append("        }\n");
+        js.append("        if (window.__scheduleSaveLastLook) window.__scheduleSaveLastLook();\n");
         js.append("      };\n");
 
         js.append("      window.handleBrandCornerTap = function() {\n");
@@ -2321,10 +2450,12 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      freshLiteBtn.className = 'btn';\n");
         js.append("      freshLiteBtn.type = 'button';\n");
         js.append("      oldGuideBtn.parentNode.replaceChild(freshLiteBtn, oldGuideBtn);\n");
-        js.append("      window.__scannerLiteMode = localStorage.getItem('proscan_scanner_lite_v1') === 'true';\n");
+        js.append("      var nativeLitePref = ").append(litePref).append(";\n");
+        js.append("      window.__scannerLiteMode = (nativeLitePref >= 0) ? (nativeLitePref === 1) : (localStorage.getItem('proscan_scanner_lite_v1') === 'true');\n");
         js.append("      window.__applyScannerLiteMode = function(active, showHudMsg) {\n");
         js.append("        window.__scannerLiteMode = Boolean(active);\n");
         js.append("        localStorage.setItem('proscan_scanner_lite_v1', String(window.__scannerLiteMode));\n");
+        js.append("        if (window.AndroidApp && window.AndroidApp.setScannerLitePref) window.AndroidApp.setScannerLitePref(window.__scannerLiteMode);\n");
         js.append("        document.documentElement.setAttribute('data-scanner-lite', window.__scannerLiteMode ? 'true' : 'false');\n");
         js.append("        var lb = document.getElementById('btn-lite-mode-custom');\n");
         js.append("        if (lb) {\n");
@@ -2334,6 +2465,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        if (showHudMsg && typeof showDisplayHud === 'function') {\n");
         js.append("          showDisplayHud('SCANNER LITE MODE: ' + (window.__scannerLiteMode ? 'ON' : 'OFF'), 1300);\n");
         js.append("        }\n");
+        js.append("        if (window.__scheduleSaveLastLook) window.__scheduleSaveLastLook();\n");
         js.append("      };\n");
         js.append("      window.__applyScannerLiteMode(window.__scannerLiteMode, false);\n");
         js.append("      var liteLastClickMs = 0;\n");
@@ -2424,7 +2556,35 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         js.append("    if (!window.__lastLookHooksInstalled && typeof applySkin === 'function') {\n");
         js.append("      window.__lastLookHooksInstalled = true;\n");
-        js.append("      ['applyDisplay','applyDisplayFont','applyDispTxtColor','applyLogTxtColor','applyLogFx','applyBg','applyBrightness','renderCustomBrand','applyThemeSnapshot'].forEach(function(fnName) {\n");
+        js.append("      if (typeof window.captureCurrentThemeSnapshot === 'function') {\n");
+        js.append("        var origCaptureSnap = window.captureCurrentThemeSnapshot;\n");
+        js.append("        window.captureCurrentThemeSnapshot = function() {\n");
+        js.append("          var snap = origCaptureSnap.apply(this, arguments) || {};\n");
+        js.append("          snap.sigMeterStyle = (typeof window.__sigMeterStyle === 'number') ? window.__sigMeterStyle : (parseInt(localStorage.getItem('proscan_sig_meter_style_v1')||'0',10)||0);\n");
+        js.append("          snap.liteMode = Boolean(window.__scannerLiteMode);\n");
+        js.append("          snap.scannerDsp = (typeof window.__scannerDspOn === 'boolean') ? window.__scannerDspOn : (localStorage.getItem('proscan_scanner_dsp_v1') !== 'false');\n");
+        js.append("          snap.voiceOn = Boolean(window.__voiceReadoutEnabled || window.__vOn);\n");
+        js.append("          return snap;\n");
+        js.append("        };\n");
+        js.append("      }\n");
+        js.append("      if (typeof window.applyThemeSnapshot === 'function') {\n");
+        js.append("        var origApplySnap = window.applyThemeSnapshot;\n");
+        js.append("        window.applyThemeSnapshot = function(snap) {\n");
+        js.append("          var prevRestore = Boolean(window.__restoringLastLook);\n");
+        js.append("          window.__restoringLastLook = true;\n");
+        js.append("          var res = origApplySnap.apply(this, arguments);\n");
+        js.append("          if (snap) {\n");
+        js.append("            if (typeof snap.sigMeterStyle === 'number' && typeof window.__applySigMeterStyle === 'function') window.__applySigMeterStyle(snap.sigMeterStyle, false);\n");
+        js.append("            if (typeof snap.liteMode === 'boolean' && typeof window.__applyScannerLiteMode === 'function') window.__applyScannerLiteMode(snap.liteMode, false);\n");
+        js.append("            if (typeof snap.scannerDsp === 'boolean' && typeof window.__applyScannerDspState === 'function') window.__applyScannerDspState(snap.scannerDsp, false);\n");
+        js.append("            if (typeof snap.voiceOn === 'boolean' && typeof window.__setVoiceReadoutState === 'function') window.__setVoiceReadoutState(snap.voiceOn, false, true);\n");
+        js.append("          }\n");
+        js.append("          window.__restoringLastLook = prevRestore;\n");
+        js.append("          if (window.__scheduleSaveLastLook) window.__scheduleSaveLastLook();\n");
+        js.append("          return res;\n");
+        js.append("        };\n");
+        js.append("      }\n");
+        js.append("      ['applyDisplay','applyDisplayFont','applyDispTxtColor','applyLogTxtColor','applyLogFx','applyBg','applyBrightness','renderCustomBrand'].forEach(function(fnName) {\n");
         js.append("        if (typeof window[fnName] === 'function') {\n");
         js.append("          var origFn = window[fnName];\n");
         js.append("          window[fnName] = function() {\n");
@@ -2436,25 +2596,81 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      });\n");
         js.append("    }\n");
 
-        js.append("    if (!window.__crossIpSynced && typeof applySkin === 'function' && window.__fsAlternatingSkinsHooked) {\n");
+        /* No-Jump FAV 0-9 Long Press: Hold 0.5s -> Release to Load, Keep Holding 2.2s -> Overwrite (Never Shifts Button Under Finger!) */
+        js.append("    if (!window.__noJumpPresetsHooked && typeof window.getSavedPresets === 'function' && typeof window.savePresetToSlot === 'function') {\n");
+        js.append("      window.__noJumpPresetsHooked = true;\n");
+        js.append("      document.querySelectorAll('.numpad .btn[data-preset-slot]').forEach(function(oldBtn) {\n");
+        js.append("        var btn = oldBtn.cloneNode(true);\n");
+        js.append("        oldBtn.parentNode.replaceChild(btn, oldBtn);\n");
+        js.append("        var slot = btn.getAttribute('data-preset-slot');\n");
+        js.append("        var scannerTarget = btn.getAttribute('data-scanner-btn');\n");
+        js.append("        var armTimer = null, saveTimer = null, armedToLoad = false, overwritten = false, preSnap = null;\n");
+        js.append("        function clr() { clearTimeout(armTimer); clearTimeout(saveTimer); armTimer = null; saveTimer = null; }\n");
+        js.append("        btn.addEventListener('pointerdown', function(e) {\n");
+        js.append("          if (e.type === 'mousedown' && e.button !== 0) return;\n");
+        js.append("          try { if (btn.setPointerCapture && e.pointerId !== undefined) btn.setPointerCapture(e.pointerId); } catch(err) {}\n");
+        js.append("          clr(); armedToLoad = false; overwritten = false;\n");
+        js.append("          preSnap = captureCurrentThemeSnapshot();\n");
+        js.append("          armTimer = setTimeout(function() {\n");
+        js.append("            armTimer = null;\n");
+        js.append("            if (navigator.vibrate) navigator.vibrate(35);\n");
+        js.append("            var presets = getSavedPresets();\n");
+        js.append("            if (!presets[slot]) {\n");
+        js.append("              overwritten = true;\n");
+        js.append("              savePresetToSlot(slot, preSnap);\n");
+        js.append("              if (typeof showDisplayHud === 'function') showDisplayHud('FAV ' + slot + ': SAVED', 1600);\n");
+        js.append("            } else {\n");
+        js.append("              armedToLoad = true;\n");
+        js.append("              if (typeof showDisplayHud === 'function') showDisplayHud('FAV ' + slot + ': RELEASE=LOAD • HOLD=SAVE', 1900);\n");
+        js.append("              saveTimer = setTimeout(function() {\n");
+        js.append("                saveTimer = null; armedToLoad = false; overwritten = true;\n");
+        js.append("                if (navigator.vibrate) navigator.vibrate([45, 60, 45]);\n");
+        js.append("                savePresetToSlot(slot, preSnap);\n");
+        js.append("                if (typeof showDisplayHud === 'function') showDisplayHud('FAV ' + slot + ': OVERWRITTEN!', 1800);\n");
+        js.append("              }, 1700);\n");
+        js.append("            }\n");
+        js.append("          }, 500);\n");
+        js.append("        });\n");
+        js.append("        btn.addEventListener('pointerup', function() {\n");
+        js.append("          var wasShort = armTimer !== null;\n");
+        js.append("          var shouldLoad = armedToLoad && !overwritten;\n");
+        js.append("          clr(); armedToLoad = false;\n");
+        js.append("          if (shouldLoad) {\n");
+        js.append("            var p = getSavedPresets();\n");
+        js.append("            if (p[slot]) {\n");
+        js.append("              applyThemeSnapshot(p[slot]);\n");
+        js.append("              if (typeof showDisplayHud === 'function') showDisplayHud('FAV ' + slot + ': LOADED', 1600);\n");
+        js.append("            }\n");
+        js.append("          } else if (wasShort && !overwritten && scannerTarget && typeof triggerScannerElement === 'function') {\n");
+        js.append("            triggerScannerElement(scannerTarget);\n");
+        js.append("          }\n");
+        js.append("        });\n");
+        js.append("        btn.addEventListener('pointercancel', function() { clr(); armedToLoad = false; });\n");
+        js.append("        btn.addEventListener('contextmenu', function(e) { e.preventDefault(); });\n");
+        js.append("      });\n");
+        js.append("    }\n");
+
+        js.append("    if (!window.__crossIpSynced && typeof applySkin === 'function' && window.__fsAlternatingSkinsHooked && document.getElementById('btn-voice-toggle') && document.getElementById('btn-scanner-dsp')) {\n");
         js.append("      window.__crossIpSynced = true;\n");
         js.append("      window.__restoringLastLook = true;\n");
         js.append("      try {\n");
+        js.append("        var forceBackupRestore = ").append(pendingRestorePref).append(";\n");
         js.append("        var sharedRaw = ").append(safeShared).append(";\n");
         js.append("        var sharedObj = (sharedRaw && sharedRaw.length > 2) ? JSON.parse(sharedRaw) : {};\n");
         js.append("        var localPresets = localStorage.getItem('proscan_theme_presets_v1');\n");
         js.append("        var localTs = parseInt(localStorage.getItem('proscan_last_look_ts_v1') || '0', 10) || 0;\n");
         js.append("        var sharedTs = parseInt(sharedObj['proscan_last_look_ts_v1'] || '0', 10) || 0;\n");
-        js.append("        if ((!localPresets || localPresets === '{}') && sharedObj['proscan_theme_presets_v1']) {\n");
+        js.append("        if (forceBackupRestore || ((!localPresets || localPresets === '{}') && sharedObj['proscan_theme_presets_v1'])) {\n");
         js.append("          Object.keys(sharedObj).forEach(function(k){ localStorage.setItem(k, sharedObj[k]); });\n");
         js.append("        } else if (sharedTs > localTs && sharedObj['proscan_theme_presets_v1']) {\n");
         js.append("          localStorage.setItem('proscan_theme_presets_v1', sharedObj['proscan_theme_presets_v1']);\n");
         js.append("        }\n");
+        js.append("        if (forceBackupRestore && window.AndroidApp && window.AndroidApp.clearPendingBackupRestore) window.AndroidApp.clearPendingBackupRestore();\n");
         js.append("        var chosenLookRaw = null;\n");
-        js.append("        if (sharedTs > localTs && sharedObj['proscan_last_look_v1']) {\n");
+        js.append("        if ((forceBackupRestore || sharedTs > localTs) && sharedObj['proscan_last_look_v1']) {\n");
         js.append("          chosenLookRaw = sharedObj['proscan_last_look_v1'];\n");
         js.append("          localStorage.setItem('proscan_last_look_v1', chosenLookRaw);\n");
-        js.append("          localStorage.setItem('proscan_last_look_ts_v1', String(sharedTs));\n");
+        js.append("          if (sharedTs > 0) localStorage.setItem('proscan_last_look_ts_v1', String(sharedTs));\n");
         js.append("        } else if (localStorage.getItem('proscan_last_look_v1')) {\n");
         js.append("          chosenLookRaw = localStorage.getItem('proscan_last_look_v1');\n");
         js.append("        } else if (sharedObj['proscan_last_look_v1']) {\n");
@@ -2471,6 +2687,14 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          if (foundIdx !== -1) window.applySkin(foundIdx);\n");
         js.append("          else window.applySkin(parseInt(localStorage.getItem('proscan_skin_index')||'0',10)||0);\n");
         js.append("        }\n");
+        js.append("        var initMeter = ").append(meterPref).append(";\n");
+        js.append("        if (initMeter >= 0 && typeof window.__applySigMeterStyle === 'function') window.__applySigMeterStyle(initMeter, false);\n");
+        js.append("        var initLite = ").append(litePref).append(";\n");
+        js.append("        if (initLite >= 0 && typeof window.__applyScannerLiteMode === 'function') window.__applyScannerLiteMode(initLite === 1, false);\n");
+        js.append("        var initDsp = ").append(dspPref).append(";\n");
+        js.append("        if (initDsp >= 0 && typeof window.__applyScannerDspState === 'function') window.__applyScannerDspState(initDsp === 1, false);\n");
+        js.append("        var initVoice = ").append(voicePref).append(";\n");
+        js.append("        if (typeof window.__setVoiceReadoutState === 'function') window.__setVoiceReadoutState(initVoice, false, false);\n");
         js.append("      } catch(e) {}\n");
         js.append("      window.__restoringLastLook = false;\n");
         js.append("      window.__syncThemeInMem();\n");
@@ -2559,7 +2783,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        setTimeout(function() { if (window.AndroidApp) window.AndroidApp.openBroadcastRadio(); }, 160);\n");
         js.append("      });\n");
 
-        js.append("      window.__scannerDspOn = localStorage.getItem('proscan_scanner_dsp_v1') !== 'false';\n");
+        js.append("      var nativeDspPref = ").append(dspPref).append(";\n");
+        js.append("      window.__scannerDspOn = (nativeDspPref >= 0) ? (nativeDspPref === 1) : (localStorage.getItem('proscan_scanner_dsp_v1') !== 'false');\n");
         js.append("      window.__applyScannerDspRouting = function() {\n");
         js.append("        if (!window.audioContext || !window.source || !window.analyser) return;\n");
         js.append("        if (!window.__dspNodes) {\n");
@@ -2598,16 +2823,21 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        dspBtn.classList.toggle('active', active);\n");
         js.append("        dspBtn.innerText = active ? 'DSP: ON' : 'DSP: OFF';\n");
         js.append("      }\n");
+        js.append("      window.__applyScannerDspState = function(active, showHudMsg) {\n");
+        js.append("        window.__scannerDspOn = Boolean(active);\n");
+        js.append("        localStorage.setItem('proscan_scanner_dsp_v1', String(window.__scannerDspOn));\n");
+        js.append("        if (window.AndroidApp && window.AndroidApp.setScannerDspPref) window.AndroidApp.setScannerDspPref(window.__scannerDspOn);\n");
+        js.append("        syncDspBtnUi(window.__scannerDspOn);\n");
+        js.append("        window.__applyScannerDspRouting();\n");
+        js.append("        if (showHudMsg && typeof showDisplayHud === 'function') {\n");
+        js.append("          showDisplayHud('DSP CLARITY: ' + (window.__scannerDspOn ? 'ON' : 'OFF'), 1300);\n");
+        js.append("        }\n");
+        js.append("        if (window.__scheduleSaveLastLook) window.__scheduleSaveLastLook();\n");
+        js.append("      };\n");
         js.append("      syncDspBtnUi(window.__scannerDspOn);\n");
         js.append("      dspBtn.addEventListener('click', function() {\n");
         js.append("        if (navigator.vibrate) navigator.vibrate(20);\n");
-        js.append("        window.__scannerDspOn = !window.__scannerDspOn;\n");
-        js.append("        localStorage.setItem('proscan_scanner_dsp_v1', String(window.__scannerDspOn));\n");
-        js.append("        syncDspBtnUi(window.__scannerDspOn);\n");
-        js.append("        window.__applyScannerDspRouting();\n");
-        js.append("        if (typeof showDisplayHud === 'function') {\n");
-        js.append("          showDisplayHud('DSP CLARITY: ' + (window.__scannerDspOn ? 'ON' : 'OFF'), 1300);\n");
-        js.append("        }\n");
+        js.append("        window.__applyScannerDspState(!window.__scannerDspOn, true);\n");
         js.append("      });\n");
         js.append("      rowParent.appendChild(dspBtn);\n");
         js.append("    }\n");
@@ -2627,14 +2857,21 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        freshVBtn.innerHTML = '<div class=\"sq-hw-cap\"></div><span class=\"sq-hw-lbl\">VOICE</span>';\n");
         js.append("        freshVBtn.__nativeVoiceHooked = true;\n");
         js.append("        existingVBtn.parentNode.replaceChild(freshVBtn, existingVBtn);\n");
-        js.append("        window.__voiceReadoutEnabled = Boolean(window.__voiceReadoutEnabled || window.__vOn);\n");
+        js.append("        var savedVoiceInit = ").append(voicePref).append(" || (localStorage.getItem('proscan_voice_readout_v1') === 'true');\n");
+        js.append("        window.__voiceReadoutEnabled = Boolean(savedVoiceInit);\n");
+        js.append("        window.__vOn = window.__voiceReadoutEnabled;\n");
         js.append("        freshVBtn.classList.toggle('active', window.__voiceReadoutEnabled);\n");
 
-        js.append("        window.__setVoiceReadoutState = function(enable, showHud) {\n");
+        js.append("        window.__setVoiceReadoutState = function(enable, showHud, persistPref) {\n");
         js.append("          window.__voiceReadoutEnabled = Boolean(enable);\n");
         js.append("          window.__vOn = window.__voiceReadoutEnabled;\n");
         js.append("          var vb = document.getElementById('btn-voice-toggle');\n");
         js.append("          if (vb) vb.classList.toggle('active', window.__voiceReadoutEnabled);\n");
+        js.append("          if (persistPref) {\n");
+        js.append("            localStorage.setItem('proscan_voice_readout_v1', String(window.__voiceReadoutEnabled));\n");
+        js.append("            if (window.AndroidApp && window.AndroidApp.setVoiceReadoutPref) window.AndroidApp.setVoiceReadoutPref(window.__voiceReadoutEnabled);\n");
+        js.append("            if (window.__scheduleSaveLastLook) window.__scheduleSaveLastLook();\n");
+        js.append("          }\n");
         js.append("          if (!window.__voiceReadoutEnabled) {\n");
         js.append("            if (window.__closeRxTtsSession) window.__closeRxTtsSession();\n");
         js.append("            if (window.AndroidApp && window.AndroidApp.cancelPendingRadioTts) window.AndroidApp.cancelPendingRadioTts();\n");
@@ -2646,7 +2883,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
         js.append("        freshVBtn.addEventListener('click', function() {\n");
         js.append("          if (navigator.vibrate) navigator.vibrate(25);\n");
-        js.append("          window.__setVoiceReadoutState(!window.__voiceReadoutEnabled, true);\n");
+        js.append("          window.__setVoiceReadoutState(!window.__voiceReadoutEnabled, true, true);\n");
         js.append("          if (window.__voiceReadoutEnabled) {\n");
         js.append("            window.__speakTextAfterRx('Voice readout on', true);\n");
         js.append("          }\n");
@@ -2714,13 +2951,14 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("            if (window.__applyScannerDspRouting) setTimeout(window.__applyScannerDspRouting, 300);\n");
         js.append("          }\n");
         js.append("          aBtn.classList.add('active');\n");
+        js.append("          if (localStorage.getItem('proscan_voice_readout_v1') === 'true' && window.__setVoiceReadoutState) window.__setVoiceReadoutState(true, false, false);\n");
         js.append("          if (window.AndroidApp && window.AndroidApp.setScannerAudioConnected) window.AndroidApp.setScannerAudioConnected(true);\n");
         js.append("          if (window.AndroidApp) window.AndroidApp.setBackgroundAudioMode(true);\n");
         js.append("        } else {\n");
         js.append("          isConnected = false;\n");
         js.append("          if (player && !player.paused) player.pause();\n");
         js.append("          aBtn.classList.remove('active');\n");
-        js.append("          if (window.__setVoiceReadoutState) window.__setVoiceReadoutState(false, false);\n");
+        js.append("          if (window.__setVoiceReadoutState) window.__setVoiceReadoutState(false, false, false);\n");
         js.append("          if (window.AndroidApp && window.AndroidApp.setScannerAudioConnected) window.AndroidApp.setScannerAudioConnected(false);\n");
         js.append("          if (window.AndroidApp) window.AndroidApp.setBackgroundAudioMode(false);\n");
         js.append("        }\n");
@@ -3081,7 +3319,16 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (webView != null) {
             webView.onResume();
             webView.resumeTimers();
-            webView.evaluateJavascript("var dw=document.getElementById('device-wrapper');if(dw)dw.classList.remove('flipping-out');", null);
+            int resumedMeter = prefs.getInt("sig_meter_style", -1);
+            boolean resumedWake = prefs.getBoolean("wake_lock_on", true);
+            webView.evaluateJavascript(
+                    "try{" +
+                    "var dw=document.getElementById('device-wrapper');if(dw)dw.classList.remove('flipping-out');" +
+                    (resumedMeter >= 0 ? "if(window.__applySigMeterStyle && window.__sigMeterStyle!==" + resumedMeter + "){window.__restoringLastLook=true;window.__applySigMeterStyle(" + resumedMeter + ",false);window.__restoringLastLook=false;}" : "") +
+                    "var wb=document.getElementById('btn-wake-toggle');if(wb){isWakeLockActive=" + resumedWake + ";wb.classList.toggle('active'," + resumedWake + ");}" +
+                    "}catch(e){}",
+                    null
+            );
         }
     }
 
