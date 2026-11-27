@@ -285,7 +285,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                             sessionTtsAllowed = true;
                             applyCurrentVolumeLocked(cachedPrefs);
                             handler.removeCallbacks(clearPendingTtsWaitRunnable);
-                            long waitMs = (rxDurationMs > 0 && rxDurationMs < 900) ? 1400L : 4200L;
+                            long waitMs = (rxDurationMs > 0 && rxDurationMs < 500) ? 2400L : 6000L;
                             handler.postDelayed(clearPendingTtsWaitRunnable, waitMs);
                         } else {
                             isWaitingForPendingTts = false;
@@ -664,8 +664,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         long now = System.currentTimeMillis();
         if (nativeLogPollInFlight) return;
         if (PriorityRadioEngine.isScannerCurrentlyReceiving()) return;
-        if (now - lastRxEndedMs < 220L) return;
-        if (now - lastNativeLogPollMs < 220L) return;
+        if (now - lastRxEndedMs < 150L) return;
+        if (now - lastNativeLogPollMs < 200L) return;
 
         String base = activeServerUrl;
         if ((base == null || base.isEmpty()) && webView != null) {
@@ -1438,7 +1438,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             } else {
                 lastRxEndedMs = System.currentTimeMillis();
                 final long pollWindowMs = voiceReadoutEnabled
-                        ? ((rxDurationMs > 0 && rxDurationMs < 900) ? 1400L : 4200L)
+                        ? ((rxDurationMs > 0 && rxDurationMs < 500) ? 2000L : 5600L)
                         : 2600L;
                 mainHandler.post(() -> startPostRxPollLoop(pollWindowMs));
             }
@@ -2014,7 +2014,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      }\n");
 
         /* Unified Single-Session RX -> WAIT_FOR_LOG -> TTS -> RADIO State Machine */
-        js.append("      window.__rxTtsSession = { active:false, rxActive:false, rxStartWall:0, waitTimer:null, settleTimer:null, freqs:{}, freqCount:0, channelName:'', clash:false, spoken:false };\n");
+        js.append("      window.__rxTtsSession = { active:false, rxActive:false, rxStartWall:0, totalRxMs:0, waitTimer:null, settleTimer:null, freqs:{}, freqCount:0, channelName:'', clash:false, spoken:false };\n");
         js.append("      window.__clearRxTtsTimers = function() {\n");
         js.append("        var s = window.__rxTtsSession;\n");
         js.append("        clearTimeout(s.waitTimer); s.waitTimer = null;\n");
@@ -2024,7 +2024,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("      window.__closeRxTtsSession = function() {\n");
         js.append("        window.__clearRxTtsTimers();\n");
         js.append("        var s = window.__rxTtsSession;\n");
-        js.append("        s.active = false; s.rxActive = false; s.rxStartWall = 0;\n");
+        js.append("        s.active = false; s.rxActive = false; s.rxStartWall = 0; s.totalRxMs = 0;\n");
         js.append("        s.freqs = {}; s.freqCount = 0; s.channelName = ''; s.clash = false; s.spoken = false;\n");
         js.append("      };\n");
         js.append("      window.__trySpeakRxSession = function() {\n");
@@ -2057,7 +2057,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("              window.__closeRxTtsSession();\n");
         js.append("              if (window.AndroidApp && window.AndroidApp.speakChannel) window.AndroidApp.speakChannel(speakName);\n");
         js.append("            }\n");
-        js.append("          }, 280);\n");
+        js.append("          }, 220);\n");
         js.append("        }\n");
         js.append("      };\n");
         js.append("      window.__speakTextAfterRx = function(txt, immediate) {\n");
@@ -2103,7 +2103,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("          counts[fq] = (counts[fq] || 0) + 1;\n");
         js.append("          var tp = tr.split(' '), tm = tp.length > 1 ? tp[tp.length - 1] : tr;\n");
         js.append("          validRows.push({\n");
-        js.append("            lineKey: lNum + '|' + tm + '|' + fq + '|' + nm,\n");
+        js.append("            lineKey: tr + '|' + fq + '|' + nm,\n");
         js.append("            tm: tm, fq: fq, tn: tn, du: du, nm: nm, hit: counts[fq]\n");
         js.append("          });\n");
         js.append("        }\n");
@@ -2112,10 +2112,12 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        var prevTopId = window.__lastTopRowId || '';\n");
         js.append("        var newRows = [];\n");
         js.append("        if (!isFirstLoad && prevTopId !== '' && topRowObj.lineKey !== prevTopId) {\n");
+        js.append("          var foundPrev = false;\n");
         js.append("          for (var ni = validRows.length - 1; ni >= 0 && newRows.length < 12; ni--) {\n");
-        js.append("            if (validRows[ni].lineKey === prevTopId) break;\n");
+        js.append("            if (validRows[ni].lineKey === prevTopId) { foundPrev = true; break; }\n");
         js.append("            newRows.unshift(validRows[ni]);\n");
         js.append("          }\n");
+        js.append("          if (!foundPrev) newRows = [topRowObj];\n");
         js.append("        }\n");
         js.append("        var isNewTopHit = newRows.length > 0;\n");
         js.append("        window.__lastTopRowId = topRowObj.lineKey;\n");
@@ -2231,7 +2233,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("              var sOn = window.__rxTtsSession;\n");
         js.append("              window.__clearRxTtsTimers();\n");
         js.append("              if (!sOn.active) {\n");
-        js.append("                sOn.active = true; sOn.freqs = {}; sOn.freqCount = 0; sOn.channelName = ''; sOn.clash = false;\n");
+        js.append("                sOn.active = true; sOn.totalRxMs = 0; sOn.freqs = {}; sOn.freqCount = 0; sOn.channelName = ''; sOn.clash = false;\n");
         js.append("              }\n");
         js.append("              sOn.rxActive = true; sOn.rxStartWall = nowWall; sOn.spoken = false;\n");
         js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerRxWithDuration) {\n");
@@ -2259,7 +2261,9 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("              window.__lastLogPollMs = nowWall;\n");
         js.append("              var vEnd = Boolean(window.__voiceReadoutEnabled || window.__vOn);\n");
         js.append("              var sOff = window.__rxTtsSession;\n");
-        js.append("              var rxDurMs = sOff.rxStartWall > 0 ? Math.max(0, nowWall - sOff.rxStartWall) : 1500;\n");
+        js.append("              var burstMs = sOff.rxStartWall > 0 ? Math.max(0, nowWall - sOff.rxStartWall) : 1500;\n");
+        js.append("              sOff.totalRxMs = (sOff.totalRxMs || 0) + burstMs;\n");
+        js.append("              var rxDurMs = sOff.totalRxMs;\n");
         js.append("              sOff.rxActive = false;\n");
         js.append("              if (window.AndroidApp && window.AndroidApp.notifyScannerRxWithDuration) {\n");
         js.append("                window.AndroidApp.notifyScannerRxWithDuration(false, vEnd, rxDurMs);\n");
@@ -2272,7 +2276,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("                window.__closeRxTtsSession();\n");
         js.append("                if (window.AndroidApp && window.AndroidApp.cancelPendingRadioTts) window.AndroidApp.cancelPendingRadioTts();\n");
         js.append("              } else {\n");
-        js.append("                var wMs = (rxDurMs > 0 && rxDurMs < 900) ? 1500 : 4300;\n");
+        js.append("                var wMs = (rxDurMs > 0 && rxDurMs < 500) ? 2000 : 5500;\n");
         js.append("                clearTimeout(sOff.waitTimer);\n");
         js.append("                sOff.waitTimer = setTimeout(function() { window.__closeRxTtsSession(); }, wMs);\n");
         js.append("                if (sOff.freqCount === 1) window.__trySpeakRxSession();\n");
