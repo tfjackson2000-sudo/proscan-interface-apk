@@ -75,6 +75,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.zip.GZIPInputStream;
 
 public class MainActivity extends Activity implements SensorEventListener {
 
@@ -581,6 +582,8 @@ public class MainActivity extends Activity implements SensorEventListener {
     private volatile boolean nativeLogPollInFlight = false;
     private volatile long lastNativeLogPollMs = 0L;
     private volatile long lastRxEndedMs = 0L;
+    private volatile String lastFastHistoryEtag = "";
+    private volatile long fastHistoryBackoffUntilMs = 0L;
     private volatile long postRxPollDeadlineMs = 0L;
     private final Runnable postRxPollLoopRunnable = new Runnable() {
         @Override
@@ -660,6 +663,31 @@ public class MainActivity extends Activity implements SensorEventListener {
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
+    private String buildFastHistoryUrl(String cleanBase) {
+        try {
+            URL u = new URL(cleanBase);
+            String host = u.getHost();
+            if (host != null && !host.isEmpty()) {
+                return "http://" + host + ":5055/api/history";
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private void deliverHistoryLinesToWebView(List<String> tailLines) {
+        if (tailLines == null || tailLines.isEmpty()) return;
+        StringBuilder sb = new StringBuilder();
+        for (String l : tailLines) {
+            sb.append(l).append("\n");
+        }
+        final String quotedLog = JSONObject.quote(sb.toString());
+        mainHandler.post(() -> {
+            if (webView != null) {
+                webView.evaluateJavascript("if(window.__onNativeHistoryLogText)window.__onNativeHistoryLogText(" + quotedLog + ");", null);
+            }
+        });
+    }
+
     private void pollHistoryLogNatively() {
         long now = System.currentTimeMillis();
         if (nativeLogPollInFlight) return;
@@ -678,22 +706,95 @@ public class MainActivity extends Activity implements SensorEventListener {
         logPollExecutor.execute(() -> {
             HttpURLConnection conn = null;
             try {
+                // 1. Try fast tail endpoint on port 5055 (~4 KB + ETag 304 — instant over Tailscale & Wi-Fi!)
+                String fastUrlStr = buildFastHistoryUrl(cleanBase);
+                if (fastUrlStr != null && System.currentTimeMillis() >= fastHistoryBackoffUntilMs) {
+                    HttpURLConnection fastConn = null;
+                    try {
+                        URL fastUrl = new URL(fastUrlStr);
+                        fastConn = (HttpURLConnection) fastUrl.openConnection();
+                        fastConn.setConnectTimeout(1800);
+                        fastConn.setReadTimeout(2200);
+                        fastConn.setUseCaches(false);
+                        fastConn.setRequestMethod("GET");
+                        fastConn.setRequestProperty("Cache-Control", "no-cache");
+                        String etag = lastFastHistoryEtag;
+                        if (etag != null && !etag.isEmpty()) {
+                            fastConn.setRequestProperty("If-None-Match", etag);
+                        }
+                        int fastCode = fastConn.getResponseCode();
+                        if (fastCode == 304) {
+                            mainHandler.post(() -> {
+                                if (webView != null) {
+                                    webView.evaluateJavascript("if(window.__replayCachedHistoryIfBlank)window.__replayCachedHistoryIfBlank();", null);
+                                }
+                            });
+                            return;
+                        }
+                        if (fastCode == 200) {
+                            String newEtag = fastConn.getHeaderField("ETag");
+                            if (newEtag != null && !newEtag.trim().isEmpty()) {
+                                lastFastHistoryEtag = newEtag.trim();
+                            }
+                            BufferedReader reader = new BufferedReader(new InputStreamReader(fastConn.getInputStream(), StandardCharsets.UTF_8));
+                            List<String> tailLines = new LinkedList<>();
+                            int idx = 0;
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                String trimmed = line.trim();
+                                if ((trimmed.contains(",") || trimmed.contains("\t"))
+                                        && !trimmed.toLowerCase(Locale.ROOT).startsWith("frequency")) {
+                                    idx++;
+                                    if (trimmed.contains("00:00:00") || trimmed.contains("00:00:01")) {
+                                        continue;
+                                    }
+                                    tailLines.add(idx + "\t" + trimmed);
+                                    if (tailLines.size() > 160) {
+                                        tailLines.remove(0);
+                                    }
+                                }
+                            }
+                            reader.close();
+                            deliverHistoryLinesToWebView(tailLines);
+                            return;
+                        }
+                        fastHistoryBackoffUntilMs = System.currentTimeMillis() + 30000L;
+                    } catch (Exception ignored) {
+                        fastHistoryBackoffUntilMs = System.currentTimeMillis() + 30000L;
+                    } finally {
+                        if (fastConn != null) {
+                            try { fastConn.disconnect(); } catch (Exception ignored) {}
+                        }
+                    }
+                }
+
+                // 2. Fallback: ProScan /History Log.txt (with Range tail request, gzip, keep-alive & generous Tailscale timeout)
                 URL url = new URL(cleanBase + "/History%20Log.txt");
                 conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(4000);
-                conn.setReadTimeout(4000);
+                boolean isTailscale = cleanBase.contains("100.");
+                conn.setConnectTimeout(isTailscale ? 6000 : 4000);
+                conn.setReadTimeout(isTailscale ? 10000 : 5000);
                 conn.setUseCaches(false);
                 conn.setRequestMethod("GET");
                 conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
                 conn.setRequestProperty("Pragma", "no-cache");
-                conn.setRequestProperty("Connection", "close");
+                conn.setRequestProperty("Accept-Encoding", "gzip");
+                conn.setRequestProperty("Range", "bytes=-65536");
                 String cookie = CookieManager.getInstance().getCookie(cleanBase);
                 if (cookie != null && !cookie.isEmpty()) {
                     conn.setRequestProperty("Cookie", cookie);
                 }
                 int code = conn.getResponseCode();
-                if (code == 200) {
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                if (code == 200 || code == 206) {
+                    InputStream rawIn = conn.getInputStream();
+                    String enc = conn.getContentEncoding();
+                    if (enc != null && enc.toLowerCase(Locale.ROOT).contains("gzip")) {
+                        rawIn = new GZIPInputStream(rawIn);
+                    }
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(rawIn, StandardCharsets.UTF_8));
+                    if (code == 206) {
+                        reader.readLine(); // Discard partial first line on byte-range tail
+                    }
                     List<String> tailLines = new LinkedList<>();
                     int totalValidLines = 0;
                     String line;
@@ -712,18 +813,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                         }
                     }
                     reader.close();
-                    if (!tailLines.isEmpty()) {
-                        StringBuilder sb = new StringBuilder();
-                        for (String l : tailLines) {
-                            sb.append(l).append("\n");
-                        }
-                        final String quotedLog = JSONObject.quote(sb.toString());
-                        mainHandler.post(() -> {
-                            if (webView != null) {
-                                webView.evaluateJavascript("if(window.__onNativeHistoryLogText)window.__onNativeHistoryLogText(" + quotedLog + ");", null);
-                            }
-                        });
-                    }
+                    deliverHistoryLinesToWebView(tailLines);
                 }
             } catch (Exception ignored) {
             } finally {
@@ -1708,6 +1798,8 @@ public class MainActivity extends Activity implements SensorEventListener {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 super.onPageStarted(view, url, favicon);
+                lastFastHistoryEtag = "";
+                fastHistoryBackoffUntilMs = 0L;
                 injectEnhancements();
                 mainHandler.postDelayed(() -> injectEnhancements(), 400);
             }
@@ -2073,9 +2165,19 @@ public class MainActivity extends Activity implements SensorEventListener {
         js.append("        if (window.__voiceReadoutEnabled || window.__vOn) window.AndroidApp.speakChannel(clean);\n");
         js.append("      };\n");
 
+        js.append("      window.__lastHistoryTextCache = '';\n");
+        js.append("      window.__replayCachedHistoryIfBlank = function() {\n");
+        js.append("        if (!isDisplayOn || !window.__lastHistoryTextCache) return;\n");
+        js.append("        var tb = document.getElementById('mini-log-data');\n");
+        js.append("        if (tb && (!tb.querySelector('tr[data-line-key]') || tb.children.length <= 1)) {\n");
+        js.append("          window.__lastRenderedIdsSig = '';\n");
+        js.append("          window.__onNativeHistoryLogText(window.__lastHistoryTextCache);\n");
+        js.append("        }\n");
+        js.append("      };\n");
         js.append("      window.__onNativeHistoryLogText = function(text) {\n");
         js.append("        isLogFetchInFlight = false;\n");
         js.append("        if (!text || text.toLowerCase().indexOf('<html') !== -1) return;\n");
+        js.append("        window.__lastHistoryTextCache = text;\n");
         js.append("        var rawLines = text.trim().split('\\n').filter(function(l) { return (l.indexOf(',') !== -1 || l.indexOf('\\t') !== -1) && !l.trim().toLowerCase().startsWith('frequency'); });\n");
         js.append("        if (!rawLines.length) return;\n");
         js.append("        var counts = {}, validRows = [];\n");
